@@ -1,3 +1,4 @@
+import { isPublishingEnabled } from "@/services/publishing-mode";
 import { publishWindsorPost, testWindsorMcp } from "./windsor-mcp";
 export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string };
 export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" };
@@ -16,7 +17,7 @@ export class FacebookMcpProvider implements FacebookProvider {
       return { connected: false, readAccount: false, listPages: false, readPosts: false, publishText: false, publishImage: false };
     }
   }
-  async publish(input: FacebookPublishInput): Promise<FacebookResult> { return publishWindsorPost(input,process.env.PUBLISHING_ENABLED !== "true"); }
+  async publish(input: FacebookPublishInput): Promise<FacebookResult> { return publishWindsorPost(input,!isPublishingEnabled()); }
 }
 
 export const facebookProvider = new FacebookMcpProvider();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { isPublishingEnabled } from "../src/services/publishing-mode";
 import { createSessionToken, verifySessionToken } from "../src/services/request-auth";
 import test from "node:test";
 import { postInputSchema, classifyFacebookError } from "../src/services/posts";
@@ -55,5 +56,15 @@ test("admin session cookie is signed and rejects forged values", async () => {
     assert.equal(await verifySessionToken(await createSessionToken(Date.now() - 9 * 3600 * 1000)), false);
   } finally {
     if (previous === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET = previous;
+  }
+});
+
+test("publishing flag tolerates dashboard formatting", () => {
+  const previous = process.env.PUBLISHING_ENABLED;
+  try {
+    for (const value of ["true", " true ", "True", "\"true\""]) { process.env.PUBLISHING_ENABLED = value; assert.equal(isPublishingEnabled(), true); }
+    for (const value of ["false", "", "yes"]) { process.env.PUBLISHING_ENABLED = value; assert.equal(isPublishingEnabled(), false); }
+  } finally {
+    if (previous === undefined) delete process.env.PUBLISHING_ENABLED; else process.env.PUBLISHING_ENABLED = previous;
   }
 });

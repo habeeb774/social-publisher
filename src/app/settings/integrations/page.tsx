@@ -1,3 +1,4 @@
+import { isPublishingEnabled } from "@/services/publishing-mode";
 import { desc, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schedulerRuns } from "@/db/schema";
@@ -10,7 +11,7 @@ function StatusRow({label,value,ok=false}:{label:string;value:string;ok?:boolean
   return <div className="integration-row"><span>{label}</span><strong className={ok?"status-ok":"status-muted"}>{value}</strong></div>;
 }
 export default async function IntegrationsSettings() {
-  const publishingEnabled = process.env.PUBLISHING_ENABLED === "true";
+  const publishingEnabled = isPublishingEnabled();
   const mcp = await testWindsorMcp().catch(() => null);
   const [lastRun] = await getDb().select({triggeredAt:schedulerRuns.triggeredAt,status:schedulerRuns.status,recent:sql<boolean>`${schedulerRuns.triggeredAt} > now() - interval '15 minutes'`}).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(1);
   const recent = Boolean(lastRun?.recent);
