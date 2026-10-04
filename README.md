@@ -15,4 +15,4 @@ Storage is intentionally provider-agnostic. Configure Cloudinary or Vercel Blob 
 
 The Vercel runtime connection is verified through `/api/integrations/facebook/test` without invoking a write tool. Keep `PUBLISHING_ENABLED=false` while validating the provider layer. Do not enable `PUBLISHING_ENABLED=true` without explicit approval.
 
-The protected `/api/cron/publish` endpoint accepts the `Authorization: Bearer $CRON_SECRET` header and supports both GET (Vercel Cron) and POST. `vercel.json` declares the required per-minute schedule; Vercel Hobby rejects that frequency and requires Pro. Until the plan is upgraded, use an external scheduler to call the endpoint at the required frequency with `CRON_SECRET`.
+The protected `/api/cron/publish` endpoint accepts the `Authorization: Bearer $CRON_SECRET` header and supports GET and POST. The native Vercel Cron configuration is intentionally absent so the Hobby plan can deploy successfully. Configure an external scheduler such as cron-job.org to call the endpoint every minute with `CRON_SECRET`.
