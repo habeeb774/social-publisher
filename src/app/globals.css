@@ -46,3 +46,7 @@ body{font-family:"Tajawal",sans-serif}.app-layout,.settings-page,.login-page,.sh
 [data-theme="light"] .safe-mini small,[data-theme="light"] .profile-mini small{color:#98a2b3}
 [data-theme="light"] .top-create{background:#635bff;color:#fff}
 [data-theme="light"] .notification-panel{background:#fff;border-color:#e4e7ec;color:#172033}
+[data-theme="light"] .app-layout,[data-theme="light"] .app-main,[data-theme="light"] .sidebar,[data-theme="light"] .topbar{color:#000}
+[data-theme="light"] .app-brand strong,[data-theme="light"] .side-nav a,[data-theme="light"] .crumbs strong,[data-theme="light"] .topbar h1,[data-theme="light"] .user-chip,[data-theme="light"] .section-heading h2,[data-theme="light"] .page-intro h2,[data-theme="light"] .detail-top h1,[data-theme="light"] .settings-heading h1,[data-theme="light"] .settings-heading h2,[data-theme="light"] .panel-heading h3,[data-theme="light"] .preview-card h3,[data-theme="light"] label{color:#000}
+[data-theme="light"] p,[data-theme="light"] .section-heading p,[data-theme="light"] .page-intro p,[data-theme="light"] .app-brand small,[data-theme="light"] .side-nav a:not(.active),[data-theme="light"] .crumbs,[data-theme="light"] .topbar-actions,[data-theme="light"] .top-safe{color:#333}
+[data-theme="light"] .post-form input,[data-theme="light"] .post-form textarea,[data-theme="light"] .post-form select,[data-theme="light"] .search-box input,[data-theme="light"] .posts-search input{color:#000}
