@@ -1,4 +1,5 @@
 import { getFacebookRuntimeStatus, testFacebookConnection } from "../../../services/facebook";
+import { TestConnectionButton } from "./test-connection";
 
 export default async function IntegrationsSettings() {
   const capabilities = await testFacebookConnection();
@@ -19,6 +20,7 @@ export default async function IntegrationsSettings() {
         <p>MCP Provider: Windsor.ai</p>
         <p>Facebook Organic: {capabilities.connected ? "متصل" : "Authorization required"}</p>
         <p>Vercel runtime MCP access: {runtimeStatus === "connected" ? "Connected" : "Blocked"}</p>
+        <TestConnectionButton />
         <p className="muted">لا يتم عرض أو تخزين أي أسرار أو Access Tokens.</p>
         <div className="stack">
           {capabilityRows.map(([label, enabled]) => (
