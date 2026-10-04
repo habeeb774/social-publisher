@@ -51,7 +51,7 @@ export async function testWindsorMcp() {
   const connectorsResponse = await callTool("get_connectors", { include_not_yet_connected: true, include_actions: true }, sessionId);
   const data = contentJson(connectorsResponse.payload.result);
   const connectors = Array.isArray(data) ? data : ((data as { connectors?: unknown[] })?.connectors || []);
-  console.info("Windsor MCP connector discovery", {
+  console.error("Windsor MCP connector discovery", {
     count: connectors.length,
     shapes: (connectors as Array<Record<string, unknown>>).slice(0, 20).map((item) => Object.keys(item).sort()),
     identifiers: (connectors as Array<Record<string, unknown>>).slice(0, 20).map((item) => ({
