@@ -2,6 +2,7 @@
   "name": "social-publisher",
   "private": true,
   "scripts": {
+    "prebuild": "node scripts/migrate-if-configured.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
