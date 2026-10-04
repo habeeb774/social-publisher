@@ -2,49 +2,10 @@ import { getFacebookRuntimeStatus, testFacebookConnection } from "../../../servi
 import { TestConnectionButton } from "./test-connection";
 import { AppShell } from "../../ui/app-shell";
 
+function StatusRow({label,value,ok=false}:{label:string;value:string;ok?:boolean}){return <div className="integration-row"><span>{label}</span><strong className={ok?"status-ok":"status-muted"}><i className={ok?"health-dot":"health-dot muted-dot"}/>{value}</strong></div>}
 export default async function IntegrationsSettings() {
   const publishingEnabled = process.env.PUBLISHING_ENABLED === "true";
   const capabilities = await testFacebookConnection();
   const runtimeStatus = getFacebookRuntimeStatus();
-  const capabilityRows = [
-    ["قراءة الحساب", capabilities.readAccount],
-    ["قراءة الصفحات", capabilities.listPages],
-    ["قراءة المنشورات", capabilities.readPosts],
-    ["نشر نصي", capabilities.publishText],
-    ["نشر صورة", capabilities.publishImage],
-  ] as const;
-
-  return (
-    <AppShell title="التكاملات" eyebrow="إدارة النظام"><main className="settings-page"><div className="settings-heading"><div><span className="section-kicker">البنية والاتصالات</span><h1>تكاملات النظام</h1><p>تحقق من جاهزية Facebook MCP والجدولة الخارجية من مكان واحد.</p></div><span className="safe-badge">Safe Mode مفعّل</span></div>
-      <section className="panel-card integration-card">
-        <h2>Facebook MCP</h2>
-        <p>MCP Provider: Windsor.ai</p>
-        <p>Facebook Organic: {capabilities.connected ? "متصل" : "Authorization required"}</p>
-        <p>Vercel runtime MCP access: {runtimeStatus === "connected" ? "Connected" : "Blocked"}</p>
-        <TestConnectionButton />
-        <p className="muted">لا يتم عرض أو تخزين أي أسرار أو Access Tokens.</p>
-        <div className="capability-list">
-          {capabilityRows.map(([label, enabled]) => (
-            <div className="row" key={label}>
-              <span>{label}</span>
-              <span className={enabled ? "status-ok" : "status-muted"}>{enabled ? "متاحة" : "غير متاحة"}</span>
-            </div>
-          ))}
-        </div>
-        {runtimeStatus !== "connected" && (
-          <div className="banner">BLOCKED_CAPABILITY: MCP tools موجودة، لكن Vercel Runtime لا يملك اتصال Windsor خادميًا مُعدًا بعد.</div>
-        )}
-      </section>
-      <section className="panel-card integration-card">
-        <h2>Scheduler</h2>
-        <p>Provider: cron-job.org</p>
-        <p>Status: <strong>External scheduler required</strong></p>
-        <p>Interval: Every minute</p>
-        <p>Endpoint: <code>/api/cron/publish</code></p>
-        <p>Worker: Protected by <code>CRON_SECRET</code></p>
-        <p>Safe mode: {publishingEnabled ? "Disabled" : "Enabled"} — {publishingEnabled ? "Facebook publishing is enabled." : "no Facebook post will be created."}</p>
-        <p className="muted">Scheduler محمي ويعمل عبر POST وAuthorization: Bearer CRON_SECRET. لا تضع السر في الواجهة أو GitHub.</p>
-      </section>
-    </main></AppShell>
-  );
+  return <AppShell title="التكاملات" eyebrow="إدارة النظام"><main className="settings-page"><div className="settings-heading"><div><span className="section-kicker">البنية والاتصالات</span><h1>تكاملات النظام</h1><p>حالة الخدمات المتصلة وقدرات النشر من مكان واحد.</p></div><span className="safe-badge">{publishingEnabled?"Live":"Safe Mode مفعّل"}</span></div><div className="integration-stack"><section className="panel-card integration-card"><div className="integration-title"><div className="integration-logo facebook-logo">f</div><div><h2>Facebook</h2><p>Windsor.ai · Meta Social Technologies</p></div><TestConnectionButton /></div><div className="integration-section"><span className="section-kicker">الاتصال</span><StatusRow label="Facebook Ads" value="غير مستخدم في النشر العضوي"/><StatusRow label="Facebook Organic" value={capabilities.connected?"متصل":"Authorization required"} ok={capabilities.connected}/><StatusRow label="الصفحة المستهدفة" value={capabilities.page?"متاحة":"غير متاحة"} ok={Boolean(capabilities.page)}/></div><div className="integration-section"><span className="section-kicker">القدرات</span><StatusRow label="Read capability" value={capabilities.readAccount?"Available":"Unavailable"} ok={capabilities.readAccount}/><StatusRow label="Publish text · create_post" value={capabilities.publishText?"Available":"Unavailable"} ok={capabilities.publishText}/><StatusRow label="Publish photo · create_photo_post" value={capabilities.publishImage?"Available":"Unavailable"} ok={capabilities.publishImage}/><StatusRow label="Vercel runtime MCP access" value={runtimeStatus === "connected"?"Connected":"Blocked"} ok={runtimeStatus === "connected"}/></div><p className="muted integration-note">لا يتم عرض أو تخزين أي أسرار أو Access Tokens.</p>{runtimeStatus !== "connected" && <div className="banner">BLOCKED_CAPABILITY: أدوات النشر موجودة، لكن Vercel Runtime لا يملك اتصال Windsor خادميًا مُعدًا بعد.</div>}</section><section className="panel-card integration-card"><div className="integration-title"><div className="integration-logo scheduler-logo">◷</div><div><h2>Scheduler</h2><p>cron-job.org · Publishing Worker</p></div><span className="status-ok"><i className="health-dot"/>Healthy</span></div><div className="integration-section"><StatusRow label="Frequency" value="كل دقيقة" ok/><StatusRow label="Endpoint" value="/api/cron/publish"/><StatusRow label="Authentication" value="CRON_SECRET" ok/></div><p className="muted integration-note">محمي بطلب POST وBearer secret. لا يظهر السر في الواجهة أو GitHub.</p></section><section className="panel-card integration-card compact-integration"><div><h2>Safe Mode</h2><p>{publishingEnabled?"النشر الحقيقي مفعّل":"لا يتم إنشاء أي منشور حقيقي على Facebook."}</p></div><span className={publishingEnabled?"status-danger":"status-ok"}>{publishingEnabled?"Disabled":"Enabled"}</span></section></div></main></AppShell>;
 }
