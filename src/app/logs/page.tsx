@@ -1,12 +1,2 @@
-export default function LogsPage() {
-  return (
-    <main className="shell">
-      <h1>السجلات</h1>
-      <section className="card">
-        <h2>Activity logs وPublication attempts</h2>
-        <p className="muted">يتم تسجيل محاولات النشر في Neon عبر publication_attempts، مع إبقاء بيانات الاعتماد خارج السجلات.</p>
-        <div className="banner">Safe Mode مفعّل — لا توجد منشورات Facebook حقيقية قيد التنفيذ.</div>
-      </section>
-    </main>
-  );
-}
+import { AppShell } from "../ui/app-shell";
+export default function LogsPage() { return <AppShell title="السجلات" eyebrow="المراقبة"><div className="log-summary"><div className="panel-card"><span className="stat-label">محاولات اليوم</span><strong>0</strong><small>لا توجد عمليات حتى الآن</small></div><div className="panel-card"><span className="stat-label">حالة العامل</span><strong className="text-green">سليم</strong><small>آخر فحص آمن اكتمل بنجاح</small></div><div className="panel-card"><span className="stat-label">النشر الحقيقي</span><strong className="text-indigo">متوقف</strong><small>Safe Mode مفعّل</small></div></div><section className="panel-card log-card"><div className="section-heading"><div><span className="section-kicker">سجل النشاط</span><h2>Activity logs & Publication attempts</h2><p>تظهر هنا محاولات العامل مع حماية بيانات الاعتماد.</p></div><span className="safe-badge">آمن</span></div><div className="empty-state table-empty"><span>⌁</span><strong>لا توجد سجلات بعد</strong><small>ستظهر الأحداث هنا عند تشغيل الاستيراد أو الجدولة.</small></div></section></AppShell>}

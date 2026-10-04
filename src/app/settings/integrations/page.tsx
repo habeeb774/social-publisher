@@ -13,20 +13,19 @@ export default async function IntegrationsSettings() {
   ] as const;
 
   return (
-    <main className="shell">
-      <h1>تكاملات النظام</h1>
-      <section className="card">
+    <main className="settings-page"><div className="settings-heading"><div><span className="section-kicker">البنية والاتصالات</span><h1>تكاملات النظام</h1><p>تحقق من جاهزية Facebook MCP والجدولة الخارجية من مكان واحد.</p></div><span className="safe-badge">Safe Mode مفعّل</span></div>
+      <section className="panel-card integration-card">
         <h2>Facebook MCP</h2>
         <p>MCP Provider: Windsor.ai</p>
         <p>Facebook Organic: {capabilities.connected ? "متصل" : "Authorization required"}</p>
         <p>Vercel runtime MCP access: {runtimeStatus === "connected" ? "Connected" : "Blocked"}</p>
         <TestConnectionButton />
         <p className="muted">لا يتم عرض أو تخزين أي أسرار أو Access Tokens.</p>
-        <div className="stack">
+        <div className="capability-list">
           {capabilityRows.map(([label, enabled]) => (
             <div className="row" key={label}>
               <span>{label}</span>
-              <span>{enabled ? "✅ متاحة" : "❌ غير متاحة"}</span>
+              <span className={enabled ? "status-ok" : "status-muted"}>{enabled ? "متاحة" : "غير متاحة"}</span>
             </div>
           ))}
         </div>
@@ -34,7 +33,7 @@ export default async function IntegrationsSettings() {
           <div className="banner">BLOCKED_CAPABILITY: MCP tools موجودة، لكن Vercel Runtime لا يملك اتصال Windsor خادميًا مُعدًا بعد.</div>
         )}
       </section>
-      <section className="card">
+      <section className="panel-card integration-card">
         <h2>Scheduler</h2>
         <p>Provider: cron-job.org</p>
         <p>Status: <strong>External scheduler required</strong></p>
