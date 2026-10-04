@@ -13,4 +13,4 @@ The Facebook token is server-only and is never returned to the browser. Publishi
 
 Storage is intentionally provider-agnostic. Configure Cloudinary or Vercel Blob before enabling image uploads in production.
 
-Vercel can invoke `/api/cron/publish` every minute using `CRON_SECRET`; configure the secret in the deployment environment and use a scheduler plan that supports the declared frequency.
+The protected `/api/cron/publish` endpoint is intentionally not declared as a Vercel Hobby Cron because Hobby accounts only support daily schedules. Use an external scheduler (for example cron-job.org or GitHub Actions) to call it at the required frequency with `CRON_SECRET`.
