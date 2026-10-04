@@ -90,8 +90,6 @@ export async function publishWindsorPost(input: {pageId:string;content:string;im
     return {id,permalink:data.permalink,dryRun:false,provider:"facebook_mcp" as const};
   } catch(cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    // An explicit provider rejection means nothing was posted; surface it as a definite failure.
-    if (detail.startsWith("MCP_TOOL_ERROR")) throw cause;
     // A timeout can happen after Facebook accepted the post. Never retry blindly.
     throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة (${detail.slice(0,400)})`,{cause});
   }
