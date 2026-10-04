@@ -49,7 +49,10 @@ export async function testWindsorMcp() {
   const tools = await rpc("tools/list", {}, sessionId);
   const toolNames = ((tools.payload.result as { tools?: Array<{ name?: string }> })?.tools || []).map((tool) => tool.name).filter(Boolean) as string[];
   const connectorsResponse = await callTool("get_connectors", { include_not_yet_connected: true, include_actions: true }, sessionId);
-  const data = contentJson(connectorsResponse.payload.result);
+  const rawData = contentJson(connectorsResponse.payload.result);
+  const data = rawData && typeof rawData === "object" && "result" in rawData
+    ? contentJson((rawData as { result?: unknown }).result)
+    : rawData;
   const connectors = Array.isArray(data) ? data : ((data as { connectors?: unknown[] })?.connectors || []);
   console.error("Windsor MCP connector discovery", {
     dataType: Array.isArray(data) ? "array" : typeof data,
