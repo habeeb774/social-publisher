@@ -27,7 +27,7 @@ export default async function IntegrationsSettings() {
       <StatusRow label="Publish photo · create_photo_post" value={mcp?.actions.includes("create_photo_post")?"Available":"Unavailable"} ok={mcp?.actions.includes("create_photo_post")}/>
       <StatusRow label="Vercel runtime MCP access" value={mcp?"Connected":"Blocked"} ok={Boolean(mcp)}/>
       {!mcp && <p className="banner">MCP_RUNTIME_CONNECTION_REQUIRED — تعذر التحقق من اتصال MCP الخادمي.</p>}
-    </section><section className="panel-card integration-card"><h2>Scheduler</h2><p>GitHub Actions · publish-scheduler · كل 5 دقائق، وقد يتأخر تشغيل GitHub.</p>
+    </section><section className="panel-card integration-card"><h2>Scheduler</h2><p>cron-job.org · استدعاء العامل كل دقيقة.</p>
       <StatusRow label="آخر استدعاء موثّق" value={lastRun?lastRun.triggeredAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"}):"لا يوجد تشغيل موثّق"}/>
       <StatusRow label="حالة التشغيل" value={recent && lastRun?.status==="success"?"تشغيل حديث ناجح":"يحتاج التحقق من الجدولة"} ok={recent && lastRun?.status==="success"}/>
       <StatusRow label="Endpoint" value="/api/cron/publish"/>

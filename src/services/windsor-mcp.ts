@@ -1,30 +1,23 @@
-type JsonRpcResponse = { result?: unknown; error?: { code?: number; message?: string }; };
+import { parseMcpResponse, type JsonRpcResponse } from "./mcp-response";
 
 const endpoint = () => process.env.WINDSOR_MCP_URL || "https://mcp.windsor.ai/";
-
-function parseResponse(text: string): JsonRpcResponse {
-  if (!text.trim()) return {};
-  try { return JSON.parse(text) as JsonRpcResponse; } catch {}
-  const events = text.split(/\r?\n\r?\n/).filter(Boolean);
-  for (const event of events.reverse()) {
-    const data = event.split(/\r?\n/).find((line) => line.startsWith("data:"));
-    if (data) { try { return JSON.parse(data.slice(5).trim()) as JsonRpcResponse; } catch {} }
-  }
-  throw new Error("MCP_CONNECTION_FAILED: invalid MCP response");
-}
 
 async function rpc(method: string, params: Record<string, unknown> = {}, sessionId?: string) {
   const key = process.env.WINDSOR_API_KEY;
   if (!key) throw new Error("WINDSOR_API_KEY_MISSING");
-  const response = await fetch(endpoint(), { method: "POST", headers: {
+  const requestId=crypto.randomUUID();
+  const notification=method.startsWith("notifications/");
+  const response = await fetch(endpoint(), { method: "POST", signal:AbortSignal.timeout(25000), headers: {
     Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
     ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}),
-  }, body: JSON.stringify(method.startsWith("notifications/")
+  }, body: JSON.stringify(notification
     ? { jsonrpc: "2.0", method, params }
-    : { jsonrpc: "2.0", id: Date.now(), method, params }) });
+    : { jsonrpc: "2.0", id: requestId, method, params }) });
   if (response.status === 401 || response.status === 403) throw new Error("WINDSOR_AUTH_FAILED");
   if (!response.ok) throw new Error(`MCP_CONNECTION_FAILED: HTTP ${response.status}`);
-  return { payload: parseResponse(await response.text()), sessionId: response.headers.get("mcp-session-id") || sessionId };
+  const text=await response.text();
+  const payload:JsonRpcResponse=notification?{}:parseMcpResponse(text,requestId);
+  return { payload, sessionId: response.headers.get("mcp-session-id") || sessionId };
 }
 
 async function callTool(name: string, args: Record<string, unknown>, sessionId?: string) {
@@ -89,9 +82,14 @@ export async function publishWindsorPost(input: {pageId:string;content:string;im
   const action = input.imageUrl ? "create_photo_post" : "create_post";
   if (!Array.isArray(actions) || !actions.some(item=>item.id===action)) throw new Error("MCP_PUBLISH_ACTION_REQUIRED");
   if (dryRun) return {id:"dry-run",dryRun:true,provider:"facebook_mcp" as const};
-  const response = await callTool("execute_action",{connector:"facebook_organic",account:input.pageId,action,params:input.imageUrl?{image_url:input.imageUrl,caption:input.content}:{message:input.content}},discovered.sessionId);
-  const data = unwrap(contentJson(response.payload.result)) as {id?:string;post_id?:string;permalink?:string};
-  const id = data?.id || data?.post_id;
-  if (!id) throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: do not retry automatically");
-  return {id,permalink:data.permalink,dryRun:false,provider:"facebook_mcp" as const};
+  try {
+    const response = await callTool("execute_action",{connector:"facebook_organic",account:input.pageId,action,params:input.imageUrl?{image_url:input.imageUrl,caption:input.content}:{message:input.content}},discovered.sessionId);
+    const data = unwrap(contentJson(response.payload.result)) as {id?:string;post_id?:string;permalink?:string};
+    const id = data?.id || data?.post_id;
+    if (typeof id!=="string"||!id.trim()) throw new Error("MCP_POST_ID_MISSING");
+    return {id,permalink:data.permalink,dryRun:false,provider:"facebook_mcp" as const};
+  } catch(cause) {
+    // A timeout can happen after Facebook accepted the post. Never retry blindly.
+    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة",{cause});
+  }
 }

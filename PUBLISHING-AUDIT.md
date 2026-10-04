@@ -18,12 +18,16 @@ GitHub Actions run https://github.com/habeeb774/social-publisher/actions/runs/37
 
 GitHub check annotation: account locked due to a billing issue. This is not a CRON_SECRET or application HTTP failure.
 
-PUBLISHING_ENABLED remains false. No real test scheduled; the requested ten-minute test must be scheduled relative to a new verified activation time after resolving GitHub Actions access.
+PUBLISHING_ENABLED was explicitly activated by the user and verified true in production. No real test post has been scheduled in this audit; schedule the ten-minute test relative to a verified scheduler activation time.
+
+Another session restored a once-per-minute Vercel Cron in commit 962ff5a. Vercel rejected deployment on the Hobby plan. That change has been preserved pending scheduler coordination. Later local changes must not be described as deployed until a deployment succeeds.
+
+Production verification now covers actual dashboard/calendar/log views, saved draft content, successful editing, concurrent-edit conflict rejection, login protection for logs, and required future scheduling dates. The full system is still not verified ready.
 
 ## Remaining gates
 
 - Resolve GitHub account billing lock (requires account owner).
 - Successful manual Workflow and subsequent scheduled Workflow invocation, verified in scheduler_runs.
-- Activate production publishing only after scheduler verification, then schedule exactly one “مرحبا” post ten minutes ahead under the user's authorization.
+- After scheduler verification, schedule exactly one “مرحبا” post ten minutes ahead under the user's authorization.
 - Verify actual Facebook post ID/permalink and no duplicate subsequent publication.
-- Complete full-project audit: dashboard, calendar, details, logs and other routes still need evidence-backed end-to-end verification. This report does not claim full readiness.
+- Complete full-project audit, including storage, imports, recovery and real Facebook write results. This report does not claim full readiness.
