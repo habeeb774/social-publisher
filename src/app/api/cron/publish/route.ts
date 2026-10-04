@@ -4,8 +4,11 @@ import { getDb } from "@/db";
 import { schedulerRuns } from "@/db/schema";
 
 async function run(request: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected || request.headers.get("authorization") !== `Bearer ${expected}`) {
+  // Dashboard-entered values often carry stray whitespace or quotes; normalize both sides before comparing.
+  const clean = (value: string | null | undefined) => (value ?? "").trim().replace(/^["']|["']$/g, "").trim();
+  const expected = clean(process.env.CRON_SECRET);
+  const provided = clean(clean(request.headers.get("authorization")).replace(/^bearer\s+/i, ""));
+  if (!expected || provided !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date();
