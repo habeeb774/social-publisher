@@ -38,3 +38,11 @@ body{font-family:"Tajawal",sans-serif}.app-layout,.settings-page,.login-page,.sh
 [data-theme="light"] .table-head,[data-theme="light"] .calendar-grid>b{background:#f8fafc;border-color:#e7e9ee}
 [data-theme="light"] .calendar-day{border-color:#e7e9ee;background:#fff;color:#344054}
 [data-theme="light"] .empty-state strong,[data-theme="light"] .ui-empty-state strong{color:#111827}
+[data-theme="light"] .app-brand strong,[data-theme="light"] .topbar h1,[data-theme="light"] .crumbs strong,[data-theme="light"] .panel-heading h3,[data-theme="light"] .settings-heading h1{color:#172033}
+[data-theme="light"] .app-brand small,[data-theme="light"] .side-nav a,[data-theme="light"] .crumbs,[data-theme="light"] .topbar-actions,[data-theme="light"] .top-safe,[data-theme="light"] .user-chip{color:#667085}
+[data-theme="light"] .side-nav a.active{background:#17233b;border-color:#243b67;color:#fff}
+[data-theme="light"] .side-nav a:hover{background:#f1f5ff;color:#334155}
+[data-theme="light"] .safe-mini,[data-theme="light"] .profile-mini{color:#667085}
+[data-theme="light"] .safe-mini small,[data-theme="light"] .profile-mini small{color:#98a2b3}
+[data-theme="light"] .top-create{background:#635bff;color:#fff}
+[data-theme="light"] .notification-panel{background:#fff;border-color:#e4e7ec;color:#172033}
