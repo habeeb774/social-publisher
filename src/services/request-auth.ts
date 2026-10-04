@@ -20,8 +20,13 @@ export async function createSessionToken(now = Date.now()) {
 
 export async function verifySessionToken(token: string | undefined, now = Date.now()) {
   if (!token || !secret()) return false;
-  const [version, expires, signature] = token.split(".");
-  if (version !== "v1" || !expires || !signature || Number(expires) * 1000 < now) return false;
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  const [version, expires, signature] = parts;
+  if (version !== "v1" || !/^\d+$/.test(expires) || !/^[a-f0-9]{64}$/.test(signature)) return false;
+  const expiration = Number(expires);
+  const currentSeconds = Math.floor(now / 1000);
+  if (!Number.isSafeInteger(expiration) || expiration <= currentSeconds || expiration > currentSeconds + SESSION_TTL_SECONDS) return false;
   const expected = await sign(`${version}.${expires}`);
   if (expected.length !== signature.length) return false;
   let diff = 0;
