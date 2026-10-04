@@ -23,7 +23,7 @@ async function rpc(method: string, params: Record<string, unknown> = {}, session
 async function callTool(name: string, args: Record<string, unknown>, sessionId?: string) {
   const result = await rpc("tools/call", { name, arguments: args }, sessionId);
   if (result.payload.error) throw new Error(`MCP_TOOL_ERROR: ${result.payload.error.message || "unknown"}`);
-  if ((result.payload.result as {isError?: boolean})?.isError) throw new Error(`MCP_TOOL_ERROR: provider rejected ${name}`);
+  if ((result.payload.result as {isError?: boolean})?.isError) { const text = (result.payload.result as {content?:Array<{text?:string}>}).content?.map(item=>item.text).filter(Boolean).join(" ").slice(0,400); throw new Error(`MCP_TOOL_ERROR: provider rejected ${name}${text ? ` — ${text}` : ""}`); }
   return result;
 }
 
@@ -86,10 +86,13 @@ export async function publishWindsorPost(input: {pageId:string;content:string;im
     const response = await callTool("execute_action",{connector:"facebook_organic",account:input.pageId,action,params:input.imageUrl?{image_url:input.imageUrl,caption:input.content}:{message:input.content}},discovered.sessionId);
     const data = unwrap(contentJson(response.payload.result)) as {id?:string;post_id?:string;permalink?:string};
     const id = data?.id || data?.post_id;
-    if (typeof id!=="string"||!id.trim()) throw new Error("MCP_POST_ID_MISSING");
+    if (typeof id!=="string"||!id.trim()) throw new Error(`MCP_POST_ID_MISSING: ${JSON.stringify(response.payload.result).slice(0,400)}`);
     return {id,permalink:data.permalink,dryRun:false,provider:"facebook_mcp" as const};
   } catch(cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    // An explicit provider rejection means nothing was posted; surface it as a definite failure.
+    if (detail.startsWith("MCP_TOOL_ERROR")) throw cause;
     // A timeout can happen after Facebook accepted the post. Never retry blindly.
-    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة",{cause});
+    throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة (${detail.slice(0,400)})`,{cause});
   }
 }
