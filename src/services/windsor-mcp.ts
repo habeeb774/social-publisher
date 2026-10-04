@@ -18,7 +18,9 @@ async function rpc(method: string, params: Record<string, unknown> = {}, session
   const response = await fetch(endpoint(), { method: "POST", headers: {
     Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
     ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}),
-  }, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }) });
+  }, body: JSON.stringify(method.startsWith("notifications/")
+    ? { jsonrpc: "2.0", method, params }
+    : { jsonrpc: "2.0", id: Date.now(), method, params }) });
   if (response.status === 401 || response.status === 403) throw new Error("WINDSOR_AUTH_FAILED");
   if (!response.ok) throw new Error(`MCP_CONNECTION_FAILED: HTTP ${response.status}`);
   return { payload: parseResponse(await response.text()), sessionId: response.headers.get("mcp-session-id") || sessionId };

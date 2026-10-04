@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ provider: "windsor", mcpConnected: true, facebookOrganicConnected: result.facebookOrganicConnected, pageAvailable: Boolean(result.page), capabilities: { read: true, publishText, publishPhoto }, safeMode: process.env.PUBLISHING_ENABLED !== "true", actions: result.actions, page: result.page });
   } catch (error) {
     const message = error instanceof Error ? error.message : "MCP_CONNECTION_FAILED";
+    console.error("Facebook MCP connectivity test failed", { error: message.split("\n")[0] });
     const status = message === "WINDSOR_AUTH_FAILED" ? 401 : 502;
     return NextResponse.json({ provider: "windsor", status: message.split(":")[0], safeMode: process.env.PUBLISHING_ENABLED !== "true" }, { status });
   }
