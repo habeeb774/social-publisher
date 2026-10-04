@@ -12,3 +12,5 @@ Arabic RTL Facebook publishing dashboard built for Next.js + Neon PostgreSQL. Th
 The Facebook token is server-only and is never returned to the browser. Publishing stays in dry-run mode until explicitly enabled.
 
 Storage is intentionally provider-agnostic. Configure Cloudinary or Vercel Blob before enabling image uploads in production.
+
+Vercel can invoke `/api/cron/publish` every minute using `CRON_SECRET`; configure the secret in the deployment environment and use a scheduler plan that supports the declared frequency.
