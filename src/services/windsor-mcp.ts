@@ -3,6 +3,7 @@ type JsonRpcResponse = { result?: unknown; error?: { code?: number; message?: st
 const endpoint = () => process.env.WINDSOR_MCP_URL || "https://mcp.windsor.ai/";
 
 function parseResponse(text: string): JsonRpcResponse {
+  if (!text.trim()) return {};
   try { return JSON.parse(text) as JsonRpcResponse; } catch {}
   const events = text.split(/\r?\n\r?\n/).filter(Boolean);
   for (const event of events.reverse()) {
@@ -44,7 +45,6 @@ function contentJson(value: unknown): unknown {
 export async function testWindsorMcp() {
   const init = await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "social-publisher", version: "1.0.0" } });
   const sessionId = init.sessionId;
-  if (!sessionId) throw new Error("MCP_CONNECTION_FAILED: missing session id");
   await rpc("notifications/initialized", {}, sessionId);
   const tools = await rpc("tools/list", {}, sessionId);
   const toolNames = ((tools.payload.result as { tools?: Array<{ name?: string }> })?.tools || []).map((tool) => tool.name).filter(Boolean) as string[];
