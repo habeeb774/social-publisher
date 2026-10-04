@@ -52,6 +52,8 @@ export async function testWindsorMcp() {
   const data = contentJson(connectorsResponse.payload.result);
   const connectors = Array.isArray(data) ? data : ((data as { connectors?: unknown[] })?.connectors || []);
   console.error("Windsor MCP connector discovery", {
+    dataType: Array.isArray(data) ? "array" : typeof data,
+    dataKeys: data && typeof data === "object" ? Object.keys(data as Record<string, unknown>).sort() : [],
     count: connectors.length,
     shapes: (connectors as Array<Record<string, unknown>>).slice(0, 20).map((item) => Object.keys(item).sort()),
     identifiers: (connectors as Array<Record<string, unknown>>).slice(0, 20).map((item) => ({
