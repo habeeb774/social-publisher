@@ -27,3 +27,14 @@ body{font-family:"Tajawal",sans-serif}.app-layout,.settings-page,.login-page,.sh
 [data-theme="dark"] .post-form input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.9}
 [data-theme="dark"] .post-form input[type="datetime-local"]:invalid{color:#9299a6}
 [data-theme="light"] .post-form input[type="datetime-local"]{color-scheme:light;color:#172033}
+[data-theme="light"] body,[data-theme="light"] .app-layout,[data-theme="light"] .app-main{background:#f8fafc;color:#172033}
+[data-theme="light"] .sidebar,[data-theme="light"] .topbar{background:#fff;border-color:#e4e7ec}
+[data-theme="light"] .panel-card,[data-theme="light"] .metric-strip,[data-theme="light"] .detail-meta,[data-theme="light"] .social-preview,[data-theme="light"] .settings-nav,[data-theme="light"] .settings-content{background:#fff;border-color:#e7e9ee}
+[data-theme="light"] .page-intro h2,[data-theme="light"] .section-heading h2,[data-theme="light"] .settings-heading h1,[data-theme="light"] .settings-heading h2,[data-theme="light"] .detail-top h1,[data-theme="light"] .panel-heading h3,[data-theme="light"] .preview-card h3{color:#111827}
+[data-theme="light"] p,[data-theme="light"] .section-heading p,[data-theme="light"] .page-intro p{color:#667085}
+[data-theme="light"] .post-form input,[data-theme="light"] .post-form textarea,[data-theme="light"] .post-form select,[data-theme="light"] .search-box,[data-theme="light"] .posts-search{background:#fff;border-color:#e2e8f0;color:#172033}
+[data-theme="light"] .search-box input,[data-theme="light"] .posts-search input{color:#344054}
+[data-theme="light"] .theme-toggle{border-color:#e4e7ec;background:#fff;color:#667085}
+[data-theme="light"] .table-head,[data-theme="light"] .calendar-grid>b{background:#f8fafc;border-color:#e7e9ee}
+[data-theme="light"] .calendar-day{border-color:#e7e9ee;background:#fff;color:#344054}
+[data-theme="light"] .empty-state strong,[data-theme="light"] .ui-empty-state strong{color:#111827}
