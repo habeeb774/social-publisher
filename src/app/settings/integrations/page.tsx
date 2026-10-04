@@ -1,5 +1,6 @@
 import { getFacebookRuntimeStatus, testFacebookConnection } from "../../../services/facebook";
 import { TestConnectionButton } from "./test-connection";
+import { AppShell } from "../../ui/app-shell";
 
 export default async function IntegrationsSettings() {
   const publishingEnabled = process.env.PUBLISHING_ENABLED === "true";
@@ -14,7 +15,7 @@ export default async function IntegrationsSettings() {
   ] as const;
 
   return (
-    <main className="settings-page"><div className="settings-heading"><div><span className="section-kicker">البنية والاتصالات</span><h1>تكاملات النظام</h1><p>تحقق من جاهزية Facebook MCP والجدولة الخارجية من مكان واحد.</p></div><span className="safe-badge">Safe Mode مفعّل</span></div>
+    <AppShell title="التكاملات" eyebrow="إدارة النظام"><main className="settings-page"><div className="settings-heading"><div><span className="section-kicker">البنية والاتصالات</span><h1>تكاملات النظام</h1><p>تحقق من جاهزية Facebook MCP والجدولة الخارجية من مكان واحد.</p></div><span className="safe-badge">Safe Mode مفعّل</span></div>
       <section className="panel-card integration-card">
         <h2>Facebook MCP</h2>
         <p>MCP Provider: Windsor.ai</p>
@@ -44,6 +45,6 @@ export default async function IntegrationsSettings() {
         <p>Safe mode: {publishingEnabled ? "Disabled" : "Enabled"} — {publishingEnabled ? "Facebook publishing is enabled." : "no Facebook post will be created."}</p>
         <p className="muted">Scheduler محمي ويعمل عبر POST وAuthorization: Bearer CRON_SECRET. لا تضع السر في الواجهة أو GitHub.</p>
       </section>
-    </main>
+    </main></AppShell>
   );
 }
