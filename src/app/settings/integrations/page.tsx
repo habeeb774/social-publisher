@@ -2,6 +2,7 @@ import { getFacebookRuntimeStatus, testFacebookConnection } from "../../../servi
 import { TestConnectionButton } from "./test-connection";
 
 export default async function IntegrationsSettings() {
+  const publishingEnabled = process.env.PUBLISHING_ENABLED === "true";
   const capabilities = await testFacebookConnection();
   const runtimeStatus = getFacebookRuntimeStatus();
   const capabilityRows = [
@@ -40,8 +41,8 @@ export default async function IntegrationsSettings() {
         <p>Interval: Every minute</p>
         <p>Endpoint: <code>/api/cron/publish</code></p>
         <p>Worker: Protected by <code>CRON_SECRET</code></p>
-        <p>Safe mode: Enabled — no Facebook post will be created.</p>
-        <p className="muted">أنشئ Job خارجيًا من cron-job.org باستخدام POST وAuthorization: Bearer CRON_SECRET. لا تضع السر في الواجهة أو GitHub.</p>
+        <p>Safe mode: {publishingEnabled ? "Disabled" : "Enabled"} — {publishingEnabled ? "Facebook publishing is enabled." : "no Facebook post will be created."}</p>
+        <p className="muted">Scheduler محمي ويعمل عبر POST وAuthorization: Bearer CRON_SECRET. لا تضع السر في الواجهة أو GitHub.</p>
       </section>
     </main>
   );
