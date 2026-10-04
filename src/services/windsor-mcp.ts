@@ -49,7 +49,7 @@ export async function testWindsorMcp() {
   await rpc("notifications/initialized", {}, sessionId);
   const tools = await rpc("tools/list", {}, sessionId);
   const toolNames = ((tools.payload.result as { tools?: Array<{ name?: string }> })?.tools || []).map((tool) => tool.name).filter(Boolean) as string[];
-  const connectorsResponse = await callTool("get_connectors", { include_not_yet_connected: true, include_actions: true }, sessionId);
+  const connectorsResponse = await callTool("get_connectors", { include_not_yet_connected: false, include_actions: true }, sessionId);
   const rawData = contentJson(connectorsResponse.payload.result);
   const data = rawData && typeof rawData === "object" && "result" in rawData
     ? contentJson((rawData as { result?: unknown }).result)
@@ -58,7 +58,10 @@ export async function testWindsorMcp() {
   const organic = (connectors as Array<Record<string, unknown>>).find((item) => item.connector === "facebook_organic" || item.id === "facebook_organic");
   const actions = Array.isArray(organic?.actions) ? organic.actions : [];
   const actionIds = actions.map((action) => typeof action === "string" ? action : (action as { id?: string })?.id).filter(Boolean);
-  return { toolNames, facebookOrganicConnected: Boolean(organic), page: organic?.accounts || organic?.account || null, actions: actionIds };
+  const accounts = Array.isArray(organic?.accounts) ? organic.accounts : [];
+  const page = accounts.find(account => String((account as {id?:string}).id) === "1330947143441946") || null;
+  const ads = (connectors as Array<Record<string, unknown>>).find(item => item.id === "facebook");
+  return { toolNames, facebookOrganicConnected: accounts.length > 0, facebookAdsConnected: Array.isArray(ads?.accounts) && ads.accounts.length > 0, page, actions: actionIds };
 }
 
 /** Read-only discovery from the same machine-authenticated session the worker uses. */

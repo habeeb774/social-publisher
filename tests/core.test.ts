@@ -48,6 +48,9 @@ test("admin session cookie is signed and rejects forged values", async () => {
     const token = await createSessionToken();
     assert.equal(await verifySessionToken(token), true);
     assert.equal(await verifySessionToken("authenticated"), false);
+    assert.equal(await verifySessionToken(token + ".extra"), false);
+    assert.equal(await verifySessionToken(token.replace(/v1\.\d+/, "v1.NaN")), false);
+    assert.equal(await verifySessionToken(await createSessionToken(Date.now() + 3600 * 1000)), false);
     assert.equal(await verifySessionToken(token.slice(0, -1) + (token.endsWith("0") ? "1" : "0")), false);
     assert.equal(await verifySessionToken(await createSessionToken(Date.now() - 9 * 3600 * 1000)), false);
   } finally {
