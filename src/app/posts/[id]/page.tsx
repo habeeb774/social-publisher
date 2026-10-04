@@ -23,7 +23,7 @@ export default async function PostDetails({params}:{params:Promise<{id:string}>}
   ]);
   const {post,page}=row;
   return <AppShell title="تفاصيل المنشور" eyebrow="المنشورات">
-    <div className="detail-top"><div><h1>تفاصيل المنشور</h1><p>المحتوى وسجل التنفيذ الفعلي بتوقيت الرياض.</p></div><Link className="secondary-button" href="/posts">العودة للمنشورات</Link></div>
+    <div className="detail-top"><div><h1>تفاصيل المنشور</h1><p>المحتوى وسجل التنفيذ الفعلي بتوقيت الرياض.</p></div>{["draft","scheduled"].includes(post.status)&&<Link className="primary-button" href={`/posts/${id}/edit`}>تعديل المنشور</Link>}<Link className="secondary-button" href="/posts">العودة للمنشورات</Link></div>
     <div className="detail-meta"><span><b>الحالة</b><StatusBadge tone={post.status==="published"?"success":post.status==="failed"?"danger":"neutral"}>{labels[post.status]}</StatusBadge></span><span><b>معرّف المنشور</b><code>{id}</code></span><span><b>الصفحة</b>{page.name}</span><span><b>موعد النشر</b>{formatDate(post.scheduledAt)}</span></div>
     <div className="detail-layout"><section className="panel-card detail-preview"><h2>معاينة المحتوى</h2><div className="social-preview"><div className="preview-account"><span>f</span><strong>{page.name}</strong></div><p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{post.content}</p>
       {media.length?media.map(item=><p key={item.id}><a href={/^https:\/\//i.test(item.url)?item.url:undefined} target="_blank" rel="noopener noreferrer">عرض المرفق ({item.type})</a></p>):<div className="preview-placeholder">لا توجد مرفقات</div>}

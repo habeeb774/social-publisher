@@ -4,6 +4,16 @@ import { createSessionToken, verifySessionToken } from "../src/services/request-
 import test from "node:test";
 import { postInputSchema, classifyFacebookError } from "../src/services/posts";
 import { publishToFacebook } from "../src/services/facebook";
+import { isoToRiyadhInput, riyadhInputToIso } from "../src/services/post-time";
+
+test("scheduled posts require a future date and explicit Riyadh timezone",()=>{
+  const base={pageId:"page-1",content:"مرحبا",status:"scheduled"};
+  assert.equal(postInputSchema.safeParse(base).success,false);
+  assert.equal(postInputSchema.safeParse({...base,scheduledAt:"2000-01-01T00:00:00Z"}).success,false);
+  assert.equal(postInputSchema.safeParse({...base,scheduledAt:"2030-01-01T00:00:00Z",timezone:"UTC"}).success,false);
+  assert.equal(riyadhInputToIso("2030-01-01T00:30"),"2029-12-31T21:30:00.000Z");
+  assert.equal(isoToRiyadhInput("2029-12-31T21:30:00.000Z"),"2030-01-01T00:30");
+});
 
 test("post validation accepts a scheduled post", () => {
   const result = postInputSchema.parse({ pageId: "page-1", content: "مرحبا", scheduledAt: "2030-01-01T10:00:00Z", status: "scheduled" });

@@ -7,9 +7,10 @@ export async function publishDuePosts(limit = 10) {
   const db = getDb();
   const due = await db.select().from(posts).where(and(eq(posts.status, "scheduled"), isNull(posts.deletedAt), lte(posts.scheduledAt, new Date()))).orderBy(asc(posts.scheduledAt)).limit(limit);
   const results: Array<{ id: string; status: string }> = [];
-  for (const post of due) {
-    const claimed = await db.update(posts).set({ status: "publishing", updatedAt: new Date() }).where(and(eq(posts.id, post.id), eq(posts.status, "scheduled"), isNull(posts.deletedAt))).returning({ id: posts.id });
+  for (const candidate of due) {
+    const claimed = await db.update(posts).set({ status: "publishing", updatedAt: new Date() }).where(and(eq(posts.id, candidate.id), eq(posts.status, "scheduled"), isNull(posts.deletedAt), lte(posts.scheduledAt,new Date()))).returning();
     if (!claimed.length) continue;
+    const post=claimed[0];
     const startedAt = new Date();
     const [previousAttempts] = await db.select({ maximum: sql<number>`coalesce(max(${publicationAttempts.attemptNumber}), 0)` }).from(publicationAttempts).where(eq(publicationAttempts.postId, post.id));
     const attemptNumber = Number(previousAttempts.maximum) + 1;

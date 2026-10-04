@@ -1,12 +1,10 @@
-"use client";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
-import { AppShell } from "../../ui/app-shell";
-
-export default function NewPost(){
-  const [body,setBody]=useState("");
-  const [error,setError]=useState("");
-  const router=useRouter();
-  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();setError("");const form=new FormData(event.currentTarget);const scheduledAt=String(form.get("publish-at")||"");const response=await fetch("/api/posts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pageId:String(form.get("page")||"habeb"),content:body,scheduledAt:scheduledAt?new Date(scheduledAt).toISOString():undefined,timezone:String(form.get("timezone")||"Asia/Riyadh"),status:scheduledAt?"scheduled":"draft"})});if(!response.ok){const result=await response.json().catch(()=>({}));setError(result.error||"تعذر حفظ المنشور");return}router.push("/posts");}
-  return <AppShell title="إنشاء منشور" eyebrow="محرر المحتوى"><div className="composer-tabs"><button className="active">المحرر</button><button>المعاينة</button></div><div className="form-layout composer-layout"><section className="panel-card form-card"><div className="section-heading"><div><span className="section-kicker">منشور جديد</span><h2>اكتب محتوى يليق بعلامتك</h2><p>أنشئ المسودة ثم اختر وقت النشر والمنصة المستهدفة.</p></div><span className="safe-badge">وضع آمن</span></div>{error&&<div className="banner">{error}</div>}<form className="post-form" onSubmit={submit}><label htmlFor="page">1 · الصفحة المستهدفة<select id="page" name="page" defaultValue="habeb"><option value="habeb">م. حبيب اليوسفي Habeb Al‑Yousfi</option></select></label><label htmlFor="post-body">2 · نص المنشور<textarea id="post-body" required rows={8} value={body} onChange={e=>setBody(e.target.value)} placeholder="اكتب رسالتك هنا..."/><small className="character-count">{body.length} / 63206 حرفًا</small></label><div className="composer-section"><strong>3 · الوسائط</strong><div className="dropzone compact-dropzone"><span>＋</span><small>اسحب صورة أو اختر ملفًا · PNG, JPG حتى 10MB</small></div></div><div className="form-grid"><label htmlFor="publish-at">4 · موعد النشر<input id="publish-at" name="publish-at" type="datetime-local"/></label><label htmlFor="timezone">المنطقة الزمنية<select id="timezone" name="timezone" defaultValue="riyadh"><option value="Asia/Riyadh">Asia/Riyadh (UTC+3)</option></select></label></div><div className="form-actions composer-actions"><a className="secondary-button" href="/posts">إلغاء</a><button className="secondary-button" type="button">حفظ كمسودة</button><button className="primary-button" type="submit">جدولة المنشور <span>←</span></button></div></form></section><aside className="panel-card preview-card"><span className="section-kicker">معاينة مباشرة</span><h3>Facebook</h3><div className="preview-account"><span>f</span><div><strong>م. حبيب اليوسفي</strong><small>سيظهر المنشور هنا بعد الحفظ</small></div></div><p className="preview-copy">{body || "ستظهر معاينة نص المنشور هنا..."}</p><div className="preview-placeholder">لا توجد صورة مرفقة</div><div className="preview-footer">إعجاب · تعليق · مشاركة</div></aside></div></AppShell>
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { facebookPages } from "@/db/schema";
+import { isPublishingEnabled } from "@/services/publishing-mode";
+import PostEditor from "../post-editor";
+export const dynamic="force-dynamic";
+export default async function NewPost() {
+  const pages=await getDb().select({id:facebookPages.id,name:facebookPages.name}).from(facebookPages).where(eq(facebookPages.isActive,true));
+  return <PostEditor pages={pages} publishingEnabled={isPublishingEnabled()}/>;
 }
