@@ -34,6 +34,16 @@ export default async function IntegrationsSettings() {
           <div className="banner">BLOCKED_CAPABILITY: MCP tools موجودة، لكن Vercel Runtime لا يملك اتصال Windsor خادميًا مُعدًا بعد.</div>
         )}
       </section>
+      <section className="card">
+        <h2>Scheduler</h2>
+        <p>Provider: cron-job.org</p>
+        <p>Status: <strong>External scheduler required</strong></p>
+        <p>Interval: Every minute</p>
+        <p>Endpoint: <code>/api/cron/publish</code></p>
+        <p>Worker: Protected by <code>CRON_SECRET</code></p>
+        <p>Safe mode: Enabled — no Facebook post will be created.</p>
+        <p className="muted">أنشئ Job خارجيًا من cron-job.org باستخدام POST وAuthorization: Bearer CRON_SECRET. لا تضع السر في الواجهة أو GitHub.</p>
+      </section>
     </main>
   );
 }
