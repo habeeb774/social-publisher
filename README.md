@@ -13,6 +13,6 @@ Facebook access is provider-owned through the Windsor Facebook MCP; the applicat
 
 Storage is intentionally provider-agnostic. Configure Cloudinary or Vercel Blob before enabling image uploads in production.
 
-When the Vercel runtime connection is configured and verified, implement the MCP tool calls inside `src/services/facebook.ts`, then test with `PUBLISHING_ENABLED=false`. Do not enable `PUBLISHING_ENABLED=true` without explicit approval.
+The Vercel runtime connection is verified through `/api/integrations/facebook/test` without invoking a write tool. Keep `PUBLISHING_ENABLED=false` while validating the provider layer. Do not enable `PUBLISHING_ENABLED=true` without explicit approval.
 
-The protected `/api/cron/publish` endpoint is intentionally not declared as a Vercel Hobby Cron because Hobby accounts only support daily schedules. Use an external scheduler (for example cron-job.org or GitHub Actions) to call it at the required frequency with `CRON_SECRET`.
+The protected `/api/cron/publish` endpoint accepts the `Authorization: Bearer $CRON_SECRET` header and supports both GET (Vercel Cron) and POST. `vercel.json` declares the required per-minute schedule; Vercel Hobby rejects that frequency and requires Pro. Until the plan is upgraded, use an external scheduler to call the endpoint at the required frequency with `CRON_SECRET`.
