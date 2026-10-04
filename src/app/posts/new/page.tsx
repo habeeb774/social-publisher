@@ -1,0 +1,1 @@
+export default function NewPost(){return <main className="shell"><h1>إنشاء منشور</h1><form><label>نص المنشور<textarea required rows={8}/></label><label>موعد النشر<input type="datetime-local"/></label><button type="submit">حفظ كمسودة</button></form></main>}

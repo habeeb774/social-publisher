@@ -1,0 +1,1 @@
+export default function Import(){return <main className="shell"><h1>استيراد Excel</h1><p>ارفع ملف XLSX لمعاينة الصفوف قبل تحويلها إلى مسودات أو منشورات مجدولة.</p><form method="post" action="/api/import/preview" encType="multipart/form-data"><input name="file" type="file" accept=".xlsx,.xls,.csv" required/><button type="submit">معاينة الملف</button></form></main>}

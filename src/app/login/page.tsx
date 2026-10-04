@@ -1,0 +1,1 @@
+export default function Login(){return <main className="shell"><h1>تسجيل الدخول</h1><form method="post" action="/api/auth/login"><label>البريد الإلكتروني<input name="email" type="email" required /></label><label>كلمة المرور<input name="password" type="password" required /></label><button type="submit">دخول</button></form></main>}

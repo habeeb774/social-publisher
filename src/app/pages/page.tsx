@@ -1,0 +1,1 @@
+export default function Pages(){return <main className="shell"><h1>صفحات Facebook</h1><p>إدارة الصفحات واختبار الاتصال تتم Server-side ولا تظهر Tokens في الواجهة.</p><form method="post" action="/api/facebook/connection"><button type="submit">اختبار اتصال Facebook</button></form></main>}
