@@ -1,0 +1,21 @@
+name: publish-scheduler
+# Vercel cron is not active on this project; GitHub triggers the publishing worker instead.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: publish-scheduler
+  cancel-in-progress: false
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call publishing worker
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://social-publisher-gamma.vercel.app' }}
+        run: |
+          test -n "$CRON_SECRET" || { echo "CRON_SECRET secret is missing"; exit 1; }
+          curl --fail-with-body -sS -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/publish"

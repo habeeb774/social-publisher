@@ -1,3 +1,4 @@
+import { publishWindsorPost } from "./windsor-mcp";
 export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string };
 export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" };
 export type FacebookCapabilities = { connected: boolean; readAccount: boolean; listPages: boolean; readPosts: boolean; publishText: boolean; publishImage: boolean };
@@ -11,12 +12,11 @@ export class FacebookMcpProvider implements FacebookProvider {
     const runtimeConfigured = Boolean(process.env.WINDSOR_MCP_URL && process.env.WINDSOR_API_KEY);
     return { connected: false, readAccount: runtimeConfigured, listPages: runtimeConfigured, readPosts: runtimeConfigured, publishText: true, publishImage: true };
   }
-  async publish(_input: FacebookPublishInput): Promise<FacebookResult> { throw new Error("BLOCKED_CAPABILITY: Facebook MCP publishing tools are not connected"); }
+  async publish(input: FacebookPublishInput): Promise<FacebookResult> { return publishWindsorPost(input,process.env.PUBLISHING_ENABLED !== "true"); }
 }
 
 export const facebookProvider = new FacebookMcpProvider();
 export async function publishToFacebook(input: FacebookPublishInput): Promise<FacebookResult> {
-  if (process.env.PUBLISHING_ENABLED !== "true") return { id: `dry-run-${Date.now()}`, dryRun: true, provider: "facebook_mcp" };
   return facebookProvider.publish(input);
 }
 export async function testFacebookConnection() { return facebookProvider.getCapabilities(); }

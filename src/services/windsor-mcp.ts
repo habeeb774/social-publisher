@@ -30,6 +30,7 @@ async function rpc(method: string, params: Record<string, unknown> = {}, session
 async function callTool(name: string, args: Record<string, unknown>, sessionId?: string) {
   const result = await rpc("tools/call", { name, arguments: args }, sessionId);
   if (result.payload.error) throw new Error(`MCP_TOOL_ERROR: ${result.payload.error.message || "unknown"}`);
+  if ((result.payload.result as {isError?: boolean})?.isError) throw new Error(`MCP_TOOL_ERROR: provider rejected ${name}`);
   return result;
 }
 
@@ -58,4 +59,36 @@ export async function testWindsorMcp() {
   const actions = Array.isArray(organic?.actions) ? organic.actions : [];
   const actionIds = actions.map((action) => typeof action === "string" ? action : (action as { id?: string })?.id).filter(Boolean);
   return { toolNames, facebookOrganicConnected: Boolean(organic), page: organic?.accounts || organic?.account || null, actions: actionIds };
+}
+
+/** Read-only discovery from the same machine-authenticated session the worker uses. */
+export async function discoverWindsorPublishing() {
+  const init = await rpc("initialize", {protocolVersion:"2025-03-26",capabilities:{},clientInfo:{name:"social-publisher-worker",version:"1.0.0"}});
+  if (init.payload.error) throw new Error("MCP_RUNTIME_CONNECTION_REQUIRED");
+  await rpc("notifications/initialized",{},init.sessionId);
+  const listing = await rpc("tools/list",{},init.sessionId);
+  const executeSchema = (listing.payload.result as {tools?:Array<{name:string;inputSchema:unknown}>})?.tools?.find(tool=>tool.name==="execute_action")?.inputSchema;
+  const connectors = await callTool("get_connectors",{include_not_yet_connected:false,include_actions:true},init.sessionId);
+  const actions = await callTool("list_actions",{connector:"facebook_organic"},init.sessionId);
+  return {connectors:contentJson(connectors.payload.result), actions:contentJson(actions.payload.result), executeSchema, sessionId:init.sessionId};
+}
+
+function unwrap(value: unknown): unknown {
+  return value && typeof value === "object" && "result" in value ? unwrap((value as {result:unknown}).result) : value;
+}
+
+export async function publishWindsorPost(input: {pageId:string;content:string;imageUrl?:string}, dryRun:boolean) {
+  const discovered = await discoverWindsorPublishing();
+  const connectors = unwrap(discovered.connectors) as Array<{id:string;accounts?:Array<{id:string}>}>;
+  const organic = Array.isArray(connectors) ? connectors.find(item=>item.id==="facebook_organic") : undefined;
+  if (!organic?.accounts?.some(account=>String(account.id)===input.pageId)) throw new Error("FACEBOOK_ORGANIC_AUTH_REQUIRED");
+  const actions = unwrap(discovered.actions) as Array<{id:string}>;
+  const action = input.imageUrl ? "create_photo_post" : "create_post";
+  if (!Array.isArray(actions) || !actions.some(item=>item.id===action)) throw new Error("MCP_PUBLISH_ACTION_REQUIRED");
+  if (dryRun) return {id:"dry-run",dryRun:true,provider:"facebook_mcp" as const};
+  const response = await callTool("execute_action",{connector:"facebook_organic",account:input.pageId,action,params:input.imageUrl?{image_url:input.imageUrl,caption:input.content}:{message:input.content}},discovered.sessionId);
+  const data = unwrap(contentJson(response.payload.result)) as {id?:string;post_id?:string;permalink?:string};
+  const id = data?.id || data?.post_id;
+  if (!id) throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: do not retry automatically");
+  return {id,permalink:data.permalink,dryRun:false,provider:"facebook_mcp" as const};
 }

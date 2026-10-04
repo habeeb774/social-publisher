@@ -1,6 +1,6 @@
 import { and, eq, lte } from "drizzle-orm";
 import { getDb } from "@/db";
-import { posts, publicationAttempts } from "@/db/schema";
+import { facebookPages, posts, publicationAttempts } from "@/db/schema";
 import { publishToFacebook } from "./facebook";
 
 export async function publishDuePosts(limit = 10) {
@@ -12,9 +12,11 @@ export async function publishDuePosts(limit = 10) {
     if (!claimed.length) continue;
     const startedAt = new Date();
     try {
-      const result = await publishToFacebook({ pageId: process.env.META_PAGE_ID ?? "", content: post.content });
+      const [page] = await db.select().from(facebookPages).where(eq(facebookPages.id, post.pageId));
+      if (!page?.isActive) throw new Error("FACEBOOK_ORGANIC_AUTH_REQUIRED: target page is unavailable");
+      const result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content });
       await db.insert(publicationAttempts).values({ postId: post.id, attemptNumber: 1, status: result.dryRun ? "DRY_RUN_SUCCESS" : "success", startedAt, finishedAt: new Date(), facebookResponse: result });
-      await db.update(posts).set({ status: result.dryRun ? "scheduled" : "published", facebookPostId: result.dryRun ? null : result.id, facebookPermalink: result.permalink, publishedAt: result.dryRun ? null : new Date(), updatedAt: new Date() }).where(eq(posts.id, post.id));
+      await db.update(posts).set({ status: result.dryRun ? "draft" : "published", facebookPostId: result.dryRun ? null : result.id, facebookPermalink: result.permalink, publishedAt: result.dryRun ? null : new Date(), updatedAt: new Date() }).where(eq(posts.id, post.id));
       results.push({ id: post.id, status: result.dryRun ? "dry_run" : "published" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown publication error";
