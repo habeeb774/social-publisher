@@ -8,6 +8,8 @@ const PUBLIC = ["/login", "/api/", "/manifest.webmanifest", "/icon", "/apple-ico
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  // Only the supplied public brand assets are accessible before login.
+  if (/^\/brand\/(?:icon-(?:16x16|32x32|48x48|180x180|192x192|512x512)\.png|favicon\.ico)$/.test(path)) return NextResponse.next();
   if (PUBLIC.some((p) => path === p || path.startsWith(p))) return NextResponse.next();
   if (!(await isAdminRequest(request))) return NextResponse.redirect(new URL("/login", request.url));
   return NextResponse.next();
