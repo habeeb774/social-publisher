@@ -25,7 +25,7 @@ export async function publishDuePosts(limit = 10) {
       const media = await db.select().from(postMedia).where(eq(postMedia.postId, post.id));
       if (media.length > 1) throw new Error("MCP_MEDIA_UNSUPPORTED: multiple attachments cannot be published by this action");
       if (media.some(item => item.type !== "image")) throw new Error("MCP_MEDIA_UNSUPPORTED: only images are supported");
-      result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content, imageUrl: media[0]?.url });
+      result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content, imageUrl: media[0]?.url, platform: page.platform });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown publication error";
       const unknown=message.startsWith("MCP_PUBLISH_OUTCOME_UNKNOWN");

@@ -152,7 +152,7 @@ export async function syncComments(from:string,to:string){
   const db=database();const [run]=await db`INSERT INTO comments_sync_runs(status) VALUES('running') RETURNING id`;
   let imported=0;
   try{
-    const pages=await db`SELECT id,facebook_page_id FROM facebook_pages WHERE is_active`;
+    const pages=await db`SELECT id,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook'`;
     for(const page of pages){const rows=await commentsProvider.listPostComments(String(page.facebook_page_id),from,to);for(const remote of rows)if(await ingestComment(String(page.id),remote,String(page.facebook_page_id)))imported++;}
     await db`UPDATE comments_sync_runs SET status='success',imported=${imported},finished_at=now() WHERE id=${String(run.id)}::uuid`;return {imported};
   }catch(error){const code=error instanceof Error?error.message:"COMMENTS_READ_FAILED";await db`UPDATE comments_sync_runs SET status='blocked',error_code=${code.slice(0,100)},finished_at=now() WHERE id=${String(run.id)}::uuid`;throw error;}

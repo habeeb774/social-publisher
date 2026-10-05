@@ -10,6 +10,7 @@ import { EmptyState } from "../ui/empty-state";
 import { Icon } from "../ui/icons";
 import { PageHeader } from "../ui/kit";
 import { TestConnectionButton } from "../settings/integrations/test-connection";
+import { LinkInstagramButton } from "./link-instagram";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "صفحات Facebook" };
@@ -29,7 +30,7 @@ export default async function Pages() {
   ]);
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY);
   return <AppShell title="صفحات Facebook">
-    <PageHeader title="صفحات Facebook" description="الصفحات المتصلة وقدراتها. لا تُعرض أي رموز وصول." actions={canDiagnose ? <TestConnectionButton /> : undefined} />
+    <PageHeader title="الصفحات والحسابات" description="صفحات Facebook وحسابات Instagram المتصلة. لا تُعرض أي رموز وصول." actions={canDiagnose ? <><LinkInstagramButton /><TestConnectionButton /></> : undefined} />
     <section className="card card-flush">{!rows.length ? <EmptyState icon="pages" title="لا توجد صفحات متصلة" description="اربط صفحة عبر Windsor أو أضف توكن الصفحة في Vercel." action={<Link className="btn btn-secondary btn-sm" href="/settings/integrations">التكاملات</Link>} /> :
       rows.map(({ page, published, scheduled, lastPublish, lastFailure }) => {
         const state = !page.isActive ? "disabled" : graph || windsor ? (lastFailure && (!lastPublish || lastFailure > lastPublish) ? "error" : "connected") : "auth";

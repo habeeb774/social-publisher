@@ -105,3 +105,50 @@ export async function listPageCommentsGraph(pageId: string, since: Date, until: 
   }
   return out;
 }
+
+/** Instagram professional account linked to a Facebook page (needs instagram_basic). */
+export async function linkedInstagramAccount(pageId: string) {
+  const token = await pageToken(pageId);
+  const result = await graph(`/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}&access_token=${encodeURIComponent(token)}`);
+  if (!result.ok) throw new Error(graphError(result.body));
+  const ig = result.body.instagram_business_account as { id: string; username?: string } | undefined;
+  return ig ? { id: ig.id, username: ig.username ?? ig.id } : null;
+}
+
+/**
+ * Publishes one image with a caption to Instagram (needs instagram_content_publish).
+ * Instagram has no text-only posts. Container creation is safe to fail; once media_publish
+ * is called, network errors are reported as uncertain and never retried blindly.
+ */
+export async function publishInstagramGraph(input: { igUserId: string; content: string; imageUrl?: string }, dryRun: boolean) {
+  if (!input.imageUrl) throw new Error("INSTAGRAM_IMAGE_REQUIRED: انستجرام لا يقبل منشورًا بدون صورة");
+  if (input.content.length > 2200) throw new Error("INSTAGRAM_CAPTION_TOO_LONG: الحد 2200 حرف");
+  const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
+  if (dryRun) {
+    const check = await graph(`/${input.igUserId}?fields=id,username&access_token=${encodeURIComponent(token)}`);
+    if (!check.ok) throw new Error(graphError(check.body));
+    return { id: "dry-run", dryRun: true, provider: "facebook_graph" as const };
+  }
+  const container = await graph(`/${input.igUserId}/media`, { method: "POST", body: new URLSearchParams({ image_url: input.imageUrl, caption: input.content, access_token: token }) });
+  if (!container.ok || typeof container.body.id !== "string") throw new Error(graphError(container.body));
+  // Instagram fetches the image asynchronously; wait until the container is ready.
+  for (let i = 0; i < 10; i++) {
+    const status = await graph(`/${container.body.id}?fields=status_code&access_token=${encodeURIComponent(token)}`);
+    const code = status.body.status_code;
+    if (code === "FINISHED") break;
+    if (code === "ERROR" || code === "EXPIRED") throw new Error(`INSTAGRAM_MEDIA_FAILED: تعذر تجهيز الصورة (${String(code)})`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  let published: Awaited<ReturnType<typeof graph>>;
+  try {
+    published = await graph(`/${input.igUserId}/media_publish`, { method: "POST", body: new URLSearchParams({ creation_id: container.body.id, access_token: token }) });
+  } catch (cause) {
+    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من حساب انستجرام قبل أي إعادة محاولة", { cause });
+  }
+  if (published.body.error) throw new Error(graphError(published.body));
+  const id = published.body.id as string | undefined;
+  if (!id) throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من حساب انستجرام قبل أي إعادة محاولة");
+  const link = await graph(`/${id}?fields=permalink&access_token=${encodeURIComponent(token)}`).catch(() => null);
+  const permalink = link?.ok && typeof link.body.permalink === "string" ? link.body.permalink : undefined;
+  return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
+}
