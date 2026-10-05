@@ -8,13 +8,23 @@ export type PlanPost = {
   tags: string[];
 };
 
-type Theme = {
-  category: string;
-  title: string;
-  lesson: string;
-  example: string;
-  action: string;
-};
+type Theme = readonly [
+  category: string,
+  title: string,
+  lesson: string,
+  example: string,
+  action: string,
+];
+
+function unpack(theme: Theme) {
+  return {
+    category: theme[0],
+    title: theme[1],
+    lesson: theme[2],
+    example: theme[3],
+    action: theme[4],
+  };
+}
 
 const THEMES: Theme[] = [
   ["استراتيجية","تدقيق الأتمتة قبل البناء","ابدأ بجرد العمليات قبل اختيار أي أداة. العملية المتكررة والواضحة والقابلة للقياس هي المرشح الأفضل.","راجع أسبوع عمل كامل وحدد أين تتكرر نفس الخطوات ومن ينتظر من.","اختر عملية واحدة فقط واكتب وقتها الحالي وعدد مرات تكرارها."],
@@ -139,7 +149,8 @@ const EVENING_PREFIXES = [
   "قاعدة تشغيلية",
 ];
 
-function morningContent(theme: Theme, day: number) {
+function morningContent(themeTuple: Theme, day: number) {
+  const theme = unpack(themeTuple);
   const intros = [
     "التحسين الحقيقي يبدأ عندما تصبح العملية واضحة وقابلة للقياس.",
     "إذا أردت أتمتة مستقرة، لا تبدأ بالأداة؛ ابدأ بالمنطق.",
@@ -163,7 +174,8 @@ function morningContent(theme: Theme, day: number) {
   ].join("\n");
 }
 
-function eveningContent(theme: Theme, day: number) {
+function eveningContent(themeTuple: Theme, day: number) {
+  const theme = unpack(themeTuple);
   const prefix = EVENING_PREFIXES[(day - 1) % EVENING_PREFIXES.length];
   const prompts = [
     "ما الذي يمكن أن يفشل هنا؟ ضع الاستثناء قبل أن تضغط تشغيل.",
@@ -193,14 +205,15 @@ export function getPlanPost(index: number): PlanPost {
   if (!Number.isInteger(index) || index < 0 || index >= 180) throw new Error("Invalid plan index");
   const day = Math.floor(index / 2) + 1;
   const evening = index % 2 === 1;
-  const theme = THEMES[day - 1];
+  const themeTuple = THEMES[day - 1];
+  const theme = unpack(themeTuple);
   const title = evening ? EVENING_PREFIXES[(day - 1) % EVENING_PREFIXES.length] + ": " + theme.title : theme.title;
   return {
     index,
     day,
     slot: evening ? "evening" : "morning",
     title,
-    content: evening ? eveningContent(theme, day) : morningContent(theme, day),
+    content: evening ? eveningContent(themeTuple, day) : morningContent(themeTuple, day),
     category: theme.category,
     tags: ["ai-automation", "90-day-plan", "plan-index-" + String(index + 1), theme.category],
   };
