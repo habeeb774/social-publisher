@@ -1,11 +1,12 @@
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { publishWindsorPost, testWindsorMcp } from "./windsor-mcp";
+import { isGraphConfigured, publishGraphPost } from "./facebook-graph";
 export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string };
-export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" };
+export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" | "facebook_graph" };
 export type FacebookCapabilities = { connected: boolean; readAccount: boolean; listPages: boolean; readPosts: boolean; publishText: boolean; publishImage: boolean };
 export type FacebookRuntimeStatus = "connected" | "blocked" | "not_configured";
 
-/** Facebook provider boundary. Direct Graph API calls are intentionally not used. */
+/** Facebook provider boundary. Graph API (facebook-graph.ts) is used when META_PAGE_ACCESS_TOKEN is set. */
 export interface FacebookProvider { getCapabilities(): Promise<FacebookCapabilities>; publish(input: FacebookPublishInput): Promise<FacebookResult>; }
 
 export class FacebookMcpProvider implements FacebookProvider {
@@ -22,11 +23,14 @@ export class FacebookMcpProvider implements FacebookProvider {
 
 export const facebookProvider = new FacebookMcpProvider();
 export async function publishToFacebook(input: FacebookPublishInput): Promise<FacebookResult> {
+  // A page access token takes precedence: Windsor's Facebook connection lacks pages_manage_posts.
+  if (isGraphConfigured()) return publishGraphPost(input, !isPublishingEnabled());
   return facebookProvider.publish(input);
 }
 export async function testFacebookConnection() { return facebookProvider.getCapabilities(); }
 
 export function getFacebookRuntimeStatus(): FacebookRuntimeStatus {
+  if (isGraphConfigured()) return "connected";
   if (!process.env.WINDSOR_MCP_URL) return "not_configured";
   if (!process.env.WINDSOR_API_KEY) return "blocked";
   return "connected";

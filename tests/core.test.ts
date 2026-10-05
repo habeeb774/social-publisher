@@ -78,3 +78,30 @@ test("publishing flag tolerates dashboard formatting", () => {
     if (previous === undefined) delete process.env.PUBLISHING_ENABLED; else process.env.PUBLISHING_ENABLED = previous;
   }
 });
+
+test("page access token routes publishing through the Graph API", async () => {
+  const saved = { token: process.env.META_PAGE_ACCESS_TOKEN, flag: process.env.PUBLISHING_ENABLED };
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  process.env.META_PAGE_ACCESS_TOKEN = "test-token";
+  process.env.PUBLISHING_ENABLED = "true";
+  globalThis.fetch = async (url, init) => {
+    const href = String(url); calls.push(`${init?.method ?? "GET"} ${href.split("?")[0]}`);
+    if (href.includes("fields=access_token")) return new Response(JSON.stringify({ access_token: "page-token", id: "page-1" }));
+    if (init?.method === "POST") return new Response(JSON.stringify({ id: "page-1_99" }));
+    return new Response(JSON.stringify({ permalink_url: "https://facebook.com/page-1/posts/99" }));
+  };
+  try {
+    const result = await publishToFacebook({ pageId: "page-1", content: "اختبار" });
+    assert.equal(result.id, "page-1_99");
+    assert.equal(result.provider, "facebook_graph");
+    assert.equal(result.permalink, "https://facebook.com/page-1/posts/99");
+    assert.ok(calls.some(call => call.startsWith("POST") && call.endsWith("/page-1/feed")));
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: 200, message: "denied" } }), { status: 403 });
+    await assert.rejects(publishToFacebook({ pageId: "page-1", content: "x" }), /FACEBOOK_GRAPH_ERROR: \(#200\) denied/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (saved.token === undefined) delete process.env.META_PAGE_ACCESS_TOKEN; else process.env.META_PAGE_ACCESS_TOKEN = saved.token;
+    if (saved.flag === undefined) delete process.env.PUBLISHING_ENABLED; else process.env.PUBLISHING_ENABLED = saved.flag;
+  }
+});
