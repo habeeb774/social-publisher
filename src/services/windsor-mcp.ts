@@ -20,14 +20,14 @@ async function rpc(method: string, params: Record<string, unknown> = {}, session
   return { payload, sessionId: response.headers.get("mcp-session-id") || sessionId };
 }
 
-async function callTool(name: string, args: Record<string, unknown>, sessionId?: string) {
+export async function callTool(name: string, args: Record<string, unknown>, sessionId?: string) {
   const result = await rpc("tools/call", { name, arguments: args }, sessionId);
   if (result.payload.error) throw new Error(`MCP_TOOL_ERROR: ${result.payload.error.message || "unknown"}`);
   if ((result.payload.result as {isError?: boolean})?.isError) { const text = (result.payload.result as {content?:Array<{text?:string}>}).content?.map(item=>item.text).filter(Boolean).join(" ").slice(0,400); throw new Error(`MCP_TOOL_ERROR: provider rejected ${name}${text ? ` — ${text}` : ""}`); }
   return result;
 }
 
-function contentJson(value: unknown): unknown {
+export function contentJson(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const object = value as { structuredContent?: unknown; content?: Array<{ text?: string }> };
   if (object.structuredContent) return object.structuredContent;

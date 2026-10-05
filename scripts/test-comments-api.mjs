@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+const base=process.env.COMMENTS_TEST_BASE_URL??"http://localhost:3082";
+const login=await fetch(`${base}/api/auth/login`,{method:"POST",redirect:"manual",body:new URLSearchParams({email:"comments-test@example.invalid",password:"local-comments-test-only"})});
+assert.equal(login.status,303);const cookie=login.headers.get("set-cookie").split(";")[0];
+const read=async(query)=>{const r=await fetch(`${base}/api/comments${query}`,{headers:{cookie}});const body=await r.json();assert.equal(r.status,200,JSON.stringify(body));return body;};
+assert.equal((await fetch(`${base}/api/comments`)).status,401);
+assert.equal((await fetch(`${base}/api/cron/comments-sync`,{method:"POST"})).status,401);
+assert.equal((await fetch(`${base}/api/comments`,{method:"POST",headers:{cookie,"content-type":"application/json"},body:'{}'})).status,403);
+assert.equal((await fetch(`${base}/api/comments`,{method:"POST",headers:{cookie,origin:base,"content-type":"application/json"},body:'{"action":"note","id":"invalid"}'})).status,400);
+for(const query of ["","?view=metrics","?view=templates","?view=rules","?view=capabilities"])await read(query);
+console.log(JSON.stringify({authenticatedReads:true,unauthorizedDenied:true,crossOriginDenied:true,validation:true,cronProtected:true,realReplies:0}));

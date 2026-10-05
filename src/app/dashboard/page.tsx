@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CommentsHealth } from "../inbox/comments-health";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { posts, publicationAttempts, schedulerRuns } from "@/db/schema";
@@ -33,5 +34,6 @@ export default async function Dashboard() {
     <section className="dashboard-grid"><div className="panel-card"><div className="panel-heading"><h2>المنشور القادم</h2><Link href="/calendar">التقويم</Link></div>{next[0]?<div><p style={{whiteSpace:"pre-wrap"}}>{next[0].content}</p><p>{next[0].scheduledAt?.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"})}</p><Link href={`/posts/${next[0].id}`}>عرض التفاصيل</Link></div>:<div className="empty-state"><strong>لا توجد منشورات مجدولة</strong><Link href="/posts/new">إنشاء منشور</Link></div>}</div>
       <div className="panel-card"><h2>حالة الجدولة</h2><p>{run?.recent&&run.status==="success"?"وصل استدعاء ناجح خلال آخر 15 دقيقة":"لا يوجد تشغيل ناجح حديث؛ تحقق من خدمة الجدولة."}</p><p>آخر استدعاء: {run?run.triggeredAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"}):"لا يوجد"}</p><Link href="/settings/integrations">فحص التكاملات</Link></div>
     </section>{goals.length>0&&<section className="panel-card"><div className="panel-heading"><h2>أهداف الشهر</h2><Link href="/goals">كل الأهداف</Link></div>{goals.map(g=><div key={g.id} className="goal-row"><span>{g.category??"كل المنشورات"} · {g.published}/{g.target}</span><div className="progress"><span style={{width:`${g.percent}%`}}/></div></div>)}</section>}<section className="panel-card"><div className="panel-heading"><h2>آخر محاولات النشر</h2><Link href="/logs">كل السجلات</Link></div>{attempts.length?attempts.map(attempt=><div className="integration-row" key={attempt.id}><Link href={`/posts/${attempt.postId}`}>{attempt.status==="DRY_RUN_SUCCESS"?"اختبار آمن ناجح":attempt.status}</Link><time>{attempt.createdAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"})}</time></div>):<p>لم تُسجل محاولات نشر.</p>}</section>
+    <CommentsHealth compact/>
   </AppShell>;
 }

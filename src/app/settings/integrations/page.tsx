@@ -1,4 +1,5 @@
 import { isPublishingEnabled } from "@/services/publishing-mode";
+import { CommentsHealth } from "../../inbox/comments-health";
 import { desc, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schedulerRuns } from "@/db/schema";
@@ -36,5 +37,6 @@ export default async function IntegrationsSettings() {
       <StatusRow label="Real publishing" value={publishingEnabled?"Enabled":"Disabled"}/>
       <p>لا تُعرض الأسرار في الواجهة. نجاح الاستدعاء لا يثبت نجاح إنشاء منشور على Facebook.</p>
     </section></div>
+    <CommentsHealth/>
   </main></AppShell>;
 }

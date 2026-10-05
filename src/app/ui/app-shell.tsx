@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 const groups: Array<{ title: string; links: Array<[string, string, string]> }> = [
   { title: "المحتوى", links: [["⌂", "الرئيسية", "/dashboard"], ["▤", "المنشورات", "/posts"], ["☰", "الطابور", "/queue"], ["◷", "التقويم", "/calendar"], ["✦", "الحملات", "/campaigns"], ["◎", "الأهداف", "/goals"]] },
   { title: "المكتبة", links: [["▦", "الوسائط", "/media"], ["❏", "القوالب", "/templates"], ["❖", "المكتبة", "/library"], ["✎", "الأفكار", "/ideas"], ["↻", "إعادة الاستخدام", "/recycle"], ["⇧", "الاستيراد", "/import"]] },
-  { title: "المتابعة", links: [["▲", "التحليلات", "/analytics"], ["!", "المنشورات الفاشلة", "/failed"], ["⌁", "السجلات", "/logs"], ["◉", "حالة النظام", "/status"]] },
+  { title: "المتابعة", links: [["✉", "صندوق الوارد", "/inbox"], ["▲", "التحليلات", "/analytics"], ["!", "المنشورات الفاشلة", "/failed"], ["⌁", "السجلات", "/logs"], ["◉", "حالة النظام", "/status"]] },
   { title: "الإعداد", links: [["f", "صفحات Facebook", "/pages"], ["⚙", "الإعدادات", "/settings"]] },
 ];
 const commands: Array<{ label: string; href: string; keys?: string }> = [
@@ -32,6 +32,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [needsReply, setNeedsReply] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -47,6 +48,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const paletteRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => { const load=()=>fetch("/api/comments?view=metrics").then(r=>r.ok?r.json():null).then(d=>{if(d)setNeedsReply(d.needs_reply??0);}).catch(()=>{});load();const timer=setInterval(load,60000);return()=>clearInterval(timer); },[]);
   useEffect(() => { const load = () => fetch("/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {}); load(); const timer = setInterval(load, 60000); return () => clearInterval(timer); }, []);
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null)); }, []);
   // Debounced global search shared by the topbar box and the command palette.
@@ -76,7 +78,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     {open && <button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setOpen(false)} />}
     <aside className={`sidebar ${open ? "drawer-open" : ""}`}>
       <div className="app-brand"><div><BrandLogo /><small>منصة النشر الذكي</small></div><button className="drawer-close" aria-label="إغلاق القائمة" onClick={() => setOpen(false)}>×</button></div>
-      <nav className="side-nav" aria-label="التنقل الرئيسي">{groups.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}</Link>)}</div>)}</nav>
+      <nav className="side-nav" aria-label="التنقل الرئيسي">{groups.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}{href==="/inbox"&&needsReply>0&&<b className="comment-tag">{needsReply}</b>}</Link>)}</div>)}</nav>
       <div className="side-bottom"><div className="safe-mini"><span className="status-dot" />{live ? "النشر الحقيقي" : "وضع الاختبار"}<small>{live ? "المنشورات المجدولة تُنشر فعليًا" : live === null ? "جارٍ التحقق من الحالة" : "النشر الحقيقي متوقف"}</small></div><div className="profile-mini"><span className="avatar">م</span><div><strong>م. حبيب</strong><small>مشرف النظام</small></div><Link href="/settings" aria-label="إعدادات الحساب">⚙</Link></div><form method="post" action="/api/auth/logout"><button className="logout" type="submit">↪ تسجيل الخروج</button></form></div>
     </aside>
     <main className="app-main">

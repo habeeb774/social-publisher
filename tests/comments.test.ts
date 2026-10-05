@@ -1,0 +1,18 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { classify,evaluateRules,flags,retryRead,ruleSchema,withinBusinessHours } from "../src/services/comments/rules";
+import { WindsorFacebookCommentsProvider } from "../src/services/comments/provider";
+const rule=(id:string,priority=100,stopAfterMatch=true)=>({id,...ruleSchema.parse({name:id,action:"important",keywords:["سعر","بكم"],priority,active:true,stopAfterMatch})});
+const comment={message:"بكم سعر المنتج؟",pageId:"page",postId:"post",authorId:"customer",isFromPage:false,hidden:false,replied:false};
+test("rules use OR keywords and stable priority",()=>{const result=evaluateRules(comment,[rule("second",20,false),rule("first",10,false)],new Date("2026-10-05T10:00:00Z"));assert.deepEqual(result.matches.map(m=>m.rule.id),["first","second"]);});
+test("stop after match",()=>assert.equal(evaluateRules(comment,[rule("first",10),rule("second",20)]).matches.length,1));
+test("self replies, hidden comments and previously replied comments cannot loop",()=>{for(const patch of [{isFromPage:true},{hidden:true},{replied:true}])assert.equal(evaluateRules({...comment,...patch},[rule("a")]).matches.length,0);});
+test("unknown author cannot trigger automation",()=>assert.equal(evaluateRules({...comment,authorId:null},[rule("a")]).reason,"AUTHOR_ID_UNAVAILABLE"));
+test("sensitive comments require human review",()=>assert.equal(evaluateRules({...comment,message:"شكوى استرجاع الدفع"},[rule("a")]).reason,"HUMAN_REVIEW_REQUIRED"));
+test("business hours use Riyadh timezone",()=>{assert.equal(withinBusinessHours(new Date("2026-10-05T05:00:00Z")),true);assert.equal(withinBusinessHours(new Date("2026-10-05T20:00:00Z")),false);});
+test("outside working hours prepares follow-up, not a reply",()=>assert.equal(evaluateRules(comment,[rule("a")],new Date("2026-10-05T23:00:00Z")).matches[0].action,"follow_up"));
+test("classification is deterministic, not AI",()=>{assert.equal(classify("كم السعر"),"price");assert.equal(classify("أريد شراء"),"purchase");assert.equal(classify("شكرا"),"positive");});
+test("rules reject missing reply template and approval defaults true",()=>{assert.equal(ruleSchema.safeParse({name:"a",action:"reply_template",keywords:["x"]}).success,false);assert.equal(rule("a").requireApproval,true);});
+test("read retry bounded, permission/auth/write timeout never retried",()=>{assert.equal(retryRead("COMMENTS_TIMEOUT",2),true);assert.equal(retryRead("COMMENTS_TIMEOUT",3),false);for(const code of ["COMMENTS_PERMISSION_DENIED","COMMENTS_AUTH_REQUIRED","COMMENTS_REPLY_FAILED","COMMENTS_REPLY_OUTCOME_UNKNOWN"])assert.equal(retryRead(code,0),false);});
+test("reply features default disabled",()=>{const keys=["COMMENT_AUTOMATION_ENABLED","FACEBOOK_COMMENT_REPLIES_ENABLED","AUTO_COMMENT_REPLIES_ENABLED"];const previous=keys.map(k=>process.env[k]);try{keys.forEach(k=>delete process.env[k]);assert.deepEqual(flags(),{automation:false,replies:false,autoReplies:false});}finally{keys.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});}});
+test("unsupported write operations never call MCP",async()=>{const provider=new WindsorFacebookCommentsProvider();await assert.rejects(provider.replyToComment(),/COMMENTS_REPLY_UNAVAILABLE/);await assert.rejects(provider.hideComment(),/COMMENTS_HIDE_UNAVAILABLE/);await assert.rejects(provider.unhideComment(),/COMMENTS_HIDE_UNAVAILABLE/);});
