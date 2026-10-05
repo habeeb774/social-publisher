@@ -7,6 +7,7 @@ import { sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
+import { syncComments } from "@/services/comments/store";
 
 const GAP_ALERT_MINUTES = 10;
 
@@ -42,6 +43,11 @@ async function run(request: Request) {
   await runHealthChecks();
   // Recurring rules create their upcoming instances before the due-post scan.
   await materializeRecurrences().catch((error) => console.error("Recurrence materialization failed", { error: error instanceof Error ? error.message : String(error) }));
+  // Pull new comments every 5 minutes (last 2 days); never blocks publishing.
+  if (isGraphConfigured() && startedAt.getUTCMinutes() % 5 === 0) {
+    const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
+    await syncComments(day(2), day(0)).catch((error) => console.error("Comments sync failed", { error: error instanceof Error ? error.message : String(error) }));
+  }
   try {
     const results = await publishDuePosts();
     const finishedAt = new Date();

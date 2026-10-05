@@ -1,5 +1,5 @@
 import { callTool, contentJson, discoverWindsorPublishing } from "../windsor-mcp";
-import { isGraphConfigured, replyToCommentGraph } from "../facebook-graph";
+import { isGraphConfigured, listPageCommentsGraph, replyToCommentGraph } from "../facebook-graph";
 
 export type RemoteComment = { id:string; pageId:string; postId:string|null; parentId:string|null; message:string; createdTime:Date; hidden:boolean; authorId:string|null; authorName:string|null; authorAvatar:string|null; permalink:string|null };
 export type CommentsCapabilities = { connected:boolean; pageIds:string[]; read:boolean; repliesRead:boolean; reply:boolean; hide:boolean; unhide:boolean; delete:boolean; author:boolean; permalink:boolean; webhook:boolean; rateLimitKnown:boolean; reason:string|null; checkedAt:string };
@@ -20,6 +20,8 @@ export const COMMENT_FIELDS=["account_id","post_id","comment_id","comment_parent
 export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider {
   async capabilities():Promise<CommentsCapabilities> {
     const checkedAt=new Date().toISOString();
+    // The Graph page token (pages_read_engagement + pages_manage_engagement) covers read, authors and replies.
+    if(isGraphConfigured())return {connected:true,pageIds:[],read:true,repliesRead:true,reply:true,hide:false,unhide:false,delete:false,author:true,permalink:true,webhook:false,rateLimitKnown:false,reason:null,checkedAt};
     try {
       const discovery=await discoverWindsorPublishing();
       const connectors=unwrap(discovery.connectors) as Array<{id:string;accounts?:Array<{id:string}>}>;
@@ -33,7 +35,11 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
       return {connected:pageIds.length>0,pageIds,read,repliesRead:read&&ids.has("comment_parent_id"),reply,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:!read?"COMMENTS_READ_UNAVAILABLE":reply?null:"COMMENTS_REPLY_UNAVAILABLE",checkedAt};
     } catch {return {connected:false,pageIds:[],read:false,repliesRead:false,reply:false,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:"COMMENTS_AUTH_REQUIRED",checkedAt};}
   }
-  async listPostComments(pageId:string,from:string,to:string) {
+  async listPostComments(pageId:string,from:string,to:string):Promise<RemoteComment[]> {
+    if(isGraphConfigured()){
+      const rows=await listPageCommentsGraph(pageId,new Date(`${from}T00:00:00Z`),new Date(`${to}T23:59:59Z`));
+      return rows.map(c=>({id:c.id,pageId,postId:c.postId,parentId:c.parentId,message:c.message,createdTime:new Date(c.createdTime),hidden:c.hidden,authorId:c.authorId,authorName:c.authorName,authorAvatar:null,permalink:c.permalink}));
+    }
     const caps=await this.capabilities();
     if(!caps.connected||!caps.pageIds.includes(pageId))throw new Error("COMMENTS_AUTH_REQUIRED");
     if(!caps.read)throw new Error("COMMENTS_READ_UNAVAILABLE");

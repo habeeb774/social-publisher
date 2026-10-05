@@ -78,3 +78,30 @@ export async function inspectGraphToken() {
   const expiry = data.expires_at ? new Date(data.expires_at * 1000) : null;
   return { valid: Boolean(data.is_valid), expiresAt: expiry, reason: data.error?.message ?? null };
 }
+
+export type GraphComment = { id: string; postId: string; parentId: string | null; message: string; createdTime: string; hidden: boolean; authorId: string | null; authorName: string | null; permalink: string | null };
+
+/** Comments (and replies) on the page's recent posts. Needs pages_read_engagement. */
+export async function listPageCommentsGraph(pageId: string, since: Date, until: Date) {
+  const token = await pageToken(pageId);
+  const fields = "id,created_time,comments.limit(100){id,message,created_time,from,is_hidden,permalink_url,comments.limit(100){id,message,created_time,from,is_hidden,permalink_url}}";
+  const out: GraphComment[] = [];
+  let path: string | null = `/${pageId}/feed?fields=${encodeURIComponent(fields)}&limit=25&access_token=${encodeURIComponent(token)}`;
+  // Posts older than the window can still get new comments; scan a bounded number of recent posts.
+  for (let page = 0; path && page < 4; page++) {
+    const result = await graph(path);
+    if (!result.ok) throw new Error(graphError(result.body));
+    type Raw = { id: string; message?: string; created_time: string; from?: { id: string; name?: string }; is_hidden?: boolean; permalink_url?: string; comments?: { data: Raw[] } };
+    for (const post of (result.body.data ?? []) as Array<{ id: string; comments?: { data: Raw[] } }>) {
+      const add = (c: Raw, parentId: string | null) => {
+        const t = new Date(c.created_time);
+        if (t < since || t > until) return;
+        out.push({ id: c.id, postId: post.id, parentId, message: c.message ?? "", createdTime: c.created_time, hidden: Boolean(c.is_hidden), authorId: c.from?.id ?? null, authorName: c.from?.name ?? null, permalink: c.permalink_url ?? null });
+      };
+      for (const c of post.comments?.data ?? []) { add(c, null); for (const r of c.comments?.data ?? []) add(r, c.id); }
+    }
+    const next = (result.body.paging as { next?: string } | undefined)?.next;
+    path = next ? next.replace(base(), "") : null;
+  }
+  return out;
+}
