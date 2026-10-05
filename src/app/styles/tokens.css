@@ -4,7 +4,7 @@
    preference when the user chose "system".
    ========================================================================== */
 :root {
-  --font: "Alexandria", "Segoe UI", Tahoma, system-ui, sans-serif;
+  --font: "Tajawal", "Segoe UI", Tahoma, system-ui, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
 
   /* Type scale (dense, readable) */
