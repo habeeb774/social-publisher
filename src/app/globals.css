@@ -55,3 +55,4 @@ body{font-family:"Tajawal",sans-serif}.app-layout,.settings-page,.login-page,.sh
 .primary-button:disabled,.secondary-button:disabled{opacity:.55;cursor:wait;transform:none}.post-form fieldset{display:grid;gap:20px}.post-form .form-actions{flex-wrap:wrap}
 [data-theme="dark"] .secondary-button{background:#191e28;border-color:#414958;color:#f5f7fa}[data-theme="dark"] .secondary-button:hover{background:#252d3b}
 [data-theme="light"] .top-safe{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe}[data-theme="dark"] .top-safe{background:#252342;color:#ddd6fe;border:1px solid #514c79}
+.notification-panel{width:300px;max-height:420px;overflow-y:auto}.notification-count{position:absolute;top:-4px;left:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#dc2626;color:#fff;font-size:10px;line-height:16px;text-align:center}.top-icon{position:relative}

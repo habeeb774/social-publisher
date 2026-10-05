@@ -105,3 +105,13 @@ test("page access token routes publishing through the Graph API", async () => {
     if (saved.flag === undefined) delete process.env.PUBLISHING_ENABLED; else process.env.PUBLISHING_ENABLED = saved.flag;
   }
 });
+
+test("alerts never throw when the database is unavailable", async () => {
+  const { sendAlert } = await import("../src/services/alerts");
+  const saved = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  try {
+    const result = await sendAlert("publish_failed", "t", "m");
+    assert.equal(result.sent, false);
+  } finally { if (saved !== undefined) process.env.DATABASE_URL = saved; }
+});

@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, publicationAttempts } from "@/db/schema";
 import { publishToFacebook, type FacebookResult } from "./facebook";
+import { sendAlert } from "./alerts";
 
 export async function publishDuePosts(limit = 10) {
   const db = getDb();
@@ -33,6 +34,13 @@ export async function publishDuePosts(limit = 10) {
         db.update(posts).set({ status: "failed", lastError: message, failedAt: new Date(), updatedAt: new Date() }).where(eq(posts.id, post.id)),
       ]);
       results.push({ id: post.id, status: "failed" });
+      const when = new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" }).format(post.scheduledAt ?? new Date());
+      await sendAlert("publish_failed", `فشل نشر منشور (${post.id.slice(0, 8)})`, `${unknown ? "نتيجة النشر غير مؤكدة: تحقق من الصفحة قبل إعادة المحاولة." : "لم يُنشر المنشور."}
+
+الموعد: ${when}
+النص: ${post.content.slice(0, 120)}
+
+الخطأ: ${message.slice(0, 500)}`);
       continue;
     }
     // Commit both records atomically. If persistence fails after a successful write,

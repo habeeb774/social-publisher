@@ -2,6 +2,30 @@ import { NextResponse } from "next/server";
 import { publishDuePosts } from "@/services/publisher";
 import { getDb } from "@/db";
 import { schedulerRuns } from "@/db/schema";
+import { desc } from "drizzle-orm";
+import { sendAlert } from "@/services/alerts";
+import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
+
+const GAP_ALERT_MINUTES = 10;
+
+/** Health checks that run alongside the worker; failures here never block publishing. */
+async function runHealthChecks() {
+  try {
+    const [previous] = await getDb().select({ triggeredAt: schedulerRuns.triggeredAt }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(1);
+    const gapMinutes = previous ? Math.round((Date.now() - previous.triggeredAt.getTime()) / 60000) : 0;
+    if (gapMinutes > GAP_ALERT_MINUTES) await sendAlert("scheduler_gap", "توقف عامل النشر ثم عاد", `لم يعمل عامل النشر لمدة ${gapMinutes} دقيقة. المنشورات المستحقة خلال التوقف تُنشر الآن. تحقق من مهمة cron-job.org إذا تكرر هذا.`, 1);
+    // Token inspection is a network call; once an hour is enough.
+    if (isGraphConfigured() && new Date().getUTCMinutes() === 0) {
+      const token = await inspectGraphToken();
+      if (!token.valid) await sendAlert("token_invalid", "توكن فيسبوك غير صالح", `النشر سيفشل حتى تولّد توكناً جديداً وتضعه في META_PAGE_ACCESS_TOKEN على Vercel.
+
+السبب: ${token.reason ?? "غير معروف"}`, 24);
+      else if (token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400 * 1000) await sendAlert("token_expiring", "توكن فيسبوك ينتهي قريباً", `ينتهي التوكن في ${token.expiresAt.toISOString().slice(0, 10)}. مدّده من أداة تصحيح رموز الوصول في Meta، ثم حدّث META_PAGE_ACCESS_TOKEN على Vercel.`, 24);
+    }
+  } catch (error) {
+    console.error("Health checks failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+}
 
 async function run(request: Request) {
   // Dashboard-entered values often carry stray whitespace or quotes; normalize both sides before comparing.
@@ -12,6 +36,7 @@ async function run(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date();
+  await runHealthChecks();
   try {
     const results = await publishDuePosts();
     const finishedAt = new Date();

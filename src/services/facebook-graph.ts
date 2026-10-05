@@ -54,3 +54,13 @@ export async function publishGraphPost(input: { pageId: string; content: string;
   const permalink = link?.ok && typeof link.body.permalink_url === "string" ? link.body.permalink_url : undefined;
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
 }
+
+/** Reports token validity and expiry (expiresAt null = never expires). */
+export async function inspectGraphToken() {
+  const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
+  const result = await graph(`/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`);
+  const data = (result.body.data ?? {}) as { is_valid?: boolean; expires_at?: number; data_access_expires_at?: number; error?: { message?: string } };
+  if (!result.ok) return { valid: false, expiresAt: null, reason: graphError(result.body) };
+  const expiry = data.expires_at ? new Date(data.expires_at * 1000) : null;
+  return { valid: Boolean(data.is_valid), expiresAt: expiry, reason: data.error?.message ?? null };
+}
