@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { mediaAssets, postMedia } from "@/db/schema";
 import { normalizeTags } from "./catalog";
 import { approvalRequired } from "./post-ops";
+import { getPublishingRules } from "./rules-store";
+import { nextAllowed, violation } from "./publishing-rules";
 import type { postInputSchema } from "./posts";
 import type { z } from "zod";
 
@@ -11,10 +13,13 @@ type Input = z.infer<typeof postInputSchema>;
 /** Maps validated editor input to DB fields. Scheduling goes to approval when the workflow is enabled. */
 export async function toPostFields(data: Input) {
   const status = data.status === "scheduled" && await approvalRequired() ? "pending_approval" as const : data.status;
+  // "shift" mode moves a scheduled time out of quiet days / the blocked window; "warn" leaves it.
+  let scheduledAt = data.scheduledAt ?? null;
+  if (data.status === "scheduled" && scheduledAt) { const rules = await getPublishingRules(); if (rules.window.mode === "shift" && violation(scheduledAt, rules)) scheduledAt = nextAllowed(scheduledAt, rules) ?? scheduledAt; }
   return {
     content: data.content,
     status,
-    scheduledAt: data.status === "scheduled" ? data.scheduledAt ?? null : data.scheduledAt ?? null,
+    scheduledAt,
     timezone: data.timezone,
     ...(data.category !== undefined ? { category: data.category } : {}),
     ...(data.tags !== undefined ? { tags: normalizeTags(data.tags) } : {}),

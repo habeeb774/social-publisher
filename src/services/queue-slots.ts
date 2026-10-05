@@ -7,7 +7,7 @@ export function isValidSlot(slot: Slot) {
 }
 
 /** Returns the next `count` free slot instants strictly after `from` (plus a 1-minute safety margin). */
-export function nextFreeSlots(slots: Slot[], from: Date, count: number, taken: Iterable<number> = [], horizonDays = 120) {
+export function nextFreeSlots(slots: Slot[], from: Date, count: number, taken: Iterable<number> = [], horizonDays = 120, allowed: (at: Date) => boolean = () => true) {
   const valid = slots.filter(isValidSlot);
   if (!valid.length || count <= 0) return [];
   const busy = new Set(Array.from(taken, (ms) => Math.floor(ms / 60000)));
@@ -21,7 +21,7 @@ export function nextFreeSlots(slots: Slot[], from: Date, count: number, taken: I
     for (const time of times) {
       const [h, m] = time.split(":").map(Number);
       const at = dayStart + (h * 60 + m) * 60000;
-      if (at < earliest || busy.has(Math.floor(at / 60000))) continue;
+      if (at < earliest || busy.has(Math.floor(at / 60000)) || !allowed(new Date(at))) continue;
       busy.add(Math.floor(at / 60000));
       result.push(new Date(at));
       if (result.length === count) break;

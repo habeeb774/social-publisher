@@ -4,7 +4,7 @@ import { isAdminRequest } from "@/services/request-auth";
 
 // Deny by default: every page needs a session except these. API routes enforce auth themselves
 // (they return 401 JSON instead of redirecting), so new pages are protected without listing them.
-const PUBLIC = ["/login", "/api/", "/manifest.webmanifest", "/icon", "/robots.txt"];
+const PUBLIC = ["/login", "/api/", "/manifest.webmanifest", "/icon", "/apple-icon", "/robots.txt"];
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;

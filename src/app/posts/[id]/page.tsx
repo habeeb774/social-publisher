@@ -8,6 +8,7 @@ import { StatusBadge } from "../../ui/status-badge";
 import { STATUS_LABELS as labels } from "../../ui/api";
 import { approvalRequired } from "@/services/post-ops";
 import { InternalNotes, PostActions, PostPerformance, VersionHistory } from "./post-panels";
+import { RecurrencePanel } from "./recurrence-panel";
 
 export const dynamic = "force-dynamic";
 function formatDate(value: Date | null) {
@@ -39,6 +40,6 @@ export default async function PostDetails({params}:{params:Promise<{id:string}>}
       {attempts.map(attempt=><div key={attempt.id} className="attempt"><div><strong>المحاولة {attempt.number} · {attempt.status==="DRY_RUN_SUCCESS"?"اختبار آمن ناجح — لم يُنشر فعليًا":attempt.status}</strong><small>{formatDate(attempt.startedAt)}</small>{attempt.error && <p>{attempt.error}</p>}</div></div>)}
       {attempts.some(attempt=>attempt.status==="DRY_RUN_SUCCESS") && post.status==="draft" && <p>أُعيد المنشور إلى مسودة بعد الاختبار الآمن لمنع تكرار الاختبار تلقائيًا.</p>}
     </aside></div>
-    <div className="detail-layout">{post.status==="published"&&<PostPerformance id={id}/>}<VersionHistory id={id} editable={["draft","scheduled","pending_approval","approved"].includes(post.status)}/><InternalNotes id={id}/></div>
+    <div className="detail-layout">{post.status==="published"&&<PostPerformance id={id}/>}{post.status!=="published"&&!post.recurrenceId&&<RecurrencePanel id={id}/>}<VersionHistory id={id} editable={["draft","scheduled","pending_approval","approved"].includes(post.status)}/><InternalNotes id={id}/></div>
   </AppShell>;
 }

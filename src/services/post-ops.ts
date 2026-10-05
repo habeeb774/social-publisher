@@ -6,6 +6,8 @@ import { currentActor, logAudit } from "./audit";
 import { nextFreeSlots } from "./queue-slots";
 import { sendAlert } from "./alerts";
 import { prePublishChecks } from "./prepublish";
+import { getPublishingRules } from "./rules-store";
+import { violation } from "./publishing-rules";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -142,7 +144,9 @@ export async function recomputeQueue(order?: string[]) {
   }
   if (!slots.length) return [];
   const fixed = await db.select({ at: posts.scheduledAt }).from(posts).where(and(eq(posts.inQueue, false), eq(posts.status, "scheduled"), isNull(posts.deletedAt)));
-  const times = nextFreeSlots(slots, new Date(), queued.length, fixed.map((row) => row.at!.getTime()));
+  const rules = await getPublishingRules();
+  // Queue slots inside quiet days or the blocked window are skipped.
+  const times = nextFreeSlots(slots, new Date(), queued.length, fixed.map((row) => row.at!.getTime()), 120, (at) => !violation(at, rules));
   const assigned: Array<{ id: string; scheduledAt: Date }> = [];
   for (const [i, post] of queued.entries()) {
     if (!times[i]) break;

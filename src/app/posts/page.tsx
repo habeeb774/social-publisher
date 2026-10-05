@@ -6,6 +6,7 @@ import { AppShell } from "../ui/app-shell";
 import { EmptyState } from "../ui/empty-state";
 import { STATUS_LABELS } from "../ui/api";
 import { PostsTable } from "./posts-table";
+import { SavedFilters } from "../ui/saved-filters";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
@@ -39,6 +40,7 @@ export default async function Posts({ searchParams }: { searchParams: Promise<{ 
   return <AppShell title="المنشورات">
     <div className="page-intro"><div><h2>كل محتواك في مكان واحد</h2><p>إدارة المحتوى المجدول والمنشور والمسودات · {total} منشور</p></div><div className="intro-actions"><Link className="secondary-button" href="/posts/archive">الأرشيف</Link><Link className="secondary-button" href="/posts/trash">سلة المحذوفات</Link><Link className="primary-button" href="/posts/new">＋ منشور جديد</Link></div></div>
     <nav className="status-tabs" aria-label="حالة المنشور">{FILTERS.filter((f) => f !== "archived").map((f) => <Link key={f} href={href(f)} className={status === f ? "active" : ""} aria-current={status === f ? "page" : undefined}>{f === "all" ? "الكل" : STATUS_LABELS[f]} <b>{countOf(f)}</b></Link>)}</nav>
+    <SavedFilters scope="posts" basePath="/posts" query={status !== "all" ? `status=${status}` : ""} />
     <div className="panel-card table-card posts-table">
       {failed ? <div role="alert" className="banner">تعذر تحميل المنشورات من قاعدة البيانات. أعد تحميل الصفحة للمحاولة.</div>
         : visible.length ? <PostsTable pages={pageList} campaigns={campaignList} rows={visible.map(({ post, pageName, campaignName }) => ({ id: post.id, content: post.content, status: post.status, scheduledAt: post.scheduledAt?.toISOString() ?? null, lastError: post.lastError, pageName, campaignName, category: post.category, tags: post.tags, inQueue: post.inQueue }))} />

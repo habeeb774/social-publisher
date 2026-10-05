@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { facebookPages, posts, schedulerRuns } from "@/db/schema";
 import { isGraphConfigured } from "./facebook-graph";
 import { probeImageUrl } from "./storage";
+import { getPublishingRules } from "./rules-store";
+import { violation } from "./publishing-rules";
 
 export type CheckItem = { key: string; label: string; ok: boolean; critical: boolean; detail?: string };
 export const CONFLICT_WINDOW_MINUTES = 5;
@@ -37,6 +39,9 @@ export async function prePublishChecks(input: { pageId: string; content: string;
   const healthy = Boolean(run && Date.now() - run.at.getTime() < 10 * 60000);
   items.push({ key: "scheduler", label: "عامل النشر يعمل", ok: healthy, critical: false, detail: healthy ? undefined : "لم يعمل خلال آخر 10 دقائق" });
   if (future) {
+    const rules = await getPublishingRules();
+    const reason = violation(input.scheduledAt!, rules);
+    items.push({ key: "window", label: "ضمن أوقات النشر المسموحة", ok: !reason, critical: false, detail: reason ? `${reason}${rules.window.mode === "shift" ? " — سيُنقل تلقائيًا لأول وقت مسموح" : ""}` : undefined });
     const nearby = await nearbyScheduled(input.scheduledAt!, input.postId);
     items.push({ key: "conflict", label: "لا تعارض في الموعد", ok: nearby < 2, critical: false, detail: nearby ? `يوجد ${nearby} منشور مجدول خلال ${CONFLICT_WINDOW_MINUTES} دقائق من هذا الموعد` : undefined });
   }

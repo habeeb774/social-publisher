@@ -6,6 +6,7 @@ import { desc } from "drizzle-orm";
 import { sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
+import { materializeRecurrences } from "@/services/recurrence";
 
 const GAP_ALERT_MINUTES = 10;
 
@@ -39,6 +40,8 @@ async function run(request: Request) {
   }
   const startedAt = new Date();
   await runHealthChecks();
+  // Recurring rules create their upcoming instances before the due-post scan.
+  await materializeRecurrences().catch((error) => console.error("Recurrence materialization failed", { error: error instanceof Error ? error.message : String(error) }));
   try {
     const results = await publishDuePosts();
     const finishedAt = new Date();

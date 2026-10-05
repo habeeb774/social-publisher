@@ -7,6 +7,7 @@ import { scheduleClusters } from "@/services/prepublish";
 import { AppShell } from "../ui/app-shell";
 import { STATUS_LABELS } from "../ui/api";
 import { CalendarGrid } from "./calendar-grid";
+import { SavedFilters } from "../ui/saved-filters";
 
 export const dynamic = "force-dynamic";
 const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -51,6 +52,7 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
       <button className="secondary-button">تطبيق</button>{(pageFilter || statusFilter || categoryFilter) && <Link href={`/calendar?month=${month}`}>مسح الفلاتر</Link>}
     </form>
     <p>المواعيد بتوقيت الرياض. اسحب منشورًا مجدولًا ليوم آخر لنقله (يُطلب تأكيد، والمنشورات المنشورة لا تُنقل).{clusters.length > 0 && <strong> ⚠ يوجد {clusters.length} منشور متقارب خلال 5 دقائق هذا الشهر.</strong>}</p>
+    <SavedFilters scope="calendar" basePath="/calendar" query={new URLSearchParams(Object.fromEntries(Object.entries({ page: pageFilter, status: statusFilter, category: categoryFilter }).filter(([, v]) => v))).toString()} />
     <CalendarGrid days={days} cells={cells} today={today} />
     {!entries.length && <p className="panel-card">لا توجد منشورات تطابق الفلاتر في هذا الشهر.</p>}
   </AppShell>;
