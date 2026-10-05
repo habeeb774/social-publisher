@@ -1,4 +1,4 @@
-import { AppShell } from "../../ui/app-shell";
+import { SettingsShell } from "../settings-shell";
 
 const EXPORTS: Array<[string, string, string]> = [
   ["posts", "المنشورات (CSV)", "كل المنشورات مع حالتها ومواعيدها وروابطها على Facebook."],
@@ -8,8 +8,7 @@ const EXPORTS: Array<[string, string, string]> = [
   ["backup", "نسخة احتياطية (JSON)", "المحتوى الأساسي: المنشورات والقوالب والحملات والوسائط والطابور. لا تتضمن أي توكن أو كلمة مرور."],
 ];
 export default function ExportPage() {
-  return <AppShell title="التصدير والنسخ الاحتياطي">
-    <div className="page-intro"><div><h2>التصدير والنسخ الاحتياطي</h2><p>ملفات CSV تفتح في Excel بالعربية مباشرة.</p></div></div>
-    <div className="card-grid">{EXPORTS.map(([kind, title, desc]) => <article key={kind} className="panel-card"><strong>{title}</strong><p>{desc}</p><a className="secondary-button" href={`/api/export/${kind}`} download>تنزيل</a></article>)}</div>
-  </AppShell>;
+  return <SettingsShell active="/settings/export" title="التصدير والنسخ الاحتياطي" description="ملفات CSV تفتح في Excel بالعربية، ونسخة احتياطية JSON بدون أسرار.">
+    <div className="card-grid">{EXPORTS.map(([kind, title, desc]) => <article key={kind} className="card"><strong>{title}</strong><p>{desc}</p><a className="btn btn-secondary" href={`/api/export/${kind}`} download>تنزيل</a></article>)}</div>
+  </SettingsShell>;
 }

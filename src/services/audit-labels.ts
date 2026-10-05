@@ -1,7 +1,7 @@
 const LABELS: Record<string, string> = {
   "post.created": "إنشاء منشور", "post.updated": "تعديل منشور", "post.duplicated": "تكرار منشور", "post.restored": "استرجاع نسخة",
   "post.queued": "إضافة للطابور", "post.rescheduled": "نقل موعد", "post.retry": "إعادة محاولة النشر", "post.submitted": "إرسال للمراجعة",
-  "post.approved": "موافقة", "post.rejected": "رفض", "post.note_added": "ملاحظة داخلية", "post.purged": "حذف نهائي",
+  "post.approved": "موافقة", "post.rejected": "رفض", "post.changes_requested": "طلب تعديل", "post.publish_now": "نشر فوري", "auth.login": "تسجيل دخول", "user.created": "إضافة مستخدم", "user.updated": "تعديل مستخدم", "post.note_added": "ملاحظة داخلية", "post.purged": "حذف نهائي",
   "post.restored_from_trash": "استرجاع من السلة", "post.bulk.schedule": "جدولة جماعية", "post.bulk.to_draft": "نقل جماعي لمسودة",
   "post.bulk.unschedule": "إلغاء جدولة جماعي", "post.bulk.archive": "أرشفة جماعية", "post.bulk.delete_drafts": "حذف مسودات",
   "post.bulk.change_page": "تغيير الصفحة", "post.bulk.assign_campaign": "ربط بحملة", "queue.reordered": "إعادة ترتيب الطابور",

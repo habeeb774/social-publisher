@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { CommentsOnboarding } from "../inbox/comments-onboarding";
 import { setupProgress } from "@/services/setup";
 import { AppShell } from "../ui/app-shell";
 import { DismissOnboarding } from "./dismiss";
+import { CommentsOnboarding } from "../inbox/comments-onboarding";
 
 export const dynamic = "force-dynamic";
 /** Setup wizard: each step reflects the real system state and links to where it is done. */
@@ -17,6 +17,6 @@ export default async function Onboarding() {
       <p>{s.help}</p>
     </li>)}</ol>
     <CommentsOnboarding/>
-    {complete && <Link className="primary-button" href="/dashboard">الذهاب للوحة التحكم</Link>}
+    {complete && <Link className="btn btn-primary" href="/dashboard">الذهاب للوحة التحكم</Link>}
   </AppShell>;
 }

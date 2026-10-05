@@ -3,6 +3,8 @@ export type ErrorClass = { key: "connection" | "authorization" | "scheduler" | "
 /** Maps raw publisher errors to user-facing categories. Only transient failures are retryable. */
 export function classifyError(message: string | null | undefined): ErrorClass {
   const text = message ?? "";
+  // An explicit provider rejection (e.g. Facebook #200) means nothing was posted, even when wrapped as "unknown".
+  if (/#(190|200|10|102)|permission|pages_manage_posts/i.test(text)) return { key: "authorization", label: "صلاحيات Facebook", retryable: false, hint: "حدّث توكن الصفحة أو صلاحياتها، ثم أعد الجدولة." };
   if (/OUTCOME_UNKNOWN/i.test(text)) return { key: "uncertain", label: "نتيجة غير مؤكدة", retryable: false, hint: "تحقق من صفحة فيسبوك أولًا؛ قد يكون المنشور نُشر فعلًا." };
   if (/#(190|200|10|102)\b|token|permission|oauth|AUTH_REQUIRED|WINDSOR_AUTH/i.test(text)) return { key: "authorization", label: "صلاحيات Facebook", retryable: false, hint: "حدّث توكن الصفحة أو صلاحياتها ثم أعد المحاولة." };
   if (/image|photo|url|MEDIA_UNSUPPORTED|#324|#100/i.test(text)) return { key: "image", label: "مشكلة في الصورة", retryable: true, hint: "تأكد أن رابط الصورة مباشر ومتاح للعموم." };

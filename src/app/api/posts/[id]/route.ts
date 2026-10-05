@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { posts } from "@/db/schema";
-import { isAdminRequest } from "@/services/request-auth";
+import { guard } from "@/services/api-guard";
 import { postInputSchema } from "@/services/posts";
 import { syncImage, toPostFields } from "@/services/post-save";
 import { snapshotPost } from "@/services/post-ops";
@@ -12,7 +12,7 @@ import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
 
 export async function PATCH(request:NextRequest,{params}:{params:Promise<{id:string}>}) {
-  if(!(await isAdminRequest(request)))return NextResponse.json({error:"Unauthorized"},{status:401});
+  {const denied=await guard(request);if(denied)return denied;}
   if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"Invalid origin"},{status:403});
   const {id}=await params;
   if(!z.uuid().safeParse(id).success)return NextResponse.json({error:"المنشور غير موجود"},{status:404});

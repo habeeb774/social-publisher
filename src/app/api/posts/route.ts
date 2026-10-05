@@ -4,19 +4,19 @@ import { facebookPages, posts } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { postInputSchema } from "@/services/posts";
-import { isAdminRequest } from "@/services/request-auth";
+import { guard } from "@/services/api-guard";
 import { syncImage, toPostFields } from "@/services/post-save";
 import { logAudit } from "@/services/audit";
 import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
 
 export async function GET(request:NextRequest) {
-  if(!(await isAdminRequest(request)))return NextResponse.json({error:"Unauthorized"},{status:401});
+  {const denied=await guard(request);if(denied)return denied;}
   try{return NextResponse.json(await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(Math.min(Number(request.nextUrl.searchParams.get("limit"))||50,200)).offset(Math.max(Number(request.nextUrl.searchParams.get("offset"))||0,0)));}
   catch{return NextResponse.json({error:"تعذر تحميل المنشورات"},{status:500});}
 }
 export async function POST(request:NextRequest) {
-  if(!(await isAdminRequest(request)))return NextResponse.json({error:"Unauthorized"},{status:401});
+  {const denied=await guard(request);if(denied)return denied;}
   if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"Invalid origin"},{status:403});
   const parsed=postInputSchema.safeParse(await request.json().catch(()=>null));
   if(!parsed.success)return NextResponse.json({error:parsed.error.issues[0]?.message||"بيانات غير صالحة"},{status:400});

@@ -2,7 +2,7 @@ import { scrypt,randomBytes,randomUUID,timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { neon } from "@neondatabase/serverless";
 import type { NextRequest } from "next/server";
-import { isAdminRequest } from "../request-auth";
+import { sessionFrom } from "../request-auth";
 import { TEAM_COOKIE,verifyTeamToken,teamToken } from "./team-token";
 import type { CommentRole } from "./permissions";
 const db=()=>{if(!process.env.DATABASE_URL)throw new Error("DATABASE_UNAVAILABLE");return neon(process.env.DATABASE_URL);};
@@ -10,7 +10,9 @@ const derive=promisify(scrypt);
 export async function hashTeamPassword(password:string){const salt=randomBytes(16).toString("hex");const hash=await derive(password,salt,64) as Buffer;return `scrypt:${salt}:${hash.toString("hex")}`;}
 export async function checkTeamPassword(password:string,stored:string){const [type,salt,hex]=stored.split(":");if(type!=="scrypt"||!salt||!hex||hex.length!==128)return false;const hash=await derive(password,salt,64) as Buffer;return timingSafeEqual(hash,Buffer.from(hex,"hex"));}
 export async function commentsPrincipal(request:NextRequest){
-  if(await isAdminRequest(request))return {id:"system-admin",email:process.env.ADMIN_EMAIL??"admin",role:"admin" as CommentRole,systemAdmin:true};
+  // Main-app sessions keep their RBAC role: only admins act as comments admin.
+  const session=await sessionFrom(request);
+  if(session)return {id:session.userId==="env-admin"?"system-admin":session.userId,email:process.env.ADMIN_EMAIL??"admin",role:(session.role==="admin"?"admin":session.role==="editor"?"editor":"viewer") as CommentRole,systemAdmin:session.role==="admin"};
   const token=await verifyTeamToken(request.cookies.get(TEAM_COOKIE)?.value);if(!token)return null;
   const [member]=await db()`SELECT u.id,u.email,u.role FROM users u JOIN comment_team_members m ON m.user_id=u.id WHERE u.id=${token.id}::uuid AND m.active AND m.session_version=${token.version}`;
   return member&&["admin","editor","viewer"].includes(String(member.role))?{id:String(member.id),email:String(member.email),role:member.role as CommentRole,systemAdmin:false}:null;

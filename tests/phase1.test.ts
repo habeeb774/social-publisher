@@ -39,6 +39,7 @@ test("error classification only allows retry for transient failures", () => {
   assert.equal(classifyError("MCP_PUBLISH_OUTCOME_UNKNOWN: verify page").retryable, false);
   assert.equal(classifyError("network timeout").retryable, true);
   assert.equal(classifyError("FACEBOOK_GRAPH_ERROR: (#324) image url invalid").key, "image");
+  assert.equal(classifyError("MCP_PUBLISH_OUTCOME_UNKNOWN: (MCP_POST_ID_MISSING: Facebook write action failed (#200) requires pages_manage_posts)").key, "authorization", "explicit rejection is not uncertain");
 });
 
 test("tags are normalized and de-duplicated", () => {

@@ -16,15 +16,15 @@ export function GoalsClient({ month, goals }: { month: string; goals: Goal[] }) 
   }
   async function remove(id: string) { await api(`/api/goals?id=${id}`, { method: "DELETE" }); router.refresh(); }
   return <div className="form-layout">
-    <section>{!goals.length ? <div className="panel-card empty-state"><strong>لا توجد أهداف لهذا الشهر</strong><small>مثلًا: 20 منشورًا، منها 10 منتجات و5 أخبار.</small></div> :
-      <div className="card-grid">{goals.map((g) => <article key={g.id} className="panel-card"><header className="row-between"><strong>{g.category ?? "كل المنشورات"}</strong><button className="link-button" onClick={() => remove(g.id)}>حذف</button></header>
+    <section>{!goals.length ? <div className="card empty-state"><strong>لا توجد أهداف لهذا الشهر</strong><small>مثلًا: 20 منشورًا، منها 10 منتجات و5 أخبار.</small></div> :
+      <div className="card-grid">{goals.map((g) => <article key={g.id} className="card"><header className="row-between"><strong>{g.category ?? "كل المنشورات"}</strong><button className="link-button" onClick={() => remove(g.id)}>حذف</button></header>
         <p><b>{g.published}</b> من {g.target} منشور فعليًا{g.scheduled ? ` · ${g.scheduled} مجدول` : ""}</p>
         <div className="progress" role="progressbar" aria-valuenow={g.percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${g.percent}%` }} /></div><small>{g.percent}%</small></article>)}</div>}
     </section>
     <form className="post-form panel-card" onSubmit={save}><h2>هدف جديد</h2>
       <label>التصنيف<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">كل المنشورات</option>{POST_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
       <label>العدد المستهدف<input type="number" min={1} max={1000} value={target} onChange={(e) => setTarget(Number(e.target.value))} /></label>
-      {error && <p role="alert">{error}</p>}<button className="primary-button">حفظ الهدف</button><small>الهدف لنفس التصنيف يُستبدل.</small>
+      {error && <p role="alert">{error}</p>}<button className="btn btn-primary">حفظ الهدف</button><small>الهدف لنفس التصنيف يُستبدل.</small>
     </form>
   </div>;
 }

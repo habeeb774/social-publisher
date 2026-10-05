@@ -1,108 +1,184 @@
 "use client";
-import { BrandLogo } from "./brand-logo";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./icons";
+import { FeedbackHost } from "./feedback";
+import { afterRender, setRootData, writePref } from "./client-prefs";
 
-// Only finished features appear here (no half-built pages in production navigation).
-const groups: Array<{ title: string; links: Array<[string, string, string]> }> = [
-  { title: "المحتوى", links: [["⌂", "الرئيسية", "/dashboard"], ["▤", "المنشورات", "/posts"], ["☰", "الطابور", "/queue"], ["◷", "التقويم", "/calendar"], ["✦", "الحملات", "/campaigns"], ["◎", "الأهداف", "/goals"]] },
-  { title: "المكتبة", links: [["▦", "الوسائط", "/media"], ["❏", "القوالب", "/templates"], ["❖", "المكتبة", "/library"], ["✎", "الأفكار", "/ideas"], ["↻", "إعادة الاستخدام", "/recycle"], ["⇧", "الاستيراد", "/import"]] },
-  { title: "المتابعة", links: [["✉", "صندوق الوارد", "/inbox"], ["▲", "التحليلات", "/analytics"], ["!", "المنشورات الفاشلة", "/failed"], ["⌁", "السجلات", "/logs"], ["◉", "حالة النظام", "/status"]] },
-  { title: "الإعداد", links: [["f", "صفحات Facebook", "/pages"], ["⚙", "الإعدادات", "/settings"]] },
+type NavLink = { icon: string; label: string; href: string; badge?: "inbox" | "failed" | "reviews" };
+type NavGroup = { key: string; title: string; links: NavLink[] };
+
+// Only finished features appear in navigation.
+export const NAV: NavGroup[] = [
+  { key: "home", title: "الرئيسية", links: [{ icon: "home", label: "لوحة التحكم", href: "/dashboard" }] },
+  { key: "content", title: "المحتوى", links: [
+    { icon: "posts", label: "المنشورات", href: "/posts" }, { icon: "queue", label: "الطابور", href: "/queue" }, { icon: "calendar", label: "التقويم", href: "/calendar" },
+    { icon: "library", label: "المكتبة", href: "/library" }, { icon: "media", label: "الوسائط", href: "/media" }, { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },
+  ] },
+  { key: "engage", title: "التفاعل", links: [
+    { icon: "inbox", label: "صندوق الوارد", href: "/inbox", badge: "inbox" }, { icon: "reply", label: "الردود الجاهزة", href: "/templates/replies" },
+    { icon: "automation", label: "أتمتة التعليقات", href: "/automations/comments" }, { icon: "review", label: "مركز المراجعة", href: "/reviews", badge: "reviews" },
+  ] },
+  { key: "insights", title: "التحليلات", links: [
+    { icon: "analytics", label: "التحليلات", href: "/analytics" }, { icon: "performance", label: "أداء المحتوى", href: "/performance" }, { icon: "goals", label: "الأهداف", href: "/goals" }, { icon: "report", label: "التقارير", href: "/reports" },
+  ] },
+  { key: "system", title: "النظام", links: [
+    { icon: "pages", label: "صفحات Facebook", href: "/pages" }, { icon: "integrations", label: "التكاملات", href: "/settings/integrations" },
+    { icon: "failed", label: "مركز الفشل", href: "/failed", badge: "failed" }, { icon: "logs", label: "السجلات", href: "/logs" }, { icon: "status", label: "حالة النظام", href: "/status" }, { icon: "settings", label: "الإعدادات", href: "/settings" },
+  ] },
 ];
-const commands: Array<{ label: string; href: string; keys?: string }> = [
-  { label: "منشور جديد", href: "/posts/new", keys: "N" },
-  { label: "رفع / إضافة صورة", href: "/media" },
-  { label: "إنشاء حملة", href: "/campaigns" },
-  { label: "إضافة قالب", href: "/templates" },
-  ...groups.flatMap((g) => g.links.map(([, label, href]) => ({ label: `فتح ${label}`, href }))),
-  { label: "إعدادات الإشعارات", href: "/settings/notifications" },
-  { label: "فكرة جديدة", href: "/ideas" },
-  { label: "معالج الإعداد", href: "/onboarding" },
-  { label: "قواعد النشر (أوقات وأيام الإيقاف)", href: "/settings/publishing" },
-  { label: "التصدير والنسخ الاحتياطي", href: "/settings/export" },
+const ALL_LINKS = NAV.flatMap((g) => g.links);
+const COMMANDS: Array<{ label: string; href: string; icon: string; keys?: string }> = [
+  { label: "إنشاء منشور", href: "/posts/new", icon: "plus", keys: "N" },
+  { label: "استيراد Excel / CSV", href: "/import", icon: "import" },
+  { label: "إضافة صورة", href: "/media", icon: "media" },
+  { label: "حملة جديدة", href: "/campaigns", icon: "campaign" },
+  { label: "فكرة جديدة", href: "/library?kind=idea", icon: "ideas" },
+  { label: "اختبار التكاملات (تشخيص)", href: "/status", icon: "status" },
+  { label: "معالج الإعداد", href: "/onboarding", icon: "check" },
+  { label: "قواعد النشر", href: "/settings/publishing", icon: "clock" },
+  { label: "إعدادات الإشعارات", href: "/settings/notifications", icon: "bell" },
 ];
 type Result = { type: string; label: string; href: string };
-type Alert = { id: string; title: string; message: string; isRead: boolean; createdAt: string };
+type Alert = { id: string; title: string; message: string; isRead: boolean; createdAt: string; type: string };
+type Me = { name: string; email: string; role: string; roleLabel: string };
+type Theme = "light" | "dark" | "system";
+type PaletteItem = { group: string; label: string; href: string; icon: string; hint?: string };
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+const isActive = (pathname: string, href: string) => href === "/settings" ? pathname === "/settings" || (pathname.startsWith("/settings/") && !pathname.startsWith("/settings/integrations")) : pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
+const readTheme = (): Theme => { try { const t = localStorage.getItem("sp-theme"); return t === "dark" || t === "light" || t === "system" ? t : "system"; } catch { return "system"; } };
+const themeLabel = (t: Theme) => t === "light" ? "فاتح" : t === "dark" ? "داكن" : "حسب النظام";
+const alertTone = (type: string) => /fail|invalid|gap|error/.test(type) ? "bad" : type === "published" || type === "approved" ? "ok" : "warn";
 
-export function AppShell({ children, title, commentsOnly=false }: { children: React.ReactNode; title: string; eyebrow?: string;commentsOnly?:boolean }) {
-  const navigation=commentsOnly?[{title:"إدارة التعليقات",links:[["✉","صندوق الوارد","/inbox"],["❏","قوالب الردود","/settings/replies"],["↻","قواعد التعليقات","/automations/comments"],["▲","تحليلات التعليقات","/analytics/comments"]] as Array<[string,string,string]>}]:groups;
+function Brand() {
+  return <div className="app-brand"><Image src="/brand/icon-192x192.png" alt="" width={28} height={28} priority /><div><strong>Social Publisher</strong><small>منصة النشر الذكي</small></div></div>;
+}
+
+const COMMENT_PATHS = ["/inbox", "/settings/replies", "/templates/replies", "/automations/comments", "/analytics/comments"];
+const COMMENT_NAV: NavGroup[] = [{ key: "comments", title: "إدارة التعليقات", links: NAV.flatMap((g) => g.links).filter((l) => COMMENT_PATHS.includes(l.href)) }];
+
+function SideNav({ pathname, counts, onNavigate, commentsOnly = false }: { pathname: string; counts: Record<string, number>; onNavigate?: () => void; commentsOnly?: boolean }) {
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => afterRender(() => { try { setCollapsed(JSON.parse(localStorage.getItem("sp-nav-collapsed") ?? "[]")); } catch {} }), []);
+  const toggle = (key: string) => setCollapsed((c) => { const next = c.includes(key) ? c.filter((k) => k !== key) : [...c, key]; try { localStorage.setItem("sp-nav-collapsed", JSON.stringify(next)); } catch {} return next; });
+  return <nav className="side-nav" aria-label="التنقل الرئيسي">{(commentsOnly ? COMMENT_NAV : NAV).map((g) => {
+    const hasActive = g.links.some((l) => isActive(pathname, l.href));
+    const isCollapsed = collapsed.includes(g.key) && !hasActive;
+    return <div key={g.key} className={`nav-group ${isCollapsed ? "collapsed" : ""}`}>
+      {g.key !== "home" && <button type="button" aria-expanded={!isCollapsed} onClick={() => toggle(g.key)}>{g.title}<span className="chev">⌄</span></button>}
+      <div className="nav-items">{g.links.map((l) => {
+        const active = isActive(pathname, l.href);
+        const count = l.badge ? counts[l.badge] ?? 0 : 0;
+        return <Link key={l.href} href={l.href} onClick={onNavigate} className={`nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined}><Icon name={l.icon} />{l.label}{count > 0 && <span className="count">{count > 99 ? "99+" : count}</span>}</Link>;
+      })}</div>
+    </div>;
+  })}</nav>;
+}
+
+/** commentsOnly: comments-team members (separate login) see only the comment tools. */
+export function AppShell({ children, title, parent, commentsOnly = false }: { children: React.ReactNode; title: string; eyebrow?: string; parent?: { label: string; href: string }; commentsOnly?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [needsReply, setNeedsReply] = useState(0);
+  const [drawer, setDrawer] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [palette, setPalette] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">(() => typeof window !== "undefined" && window.localStorage.getItem("social-publisher-theme") === "dark" ? "dark" : "light");
+  const [theme, setTheme] = useState<Theme>("system");
   const [live, setLive] = useState<boolean | null>(null);
   const [alerts, setAlerts] = useState<{ unread: number; items: Alert[] }>({ unread: 0, items: [] });
+  const [me, setMe] = useState<Me | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Result[]>([]);
-  const [paletteQuery, setPaletteQuery] = useState("");
-  const [paletteResults, setPaletteResults] = useState<Result[]>([]);
-  const [active, setActive] = useState(0);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const [active, setActiveIndex] = useState(0);
   const paletteRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
-  useEffect(() => { const load=()=>fetch("/api/comments?view=metrics").then(r=>r.ok?r.json():null).then(d=>{if(d)setNeedsReply(d.needs_reply??0);}).catch(()=>{});load();const timer=setInterval(load,60000);return()=>clearInterval(timer); },[]);
-  useEffect(() => { const load = () => fetch(commentsOnly?"/api/comments?view=notifications":"/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {}); load(); const timer = setInterval(load, 60000); return () => clearInterval(timer); }, [commentsOnly]);
-  useEffect(() => { fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null)); }, []);
-  // Debounced global search shared by the topbar box and the command palette.
-  useEffect(() => { if (query.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((d) => setResults(d.results ?? [])).catch(() => {}), 250); return () => clearTimeout(t); }, [query]);
-  useEffect(() => { if (paletteQuery.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(paletteQuery)}`).then((r) => r.json()).then((d) => setPaletteResults(d.results ?? [])).catch(() => {}), 250); return () => clearTimeout(t); }, [paletteQuery]);
+  useEffect(() => afterRender(() => { const t = readTheme(); setTheme(t); setRootData("theme", t); }), []);
+  useEffect(() => {
+    if (commentsOnly) return;
+    const load = () => fetch("/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {});
+    load(); const timer = setInterval(load, 60000);
+    fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null));
+    fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d) { setMe(d.user); setCounts(d.counts ?? {}); } }).catch(() => {});
+    return () => clearInterval(timer);
+  }, [commentsOnly]);
+  useEffect(() => { if (query.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((d) => setResults(d.results ?? [])).catch(() => {}), 220); return () => clearTimeout(t); }, [query]);
+  const openPalette = useCallback(() => { setPalette(true); setQuery(""); setActiveIndex(0); setTimeout(() => paletteRef.current?.focus(), 0); }, []);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if(commentsOnly)return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette(true); setPaletteQuery(""); setActive(0); setTimeout(() => paletteRef.current?.focus(), 0); return; }
-      if (e.key === "Escape") { setPalette(false); setCreateOpen(false); setNotificationsOpen(false); setOpen(false); setResults([]); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); return; }
+      if (e.key === "Escape") { setPalette(false); setNotificationsOpen(false); setProfileOpen(false); setDrawer(false); return; }
       if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.key === "/") { e.preventDefault(); openPalette(); }
       else if (e.key.toLowerCase() === "n" || e.key === "ى") { e.preventDefault(); router.push("/posts/new"); }
     }
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, [router,commentsOnly]);
+  }, [router, openPalette]);
 
-  // Stale results are hidden (not cleared) when the query is too short.
-  const shownResults = query.trim().length >= 2 ? results : [];
-  const shownPalette = paletteQuery.trim().length >= 2 ? paletteResults : [];
-  function toggleTheme() { const next = theme === "dark" ? "light" : "dark"; setTheme(next); window.localStorage.setItem("social-publisher-theme", next); }
-  const paletteItems: Result[] = [...commands.filter((c) => !paletteQuery || c.label.includes(paletteQuery)).map((c) => ({ type: c.keys ? `اختصار ${c.keys}` : "أمر", label: c.label, href: c.href })), ...shownPalette];
-  const go = (href: string) => { setPalette(false); setResults([]); setQuery(""); router.push(href); };
-  const isActive = (href: string) => pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
+  function cycleTheme() {
+    const next: Theme = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+    setTheme(next); setRootData("theme", next); writePref("sp-theme", next);
+  }
+  const items = useMemo<PaletteItem[]>(() => {
+    const q = query.trim();
+    const found = q.length >= 2 ? results.map((r) => ({ group: "نتائج البحث", label: r.label, href: r.href, icon: "search", hint: r.type })) : [];
+    const commands = COMMANDS.filter((c) => !q || c.label.includes(q)).map((c) => ({ group: "إجراءات", label: c.label, href: c.href, icon: c.icon, hint: c.keys }));
+    const pages = ALL_LINKS.filter((l) => !q || l.label.includes(q)).map((l) => ({ group: "انتقال", label: l.label, href: l.href, icon: l.icon }));
+    return [...found, ...commands, ...pages].slice(0, 30);
+  }, [query, results]);
+  const go = (href: string) => { setPalette(false); router.push(href); };
+  const crumbsParent = parent ?? (() => { const l = ALL_LINKS.find((x) => isActive(pathname, x.href)); return l && l.label !== title ? { label: l.label, href: l.href } : undefined; })();
+  const grouped = items.map((item, i) => ({ item, i, header: i === 0 || items[i - 1].group !== item.group ? item.group : null }));
 
-  return <div className={`app-layout ${commentsOnly?"comment-only-shell":""}`}>
-    <button className="mobile-menu" aria-label="فتح القائمة" onClick={() => setOpen(true)}>☰</button>
-    {open && <button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setOpen(false)} />}
-    <aside className={`sidebar ${open ? "drawer-open" : ""}`}>
-      <div className="app-brand"><div><BrandLogo /><small>منصة النشر الذكي</small></div><button className="drawer-close" aria-label="إغلاق القائمة" onClick={() => setOpen(false)}>×</button></div>
-      <nav className="side-nav" aria-label="التنقل الرئيسي">{navigation.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}{href==="/inbox"&&needsReply>0&&<b className="comment-tag">{needsReply}</b>}</Link>)}</div>)}</nav>
-      {commentsOnly?<div className="side-bottom"><div className="safe-mini">الردود في وضع الاختبار<small>لا تُرسل ردود حقيقية</small></div><Link href="/comments/login">دخول فريق التعليقات</Link></div>:<div className="side-bottom"><div className="safe-mini"><span className="status-dot" />{live ? "النشر الحقيقي" : "وضع الاختبار"}<small>{live ? "المنشورات المجدولة تُنشر فعليًا" : live === null ? "جارٍ التحقق من الحالة" : "النشر الحقيقي متوقف"}</small></div><div className="profile-mini"><span className="avatar">م</span><div><strong>م. حبيب</strong><small>مشرف النظام</small></div><Link href="/settings" aria-label="إعدادات الحساب">⚙</Link></div><form method="post" action="/api/auth/logout"><button className="logout" type="submit">↪ تسجيل الخروج</button></form></div>}
+  return <div className="app-layout">
+    <aside className="sidebar" aria-label="الشريط الجانبي">
+      <Brand />
+      <SideNav pathname={pathname} counts={counts} commentsOnly={commentsOnly} />
+      <div className="side-bottom">
+        <button className="profile-button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen((v) => !v)}><span className="avatar">{(me?.name ?? "م").slice(0, 1)}</span><span className="grow"><strong>{me?.name ?? "…"}</strong><small>{me?.roleLabel ?? ""}</small></span><Icon name="more" width={16} /></button>
+        {profileOpen && <div className="menu profile-menu" role="menu"><Link role="menuitem" href="/settings">الإعدادات</Link><Link role="menuitem" href="/settings/notifications">الإشعارات</Link><button role="menuitem" onClick={cycleTheme}>المظهر: {themeLabel(theme)}</button><div className="menu-sep" /><form method="post" action="/api/auth/logout"><button role="menuitem" className="menu-logout" type="submit"><Icon name="logout" width={16} /> تسجيل الخروج</button></form></div>}
+      </div>
     </aside>
-    <main className="app-main">
-      <header className="topbar"><div className="crumbs"><span>Social Publisher</span><b>/</b><strong>{title}</strong></div>
+
+    <div className="app-main">
+      <header className="topbar">
+        <button className="top-icon mobile-menu" aria-label="فتح القائمة" onClick={() => setDrawer(true)}><Icon name="menu" /></button>
+        <nav className="crumbs" aria-label="مسار الصفحة">{crumbsParent && <><Link href={crumbsParent.href}>{crumbsParent.label}</Link><span className="sep">/</span></>}<strong>{title}</strong></nav>
         <div className="topbar-actions">
-          <div className="create-wrap"><button className="top-create" aria-expanded={createOpen} onClick={() => setCreateOpen((v) => !v)}>＋ إنشاء</button>{createOpen && <div className="menu-panel" role="menu">{[["منشور جديد", "/posts/new"], ["رفع صورة", "/media"], ["إنشاء حملة", "/campaigns"], ["إضافة قالب", "/templates"]].map(([l, h]) => <Link role="menuitem" key={h} href={h} onClick={() => setCreateOpen(false)}>{l}</Link>)}</div>}</div>
-          <div className="search-wrap"><label className="search-box"><span>⌕</span><input ref={searchRef} aria-label="بحث شامل" placeholder="بحث… ( / )" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && shownResults[0]) go(shownResults[0].href); }} /></label>
-            {shownResults.length > 0 && <div className="search-results" role="listbox">{shownResults.map((r, i) => <button key={i} role="option" aria-selected={false} onClick={() => go(r.href)}><small>{r.type}</small>{r.label}</button>)}</div>}</div>
-          <button className="top-icon kbd-hint" aria-label="لوحة الأوامر (Ctrl+K)" title="لوحة الأوامر (Ctrl+K)" onClick={() => { setPalette(true); setTimeout(() => paletteRef.current?.focus(), 0); }}>⌘K</button>
-          <button className="theme-toggle" aria-label={theme === "dark" ? "تفعيل الثيم الفاتح" : "تفعيل الثيم الداكن"} onClick={toggleTheme}>{theme === "dark" ? "☀" : "☾"}</button>
-          <div className="notification-wrap"><button className="top-icon" aria-label="الإشعارات" aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((v) => !v); if (alerts.unread) fetch(commentsOnly?"/api/comments":"/api/notifications", { method: "POST",...(commentsOnly?{headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"read_notifications"})}:{}) }).then(() => setAlerts((a) => ({ ...a, unread: 0 }))).catch(() => {}); }}>♧{alerts.unread > 0 && <b className="notification-count">{alerts.unread}</b>}<i /></button>
-            {notificationsOpen && <div className="notification-panel"><div className="row-between"><strong>الإشعارات</strong><Link href="/settings/notifications">الإعدادات</Link></div>{alerts.items.length ? alerts.items.map((item) => <div key={item.id} className="notification-item"><b className={item.isRead ? "" : "unread"}>{item.title}</b><small style={{ whiteSpace: "pre-wrap" }}>{item.message}</small><small className="muted">{new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</small></div>) : <><span>لا توجد إشعارات جديدة</span><small>تظهر هنا تنبيهات النشر والفشل والموافقات والجدولة.</small></>}</div>}</div>
-          <span className="top-safe"><span className="status-dot" />{commentsOnly?"الردود في وضع الاختبار":live ? "النشر الحقيقي مفعّل" : "وضع الاختبار"}</span>
+          <div className="search-wrap"><button className="search-trigger" onClick={openPalette} aria-label="بحث شامل (Ctrl+K)"><Icon name="search" width={16} />ابحث أو نفّذ أمرًا<kbd>Ctrl K</kbd></button></div>
+          <button className="top-icon mobile-only" aria-label="بحث" onClick={openPalette}><Icon name="search" /></button>
+          <Link className="btn btn-primary btn-sm top-create" href="/posts/new"><Icon name="plus" width={15} />منشور جديد</Link>
+          <span className={`safe-indicator ${live ? "live" : "test"}`} tabIndex={0} data-tooltip={live ? "النشر الحقيقي مفعّل: المنشورات المجدولة تُنشر على صفحتك." : "النشر الحقيقي غير مفعّل: لا يُنشر أي محتوى فعليًا."}><i className="dot" /><span>{live === null ? "…" : live ? "النشر مفعّل" : "وضع الاختبار"}</span></span>
+          <div className="notification-wrap">
+            <button className="top-icon" aria-label={`الإشعارات${alerts.unread ? ` (${alerts.unread} غير مقروء)` : ""}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((v) => !v); if (alerts.unread) fetch("/api/notifications", { method: "POST" }).then(() => setAlerts((a) => ({ ...a, unread: 0 }))).catch(() => {}); }}><Icon name="bell" />{alerts.unread > 0 && <b className="notification-count">{alerts.unread}</b>}</button>
+            {notificationsOpen && <div className="notification-panel menu" role="dialog" aria-label="الإشعارات"><header>الإشعارات<Link href="/settings/notifications">الإعدادات</Link></header>
+              {alerts.items.length ? alerts.items.map((item) => <div key={item.id} className="notification-item"><i className={`dot ${alertTone(item.type)}`} /><b className={item.isRead ? "" : "unread"}>{item.title}</b><small className="pre">{item.message.slice(0, 180)}</small><small className="muted">{new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</small></div>) : <div className="notification-empty">لا توجد إشعارات بعد.<br /><small>تظهر هنا تنبيهات النشر والفشل والموافقات والتعليقات.</small></div>}
+            </div>}
+          </div>
+          <button className="theme-toggle kbd-only" onClick={cycleTheme} aria-label={`المظهر الحالي: ${themeLabel(theme)}`} data-tooltip={`المظهر: ${themeLabel(theme)}`}><Icon name={theme === "dark" ? "moon" : "sun"} /></button>
         </div>
       </header>
-      {children}
-      <Link href="/posts/new" className="mobile-fab" aria-label="منشور جديد">＋</Link>
-    </main>
+      <main className="app-content" id="content">{children}</main>
+    </div>
+
+    <nav className="bottom-nav" aria-label="التنقل السفلي">
+      <Link href="/dashboard" className={isActive(pathname, "/dashboard") ? "active" : ""}><Icon name="home" />الرئيسية</Link>
+      <Link href="/posts" className={isActive(pathname, "/posts") && pathname !== "/posts/new" ? "active" : ""}><Icon name="posts" />المنشورات</Link>
+      <Link href="/posts/new" className="create" aria-label="إنشاء منشور"><span><Icon name="plus" /></span></Link>
+      <Link href="/inbox" className={isActive(pathname, "/inbox") ? "active" : ""}><Icon name="inbox" />الوارد</Link>
+      <button onClick={() => setDrawer(true)} aria-label="المزيد"><Icon name="more" />المزيد</button>
+    </nav>
+
+    {drawer && <><button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setDrawer(false)} /><div className="drawer" role="dialog" aria-modal="true" aria-label="القائمة"><header><Brand /><button className="top-icon" aria-label="إغلاق" onClick={() => setDrawer(false)}><Icon name="close" /></button></header><SideNav pathname={pathname} counts={counts} onNavigate={() => setDrawer(false)} /><div className="side-bottom"><button className="btn btn-secondary block" onClick={cycleTheme}>المظهر: {themeLabel(theme)}</button><form method="post" action="/api/auth/logout"><button className="btn btn-ghost danger block" type="submit">تسجيل الخروج</button></form></div></div></>}
+
     {palette && <div className="palette-backdrop" onClick={() => setPalette(false)}><div className="palette" role="dialog" aria-modal="true" aria-label="لوحة الأوامر" onClick={(e) => e.stopPropagation()}>
-      <input ref={paletteRef} aria-label="اكتب أمرًا أو ابحث" placeholder="اكتب أمرًا أو ابحث في المحتوى…" value={paletteQuery} onChange={(e) => { setPaletteQuery(e.target.value); setActive(0); }} onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, paletteItems.length - 1)); } else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); } else if (e.key === "Enter" && paletteItems[active]) go(paletteItems[active].href); }} />
-      <div className="palette-list" role="listbox">{paletteItems.slice(0, 14).map((item, i) => <button key={`${item.href}-${i}`} role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseEnter={() => setActive(i)} onClick={() => go(item.href)}><span>{item.label}</span><small>{item.type}</small></button>)}{!paletteItems.length && <p>لا توجد نتائج</p>}</div>
-      <small className="palette-help">↑↓ للتنقل · Enter للفتح · Esc للإغلاق · N منشور جديد · / بحث</small>
+      <input ref={paletteRef} role="combobox" aria-expanded="true" aria-controls="palette-list" aria-label="ابحث أو اكتب أمرًا" placeholder="ابحث في المنشورات والحملات والقوالب… أو اكتب أمرًا" value={query} onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }} onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setActiveIndex((a) => Math.min(a + 1, items.length - 1)); } else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIndex((a) => Math.max(a - 1, 0)); } else if (e.key === "Enter" && items[active]) go(items[active].href); }} />
+      <div className="palette-list" id="palette-list" role="listbox">{grouped.map(({ item, i, header }) => <div key={`${item.href}-${i}`} style={{ display: "contents" }}>{header && <div className="palette-group">{header}</div>}<button role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseEnter={() => setActiveIndex(i)} onClick={() => go(item.href)}><Icon name={item.icon} width={16} /><span>{item.label}</span>{item.hint && <small>{item.hint}</small>}</button></div>)}{!items.length && <p>لا توجد نتائج</p>}</div>
+      <div className="palette-help"><span><kbd>↑</kbd><kbd>↓</kbd> تنقل</span><span><kbd>Enter</kbd> فتح</span><span><kbd>Esc</kbd> إغلاق</span><span><kbd>N</kbd> منشور جديد</span></div>
     </div></div>}
+    <FeedbackHost />
   </div>;
 }

@@ -60,10 +60,10 @@ test("admin session cookie is signed and rejects forged values", async () => {
     assert.equal(await verifySessionToken(token), true);
     assert.equal(await verifySessionToken("authenticated"), false);
     assert.equal(await verifySessionToken(token + ".extra"), false);
-    assert.equal(await verifySessionToken(token.replace(/v1\.\d+/, "v1.NaN")), false);
-    assert.equal(await verifySessionToken(await createSessionToken(Date.now() + 3600 * 1000)), false);
+    assert.equal(await verifySessionToken(token.replace(/\.(\d+)\.(?=[a-f0-9]{64}$)/, ".NaN.")), false);
+    assert.equal(await verifySessionToken(await createSessionToken(undefined, Date.now() + 3600 * 1000)), false);
     assert.equal(await verifySessionToken(token.slice(0, -1) + (token.endsWith("0") ? "1" : "0")), false);
-    assert.equal(await verifySessionToken(await createSessionToken(Date.now() - 9 * 3600 * 1000)), false);
+    assert.equal(await verifySessionToken(await createSessionToken(undefined, Date.now() - 9 * 3600 * 1000)), false);
   } finally {
     if (previous === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET = previous;
   }
@@ -114,4 +114,24 @@ test("alerts never throw when the database is unavailable", async () => {
     const result = await sendAlert("publish_failed", "t", "m");
     assert.equal(result.sent, false);
   } finally { if (saved !== undefined) process.env.DATABASE_URL = saved; }
+});
+
+test("RBAC: roles are signed into the session and checked per permission", async () => {
+  const { readSession } = await import("../src/services/request-auth");
+  const { can } = await import("../src/services/rbac");
+  const previous = process.env.AUTH_SECRET;
+  process.env.AUTH_SECRET = "test-secret";
+  try {
+    const token = await createSessionToken({ userId: "0b4f7a8e-1111-4c4c-9999-123456789abc", role: "viewer" });
+    assert.deepEqual(await readSession(token), { userId: "0b4f7a8e-1111-4c4c-9999-123456789abc", role: "viewer" });
+    assert.equal(await readSession(token.replace(".viewer.", ".admin.")), null, "role cannot be escalated by editing the cookie");
+    assert.equal(can("viewer", "content.write"), false);
+    assert.equal(can("editor", "content.write"), true);
+    assert.equal(can("editor", "content.review"), false);
+    assert.equal(can("reviewer", "content.review"), true);
+    assert.equal(can("reviewer", "settings.manage"), false);
+    assert.equal(can("admin", "users.manage"), true);
+  } finally {
+    if (previous === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET = previous;
+  }
 });

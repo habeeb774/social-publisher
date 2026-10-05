@@ -9,7 +9,7 @@ import { classifyError } from "@/services/error-classes";
 
 /** Requeues a failed post for the next worker run. Uncertain outcomes require explicit confirmation. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, true, "content.publish"); if (denied) return denied;
   const { id } = await params;
   const parsed = z.object({ confirmedNotPublished: z.boolean().optional() }).safeParse(await request.json().catch(() => ({})));
   if (!isUuid(id) || !parsed.success) return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 });

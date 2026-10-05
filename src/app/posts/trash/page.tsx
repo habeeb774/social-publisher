@@ -12,7 +12,7 @@ const daysLeft = (deletedAt: Date) => Math.ceil(TRASH_DAYS - (Date.now() - delet
 export default async function Trash() {
   const rows = await getDb().select({ id: posts.id, content: posts.content, deletedAt: posts.deletedAt }).from(posts).where(and(isNotNull(posts.deletedAt), eq(posts.status, "draft"))).orderBy(desc(posts.deletedAt)).limit(100);
   return <AppShell title="سلة المحذوفات">
-    <div className="page-intro"><div><h2>سلة المحذوفات</h2><p>المسودات المحذوفة تبقى {TRASH_DAYS} يومًا ويمكن استرجاعها، ثم تُحذف نهائيًا.</p></div><Link className="secondary-button" href="/posts">العودة للمنشورات</Link></div>
+    <div className="page-intro"><div><h2>سلة المحذوفات</h2><p>المسودات المحذوفة تبقى {TRASH_DAYS} يومًا ويمكن استرجاعها، ثم تُحذف نهائيًا.</p></div><Link className="btn btn-secondary" href="/posts">العودة للمنشورات</Link></div>
     <TrashClient rows={rows.map((r) => ({ id: r.id, content: r.content, deletedAt: r.deletedAt!.toISOString(), daysLeft: daysLeft(r.deletedAt!) }))} />
   </AppShell>;
 }

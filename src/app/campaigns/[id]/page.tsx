@@ -25,14 +25,14 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
   const byDate = new Map<string, typeof list>();
   for (const p of list.filter((x) => x.scheduledAt)) { const d = new Date(p.scheduledAt!.getTime() + 3 * 3600000).toISOString().slice(0, 10); byDate.set(d, [...(byDate.get(d) ?? []), p]); }
   return <AppShell title={campaign.name}>
-    <div className="page-intro"><div><h2>{campaign.name}</h2><p>{campaign.description}</p></div><Link className="secondary-button" href="/campaigns">كل الحملات</Link></div>
+    <div className="page-intro"><div><h2>{campaign.name}</h2><p>{campaign.description}</p></div><Link className="btn btn-secondary" href="/campaigns">كل الحملات</Link></div>
     <section className="metrics-row"><div className="metric"><small>المنشورات</small><strong>{t.total}</strong></div><div className="metric"><small>المجدولة</small><strong>{t.scheduled}</strong></div><div className="metric"><small>المنشورة</small><strong>{t.published}</strong></div><div className="metric"><small>الفاشلة</small><strong>{t.failed}</strong></div><div className="metric"><small>نسبة النجاح</small><strong>{stats.successRate === null ? "—" : `${stats.successRate}%`}</strong></div></section>
     <div className="form-layout">
-      <section className="panel-card"><h2>تقويم الحملة</h2>{!byDate.size ? <p>لا توجد منشورات بمواعيد. اربط منشورات من صفحة المنشورات (إجراء «ربط بحملة») أو من المحرر.</p> : [...byDate.entries()].map(([d, items]) => <div key={d} className="campaign-day"><b>{d}</b><ul className="timeline-list">{items.map((p) => <li key={p.id}><Link href={`/posts/${p.id}`}>{riyadh(p.scheduledAt, "time")} · {p.content.slice(0, 80)}</Link><small>{STATUS_LABELS[p.status]}</small></li>)}</ul></div>)}
+      <section className="card"><h2>تقويم الحملة</h2>{!byDate.size ? <p>لا توجد منشورات بمواعيد. اربط منشورات من صفحة المنشورات (إجراء «ربط بحملة») أو من المحرر.</p> : [...byDate.entries()].map(([d, items]) => <div key={d} className="campaign-day"><b>{d}</b><ul className="timeline-list">{items.map((p) => <li key={p.id}><Link href={`/posts/${p.id}`}>{riyadh(p.scheduledAt, "time")} · {p.content.slice(0, 80)}</Link><small>{STATUS_LABELS[p.status]}</small></li>)}</ul></div>)}
         {list.some((p) => !p.scheduledAt) && <><h3>بدون موعد</h3><ul className="timeline-list">{list.filter((p) => !p.scheduledAt).map((p) => <li key={p.id}><Link href={`/posts/${p.id}`}>{p.content.slice(0, 80)}</Link><small>{STATUS_LABELS[p.status]}</small></li>)}</ul></>}
       </section>
       <CampaignForm initial={{ id: campaign.id, name: campaign.name, description: campaign.description ?? "", startDate: campaign.startDate ?? "", endDate: campaign.endDate ?? "", status: campaign.status }} />
     </div>
-    {stats.byDay.length > 0 && <section className="panel-card"><h2>أيام النشر</h2><ul className="bar-list">{stats.byDay.map((d) => <li key={d.label}><span>{d.label}</span><span className="bar"><i style={{ width: `${(d.count / stats.byDay[0].count) * 100}%` }} /></span><b>{d.count}</b></li>)}</ul></section>}
+    {stats.byDay.length > 0 && <section className="card"><h2>أيام النشر</h2><ul className="bar-list">{stats.byDay.map((d) => <li key={d.label}><span>{d.label}</span><span className="bar"><i style={{ width: `${(d.count / stats.byDay[0].count) * 100}%` }} /></span><b>{d.count}</b></li>)}</ul></section>}
   </AppShell>;
 }

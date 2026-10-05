@@ -108,12 +108,12 @@ export async function approvePost(id: string) {
   await sendAlert("approved", `تمت الموافقة على منشور (${id.slice(0, 8)})`, future ? "أصبح المنشور مجدولًا." : "الموعد مضى؛ حدّد موعدًا جديدًا لجدولته.", 0);
   return row;
 }
-export async function rejectPost(id: string, reason: string) {
+export async function rejectPost(id: string, reason: string, kind: "rejected" | "changes" = "rejected") {
   const db = getDb();
   const [row] = await db.update(posts).set({ status: "draft", updatedAt: new Date() }).where(and(eq(posts.id, id), eq(posts.status, "pending_approval"), isNull(posts.deletedAt))).returning();
   if (!row) throw new Error("NOT_PENDING");
-  if (reason.trim()) await db.insert(postNotes).values({ postId: id, body: `رُفض: ${reason.trim()}`, author: currentActor() });
-  await logAudit("post.rejected", "post", id, { reason });
+  await db.insert(postNotes).values({ postId: id, body: `${kind === "changes" ? "طلب تعديل" : "رُفض"}: ${reason.trim() || "بدون سبب"}`, author: currentActor() });
+  await logAudit(kind === "changes" ? "post.changes_requested" : "post.rejected", "post", id, { reason });
   await sendAlert("rejected", `رُفض منشور (${id.slice(0, 8)})`, reason || "بدون سبب", 0);
   return row;
 }

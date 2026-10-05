@@ -8,6 +8,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(await runDiagnostics(false));
 }
 export async function POST(request: NextRequest) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, true, "system.diagnose"); if (denied) return denied;
   return NextResponse.json(await runDiagnostics(true));
 }

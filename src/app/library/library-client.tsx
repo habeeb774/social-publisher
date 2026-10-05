@@ -30,15 +30,15 @@ export function LibraryClient({ initial, ideasOnly = false }: { initial: Item[];
       <nav className="status-tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>الكل <b>{items.length}</b></button>{tabs.map(([k, l]) => <button key={k} className={filter === k ? "active" : ""} onClick={() => setFilter(k)}>{l} <b>{items.filter((i) => (ideasOnly ? i.status : i.kind) === k).length}</b></button>)}</nav>
       <input className="library-search" aria-label="بحث" placeholder="ابحث في المكتبة…" value={q} onChange={(e) => setQ(e.target.value)} />
       {message && <p className="banner" role="alert">{message}</p>}
-      {!shown.length ? <div className="panel-card empty-state"><strong>{ideasOnly ? "لا توجد أفكار" : "المكتبة فارغة"}</strong><small>{ideasOnly ? "سجّل أي فكرة منشور قبل أن تنساها." : "احفظ نصوصًا وصورًا وأفكارًا لتعيد استخدامها."}</small></div> :
-        <div className="card-grid">{shown.map((i) => <article key={i.id} className="panel-card"><header className="row-between"><strong>{i.title}</strong><span className="chip">{ideasOnly ? STATUSES[i.status] : KINDS[i.kind]}</span></header>
+      {!shown.length ? <div className="card empty-state"><strong>{ideasOnly ? "لا توجد أفكار" : "المكتبة فارغة"}</strong><small>{ideasOnly ? "سجّل أي فكرة منشور قبل أن تنساها." : "احفظ نصوصًا وصورًا وأفكارًا لتعيد استخدامها."}</small></div> :
+        <div className="card-grid">{shown.map((i) => <article key={i.id} className="card"><header className="row-between"><strong>{i.title}</strong><span className="chip">{ideasOnly ? STATUSES[i.status] : KINDS[i.kind]}</span></header>
           {i.body && <p style={{ whiteSpace: "pre-wrap" }}>{i.body.slice(0, 220)}{i.body.length > 220 ? "…" : ""}</p>}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {i.mediaUrl && <img className="preview-image" src={i.mediaUrl} alt={i.title} loading="lazy" />}
           {i.tags.length > 0 && <span className="chips">{i.tags.map((t) => <span key={t} className="chip muted">#{t}</span>)}</span>}
           <small>{riyadh(i.updatedAt)}</small>
           <div className="form-actions">
-            {i.status !== "converted" && <button className="primary-button" onClick={() => convert(i)}>إنشاء مسودة</button>}
+            {i.status !== "converted" && <button className="btn btn-primary" onClick={() => convert(i)}>إنشاء مسودة</button>}
             {i.kind === "idea" && i.status !== "converted" && <select aria-label="حالة الفكرة" value={i.status} onChange={(e) => setStatus(i, e.target.value)}>{Object.entries(STATUSES).filter(([k]) => k !== "converted").map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
             <button className="link-button" onClick={() => remove(i)}>حذف</button>
           </div></article>)}</div>}
@@ -49,7 +49,7 @@ export function LibraryClient({ initial, ideasOnly = false }: { initial: Item[];
       <label>{ideasOnly ? "تفاصيل الفكرة" : "النص"}<textarea rows={5} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
       {(form.kind === "image" || form.kind === "post") && <label>رابط الصورة<input type="url" placeholder="https://…" value={form.mediaUrl} onChange={(e) => setForm({ ...form, mediaUrl: e.target.value })} /></label>}
       <label>وسوم<input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label>
-      <button className="primary-button">حفظ</button>
+      <button className="btn btn-primary">حفظ</button>
     </form>
   </div>;
 }

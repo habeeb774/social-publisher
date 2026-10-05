@@ -37,11 +37,11 @@ export function ImportClient({ pages }: { pages: Array<{ id: string; name: strin
   return <>
     <div className="wizard-steps">{["رفع الملف", "ربط الأعمدة", "المراجعة", "تم"].map((label, i) => <span key={label} className={step >= i + 1 ? "active" : ""}><b>{i + 1}</b> {label}</span>)}</div>
     {error && <p className="banner" role="alert">{error}</p>}
-    <section className="panel-card"><h2>1. الملف</h2>
+    <section className="card"><h2>1. الملف</h2>
       <label className="dropzone"><span>＋</span><strong>{busy && !parsed ? "جارٍ القراءة…" : "اختر ملف Excel أو CSV"}</strong><small>XLSX, XLS, CSV · حتى 10MB · أول 500 صف</small><input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /></label>
       {parsed && <small>الورقة «{parsed.sheet}» · {parsed.total} صفًا{parsed.truncated ? " (يُستورد أول 500)" : ""} · {parsed.headers.length} عمودًا</small>}
     </section>
-    {parsed && <section className="panel-card"><h2>2. ربط الأعمدة</h2><p>اكتشف النظام الأعمدة تلقائيًا؛ غيّر أي ربط حسب ملفك.</p>
+    {parsed && <section className="card"><h2>2. ربط الأعمدة</h2><p>اكتشف النظام الأعمدة تلقائيًا؛ غيّر أي ربط حسب ملفك.</p>
       <div className="mapping-grid">{parsed.fields.map((f) => <label key={f.key}>{f.label}{f.required && " *"}<select value={mapping[f.key] ?? ""} onChange={(e) => { setMapping({ ...mapping, [f.key]: e.target.value }); setSummary(null); }}><option value="">— لا يوجد —</option>{parsed.headers.map((h) => <option key={h} value={h}>{h}</option>)}</select>{mapping[f.key] && parsed.rows[0]?.[mapping[f.key]] && <small>مثال: {parsed.rows[0][mapping[f.key]].slice(0, 60)}</small>}</label>)}</div>
       <div className="field-row">
         <label>الصفحة<select value={pageId} onChange={(e) => setPageId(e.target.value)}>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -52,13 +52,13 @@ export function ImportClient({ pages }: { pages: Array<{ id: string; name: strin
         <label><input type="radio" checked={mode === "schedule"} onChange={() => setMode("schedule")} /> جدولة الصفوف الجاهزة حسب تاريخها</label>
         <label><input type="radio" checked={mode === "queue"} onChange={() => setMode("queue")} /> إضافة الصفوف الجاهزة إلى الطابور</label>
       </fieldset>
-      <button className="primary-button" disabled={busy || !mapping.content} onClick={preview}>{busy ? "جارٍ الفحص…" : "معاينة النتيجة"}</button>
+      <button className="btn btn-primary" disabled={busy || !mapping.content} onClick={preview}>{busy ? "جارٍ الفحص…" : "معاينة النتيجة"}</button>
     </section>}
-    {summary && !done && <section className="panel-card"><h2>3. المراجعة</h2>
+    {summary && !done && <section className="card"><h2>3. المراجعة</h2>
       <div className="result-grid"><span><b>{summary.total}</b>صفًا</span><span><b>{summary.valid}</b>صالح</span><span><b>{summary.invalid}</b>به أخطاء (سيُتخطى)</span></div>
       <div className="responsive-table"><table className="data-table"><thead><tr><th>#</th><th>النص</th><th>الموعد</th><th>ملاحظات</th></tr></thead><tbody>{summary.rows.map((r) => <tr key={r.index}><td>{r.index}</td><td>{r.content || "—"}{r.imageUrl && <small className="chip">صورة</small>}</td><td>{riyadh(r.scheduledAt)}</td><td>{r.errors.map((e) => <small key={e} className="cell-error">✕ {e}</small>)}{r.warnings.map((w) => <small key={w} className="hint" style={{ display: "block" }}>! {w}</small>)}</td></tr>)}</tbody></table></div>
-      <button className="primary-button" disabled={busy || !summary.valid} onClick={commit}>{busy ? "جارٍ الاستيراد…" : `استيراد ${summary.valid} منشور`}</button>
+      <button className="btn btn-primary" disabled={busy || !summary.valid} onClick={commit}>{busy ? "جارٍ الاستيراد…" : `استيراد ${summary.valid} منشور`}</button>
     </section>}
-    {done && <section className="panel-card"><h2>4. تم الاستيراد</h2><p>أُنشئ {done.created} منشور · جُدول {done.scheduled} · في الطابور {done.queued} · تُخطي {done.invalid}{done.imageFailures ? ` · ${done.imageFailures} صورة غير متاحة فحُفظت كمسودات` : ""}.</p><div className="form-actions"><Link className="primary-button" href="/posts">عرض المنشورات</Link><button className="secondary-button" onClick={() => { setParsed(null); setSummary(null); setDone(null); }}>استيراد ملف آخر</button></div></section>}
+    {done && <section className="card"><h2>4. تم الاستيراد</h2><p>أُنشئ {done.created} منشور · جُدول {done.scheduled} · في الطابور {done.queued} · تُخطي {done.invalid}{done.imageFailures ? ` · ${done.imageFailures} صورة غير متاحة فحُفظت كمسودات` : ""}.</p><div className="form-actions"><Link className="btn btn-primary" href="/posts">عرض المنشورات</Link><button className="btn btn-secondary" onClick={() => { setParsed(null); setSummary(null); setDone(null); }}>استيراد ملف آخر</button></div></section>}
   </>;
 }

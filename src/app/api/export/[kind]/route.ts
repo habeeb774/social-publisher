@@ -10,7 +10,7 @@ import { csvResponse, toCsv } from "@/services/export";
 const LIMIT = 20000;
 /** Exports: posts / attempts / activity / analytics as CSV, or a JSON content backup. No secrets are included. */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ kind: string }> }) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, false, "data.export"); if (denied) return denied;
   const { kind } = await params;
   const db = getDb();
   await logAudit("export.downloaded", "export", null, { kind });

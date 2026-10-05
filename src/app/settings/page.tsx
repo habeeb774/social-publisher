@@ -1,7 +1,23 @@
+import Link from "next/link";
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { facebookPages } from "@/db/schema";
+import { getGeneralSettings } from "@/services/general-settings";
 import { isPublishingEnabled } from "@/services/publishing-mode";
-import { AppShell } from "../ui/app-shell";
+import { pageCan } from "@/services/session-server";
+import { Icon } from "../ui/icons";
+import { GeneralForm } from "./general-form";
+import { SETTINGS_SECTIONS, SettingsShell } from "./settings-shell";
 
-export default function Settings(){
-  const live=isPublishingEnabled();
-  return <AppShell title="الإعدادات" eyebrow="إدارة النظام"><div className="settings-grid"><nav className="panel-card settings-nav" aria-label="أقسام الإعدادات"><a className="selected" href="/settings">عام</a><a href="/settings/integrations">التكاملات</a><a href="/settings/notifications">الإشعارات وسير العمل</a><a href="/settings/publishing">قواعد النشر</a><a href="/settings/export">التصدير</a><a href="/status">حالة النظام</a><a href="/logs">السجلات</a></nav><div className="settings-content-stack"><section className="panel-card settings-content"><div className="settings-heading"><div><span className="section-kicker">Workspace</span><h1>الإعدادات العامة</h1><p>إدارة تفضيلات مساحة النشر والمنطقة الزمنية.</p></div></div><div className="setting-row"><div><strong>اسم مساحة العمل</strong><small>Social Publisher · مساحة النشر الرئيسية</small></div><button className="secondary-button" type="button">تعديل</button></div><div className="setting-row"><div><strong>المنطقة الزمنية</strong><small>تستخدم في الجدولة وعرض التقويم.</small></div><select className="settings-select" defaultValue="riyadh" aria-label="المنطقة الزمنية"><option value="riyadh">Asia/Riyadh (UTC+3)</option></select></div></section><section className="panel-card settings-content"><div className="settings-heading"><div><span className="section-kicker">Publishing safety</span><h2>سلامة النشر</h2><p>حماية تمنع إنشاء منشورات حقيقية أثناء الاختبار.</p></div><span className="safe-badge">{live ? "Live" : "Safe Mode"}</span></div><div className="setting-row"><div><strong>{live ? "النشر الحقيقي" : "وضع الاختبار الآمن"}</strong><small>{live ? "سيتم إرسال المنشورات المجدولة إلى Facebook عبر MCP." : "لن يتم نشر أي محتوى فعلياً على Facebook."}</small></div><span className={`toggle ${live ? "on live-toggle" : ""}`}>{live ? "●" : "○"}</span></div><div className={`banner safe-banner ${live ? "live-banner" : ""}`}><span>{live ? "!" : "✓"}</span><div><strong>{live ? "النشر الحقيقي مفعّل" : "Safe Mode مفعّل"}</strong><small>{live ? "راجع المنشورات المجدولة قبل اعتمادها." : "يجب الحصول على موافقة صريحة قبل التغيير إلى النشر الحقيقي."}</small></div></div></section><section className="panel-card settings-content"><div className="settings-heading"><div><span className="section-kicker">Notifications</span><h2>التنبيهات</h2><p>اختر الأحداث التي تريد متابعتها.</p></div></div><div className="setting-row"><div><strong>فشل النشر</strong><small>تنبيه عند تعذر تنفيذ محاولة نشر.</small></div><span className="toggle on">●</span></div><div className="setting-row"><div><strong>اكتمال الاستيراد</strong><small>تنبيه عند انتهاء مراجعة ملف المحتوى.</small></div><span className="toggle">○</span></div></section></div></div></AppShell>
+export const dynamic = "force-dynamic";
+export const metadata = { title: "الإعدادات" };
+
+export default async function Settings() {
+  const [general, pages, canEdit] = await Promise.all([getGeneralSettings(), getDb().select({ id: facebookPages.id, name: facebookPages.name }).from(facebookPages).where(eq(facebookPages.isActive, true)), pageCan("settings.manage")]);
+  const live = isPublishingEnabled();
+  return <SettingsShell active="/settings" title="الإعدادات" description="إعدادات مساحة العمل العامة.">
+    <GeneralForm initial={general} pages={pages} canEdit={canEdit} />
+    <section className="card"><div className="card-header"><h2>وضع النشر</h2><span className={`badge ${live ? "badge-success" : "badge-warning"}`}>{live ? "النشر الحقيقي مفعّل" : "وضع الاختبار"}</span></div><small>{live ? "المنشورات المجدولة تُنشر فعليًا على صفحاتك." : "لا يُنشر أي محتوى فعليًا."} يُغيَّر من متغير البيئة PUBLISHING_ENABLED في Vercel فقط، ولا يمكن تغييره من الواجهة.</small></section>
+    <div className="card-grid">{SETTINGS_SECTIONS.slice(1).map((s) => <Link key={s.href} href={s.href} className="card" style={{ textDecoration: "none" }}><span className="row"><Icon name={s.icon} width={16} style={{ color: "var(--primary)" }} /><b style={{ color: "var(--heading)", fontWeight: 600 }}>{s.label}</b></span><small>{s.description}</small></Link>)}</div>
+  </SettingsShell>;
 }

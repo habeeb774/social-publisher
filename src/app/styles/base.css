@@ -1,0 +1,29 @@
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-14); line-height: var(--lh); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+h1, h2, h3, h4 { margin: 0; color: var(--heading); font-weight: 600; line-height: 1.35; }
+h1 { font-size: var(--fs-22); } h2 { font-size: var(--fs-16); } h3 { font-size: var(--fs-14); }
+p { margin: 0; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+small { font-size: var(--fs-12); color: var(--muted); }
+code, kbd { font-family: var(--mono); font-size: var(--fs-12); }
+code { padding: 1px 6px; border-radius: var(--r-sm); background: var(--subtle); border: 1px solid var(--border); color: var(--text); overflow-wrap: anywhere; }
+kbd { padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-4) 0; }
+img { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--primary-soft); color: var(--heading); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--muted); }
+.danger { color: var(--danger); }
+.stack { display: grid; gap: var(--s-4); }
+.row { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.nowrap { white-space: nowrap; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.num { font-variant-numeric: tabular-nums; }

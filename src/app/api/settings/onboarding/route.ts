@@ -4,7 +4,7 @@ import { guard } from "@/services/api-guard";
 import { setSetting } from "@/services/settings-store";
 
 export async function PUT(request: NextRequest) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, request.method !== "GET", request.method === "GET" ? "content.read" : "settings.manage"); if (denied) return denied;
   const parsed = z.object({ dismissed: z.boolean() }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "قيمة غير صالحة" }, { status: 400 });
   await setSetting("onboarding_dismissed", parsed.data.dismissed);

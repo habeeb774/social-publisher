@@ -25,6 +25,6 @@ export function CampaignForm({ initial }: { initial?: CampaignInput }) {
     <div className="field-row"><label>البداية<input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label><label>النهاية<input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label></div>
     <label>الحالة<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
     {error && <p className="banner" role="alert">{error}</p>}
-    <button className="primary-button">حفظ</button>
+    <button className="btn btn-primary">حفظ</button>
   </form>;
 }

@@ -9,11 +9,11 @@ const pref = z.object({ inApp: z.boolean(), email: z.boolean() });
 const body = z.record(z.enum(Object.keys(ALERT_TYPES) as [keyof typeof ALERT_TYPES]), pref);
 
 export async function GET(request: NextRequest) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, request.method !== "GET", request.method === "GET" ? "content.read" : "settings.manage"); if (denied) return denied;
   return NextResponse.json(await getSetting<AlertPrefs>("notification_prefs", {}));
 }
 export async function PUT(request: NextRequest) {
-  const denied = await guard(request); if (denied) return denied;
+  const denied = await guard(request, request.method !== "GET", request.method === "GET" ? "content.read" : "settings.manage"); if (denied) return denied;
   const parsed = body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "إعدادات غير صالحة" }, { status: 400 });
   await setSetting("notification_prefs", parsed.data);

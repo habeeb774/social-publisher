@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 function Bars({ title, rows, empty }: { title: string; rows: Array<{ label: string; count: number }>; empty: string }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
-  return <section className="panel-card"><h2>{title}</h2>{!rows.length ? <p>{empty}</p> : <ul className="bar-list">{rows.map((r) => <li key={r.label}><span>{r.label}</span><span className="bar"><i style={{ width: `${(r.count / max) * 100}%` }} /></span><b>{r.count}</b></li>)}</ul>}</section>;
+  return <section className="card"><h2>{title}</h2>{!rows.length ? <p>{empty}</p> : <ul className="bar-list">{rows.map((r) => <li key={r.label}><span>{r.label}</span><span className="bar"><i style={{ width: `${(r.count / max) * 100}%` }} /></span><b>{r.count}</b></li>)}</ul>}</section>;
 }
 
 /** Facebook engagement section streams in separately so the system stats render immediately. */
@@ -14,7 +14,7 @@ async function Engagement() {
   const result = await bestTimeFromEngagement();
   const totals = new Map<string, { label: string; value: number }>();
   for (const { perf } of result.posts) for (const m of perf.metrics) { const t = totals.get(m.key) ?? { label: m.label, value: 0 }; t.value += m.value; totals.set(m.key, t); }
-  return <section className="panel-card"><h2>أداء Facebook (آخر {result.samples} منشورًا ببيانات متاحة)</h2>
+  return <section className="card"><h2>أداء Facebook (آخر {result.samples} منشورًا ببيانات متاحة)</h2>
     {!totals.size ? <p>لا تتوفر بيانات أداء من Facebook بعد. تظهر بعد نشر منشورات وتفاعل الجمهور معها.</p> : <div className="metrics-row compact">{[...totals.entries()].filter(([k]) => !k.includes(".")).map(([k, t]) => <div className="metric" key={k}><small>{t.label}</small><strong>{t.value.toLocaleString("ar-SA")}</strong></div>)}</div>}
     <h3>أفضل وقت للنشر</h3>
     {result.recommendation ? <p><strong>{result.recommendation.label}</strong> · متوسط تفاعل {result.recommendation.avgEngagement} (من {result.recommendation.basedOn} منشور في هذا الوقت)</p> : <p>لا توجد بيانات تفاعل كافية بعد (نحتاج 5 منشورات على الأقل ببيانات أداء؛ المتوفر {result.samples}). لن نعرض توصية تقديرية.</p>}
@@ -34,6 +34,6 @@ export default async function Analytics() {
       <Bars title="ساعات النشر الأكثر" rows={a.byHour} empty="لا توجد منشورات منشورة بعد." />
       <Bars title="المنشورات لكل صفحة" rows={a.byPage.map((p) => ({ label: p.name, count: p.n }))} empty="لا توجد صفحات." />
     </div>
-    <Suspense fallback={<section className="panel-card"><h2>أداء Facebook</h2><p>جارٍ جلب البيانات من Facebook…</p></section>}><Engagement /></Suspense>
+    <Suspense fallback={<section className="card"><h2>أداء Facebook</h2><p>جارٍ جلب البيانات من Facebook…</p></section>}><Engagement /></Suspense>
   </AppShell>;
 }

@@ -1,10 +1,10 @@
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminRequest } from "@/services/request-auth";
+import { guard } from "@/services/api-guard";
 import { discoverWindsorPublishing, testWindsorMcp } from "../../../../../services/windsor-mcp";
 
 export async function GET(request: NextRequest) {
-  if (!(await isAdminRequest(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  {const denied=await guard(request,request.method!=="GET","system.diagnose");if(denied)return denied;}
   if (!process.env.WINDSOR_API_KEY) return NextResponse.json({ provider: "windsor", status: "WINDSOR_API_KEY_MISSING", safeMode: !isPublishingEnabled() }, { status: 503 });
   try {
     const result = await testWindsorMcp();

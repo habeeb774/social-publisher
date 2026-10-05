@@ -23,13 +23,13 @@ export function RecurrencePanel({ id }: { id: string }) {
   }
   async function stop(ruleId: string) { await api(`/api/posts/${id}/recurrence?rule=${ruleId}`, { method: "DELETE" }); load(); }
   const active = rules.filter((r) => r.active);
-  return <section className="panel-card"><h2>منشور متكرر</h2><small>يُستخدم هذا المنشور كقالب؛ كل موعد يصبح منشورًا مستقلًا له سجله الخاص.</small>
+  return <section className="card"><h2>منشور متكرر</h2><small>يُستخدم هذا المنشور كقالب؛ كل موعد يصبح منشورًا مستقلًا له سجله الخاص.</small>
     {active.map((r) => <div key={r.id} className="row-between"><span>{r.frequency === "weekly" ? `كل ${r.interval > 1 ? `${r.interval} أسابيع` : "أسبوع"}` : `كل ${r.interval > 1 ? `${r.interval} أشهر` : "شهر"}`} · القادم {riyadh(r.nextRunAt)} · تم {r.occurrences}{r.maxOccurrences ? ` من ${r.maxOccurrences}` : ""}{r.endsAt ? ` · حتى ${riyadh(r.endsAt)}` : ""}</span><button className="link-button" onClick={() => stop(r.id)}>إيقاف</button></div>)}
     {!active.length && <form className="post-form" onSubmit={create}>
       <div className="field-row"><label>التكرار<select value={frequency} onChange={(e) => setFrequency(e.target.value)}><option value="weekly">أسبوعي</option><option value="monthly">شهري</option></select></label><label>كل<input type="number" min={1} max={12} value={interval} onChange={(e) => setInterval(Number(e.target.value))} /></label></div>
       <label>أول موعد (الرياض)<input type="datetime-local" required value={first} onChange={(e) => setFirst(e.target.value)} /></label>
       <div className="field-row"><label>عدد المرات<input type="number" min={1} max={260} value={count} disabled={Boolean(until)} onChange={(e) => setCount(Number(e.target.value))} /></label><label>أو حتى تاريخ<input type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></label></div>
-      <button className="secondary-button">إنشاء التكرار</button>
+      <button className="btn btn-secondary">إنشاء التكرار</button>
     </form>}
     {message && <p role="status">{message}</p>}
   </section>;
