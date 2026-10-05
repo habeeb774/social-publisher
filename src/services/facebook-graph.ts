@@ -55,6 +55,20 @@ export async function publishGraphPost(input: { pageId: string; content: string;
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
 }
 
+/** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
+export async function replyToCommentGraph(pageId: string, commentId: string, message: string) {
+  const token = await pageToken(pageId);
+  let result: Awaited<ReturnType<typeof graph>>;
+  try {
+    result = await graph(`/${encodeURIComponent(commentId)}/comments`, { method: "POST", body: new URLSearchParams({ message, access_token: token }) });
+  } catch {
+    throw new Error("COMMENTS_REPLY_OUTCOME_UNKNOWN");
+  }
+  if (result.body.error) throw new Error(graphError(result.body));
+  if (typeof result.body.id !== "string") throw new Error("COMMENTS_REPLY_OUTCOME_UNKNOWN");
+  return { id: result.body.id };
+}
+
 /** Reports token validity and expiry (expiresAt null = never expires). */
 export async function inspectGraphToken() {
   const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();

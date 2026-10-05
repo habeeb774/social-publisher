@@ -15,7 +15,7 @@ type Caps = { connected: boolean; read: boolean; reply: boolean; reason: string 
 type Template = { id: string; name: string; content: string; active: boolean };
 const TABS: Array<[string, string]> = [["all", "الكل"], ["unread", "غير مقروء"], ["needs_reply", "بحاجة رد"], ["replied", "تم الرد"], ["important", "مهم"], ["spam", "مزعج"]];
 const SENTIMENT: Record<string, string> = { complaint: "مراجعة بشرية", price: "استفسار سعر", purchase: "رغبة شراء", question: "سؤال", positive: "إيجابي", neutral: "محايد" };
-const REPLY_STATUS: Record<string, string> = { draft: "مسودة", approved: "معتمد", pending_approval: "بانتظار الموافقة", sent: "أُرسل", failed: "فشل" };
+const REPLY_STATUS: Record<string, string> = { draft: "مسودة", approved: "معتمد", pending_approval: "بانتظار الموافقة", sent: "أُرسل", failed: "فشل", sending: "جارٍ الإرسال", outcome_unknown: "نتيجة غير مؤكدة — تحقق من Facebook" };
 
 async function call<T>(query: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api/comments${query}`, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
@@ -73,7 +73,7 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
           <div className="inbox-messages">
             {detail!.thread.filter((t) => t.id !== c.id).map((t) => <div key={t.id} className="bubble"><p className="pre">{t.message}</p><small>{t.author_name ?? "متابع"} · {riyadh(t.created_time, "time")}</small></div>)}
             <div className="bubble"><p className="pre">{c.message}</p><small>{riyadh(c.created_time)}{c.sentiment === "complaint" && <> · <b className="danger">يحتاج مراجعة بشرية</b></>}</small></div>
-            {detail!.replies.map((r) => <div key={r.id} className="bubble outgoing"><p className="pre">{r.content}</p><small>{REPLY_STATUS[r.status] ?? r.status} · {r.reply_type === "automation" ? "تلقائي" : r.reply_type === "template" ? "قالب" : "يدوي"}{r.status === "draft" && canReply && <> · <button className="link-button" onClick={() => mutate({ action: "approve", id: c.id, replyId: r.id }, "اعتُمد الرد")}>اعتماد</button></>}</small></div>)}
+            {detail!.replies.map((r) => <div key={r.id} className="bubble outgoing"><p className="pre">{r.content}</p><small>{REPLY_STATUS[r.status] ?? r.status} · {r.reply_type === "automation" ? "تلقائي" : r.reply_type === "template" ? "قالب" : "يدوي"}{r.status === "draft" && canReply && <> · <button className="link-button" onClick={() => mutate({ action: "approve", id: c.id, replyId: r.id }, "اعتُمد الرد")}>اعتماد</button></>}{(r.status === "approved" || r.status === "failed") && canReply && caps?.reply && (caps.flags?.replies ? <> · <button className="link-button" disabled={busy} onClick={() => mutate({ action: "send", id: c.id, replyId: r.id }, "أُرسل الرد إلى Facebook")}>إرسال إلى Facebook</button></> : <> · <span className="muted">الإرسال الحقيقي مطفأ</span></>)}</small></div>)}
             {detail!.notes.map((n) => <div key={n.id} className="bubble note"><p className="pre">{n.body}</p><small>ملاحظة داخلية · {n.author}</small></div>)}
           </div>
           {canReply && <div className="reply-composer">

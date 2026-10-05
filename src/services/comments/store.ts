@@ -95,9 +95,26 @@ export async function sendReply(id:string,replyId:string){
   const detail=await commentDetail(id);const reply=detail.replies.find(r=>r.id===replyId);if(!reply)throw new Error("REPLY_NOT_FOUND");
   const caps=await commentsProvider.capabilities();
   if(!caps.reply){await commentsAudit("comment.reply_blocked",id,{replyId,code:"COMMENTS_REPLY_UNAVAILABLE"});throw new Error("COMMENTS_REPLY_UNAVAILABLE");}
-  // Fail closed even if a future provider enables actions: rollout requires an audited sender.
-  if(!flags().replies)return {dryRun:true,providerReached:true,realReply:false};
-  throw new Error("COMMENTS_SENDER_NOT_IMPLEMENTED");
+  // Real sends stay off until FACEBOOK_COMMENT_REPLIES_ENABLED=true.
+  if(!flags().replies)return {dryRun:true,providerReached:false,realReply:false};
+  // Claim atomically so a double click or a second tab can never send twice.
+  const db=database();
+  const [claimed]=await db`UPDATE comment_replies SET status='sending',provider='graph_api',sent_by=${currentActor()},updated_at=now() WHERE id=${replyId}::uuid AND comment_id=${id}::uuid AND status IN ('approved','failed') RETURNING id`;
+  if(!claimed)throw new Error("REPLY_NOT_APPROVED");
+  try{
+    const sent=await commentsProvider.replyToComment(String(detail.comment.facebook_page_id),String(detail.comment.facebook_comment_id),String(reply.content));
+    await db`UPDATE comment_replies SET status='sent',facebook_reply_id=${sent.id},sent_at=now(),error_code=NULL,error_message=NULL,updated_at=now() WHERE id=${replyId}::uuid`;
+    await db`UPDATE facebook_comments SET status='replied',needs_reply=false WHERE id=${id}::uuid`;
+    await commentsAudit("comment.reply_sent",id,{replyId,facebookReplyId:sent.id});
+    return {dryRun:false,realReply:true,facebookReplyId:sent.id};
+  }catch(error){
+    const message=error instanceof Error?error.message:"COMMENTS_REPLY_FAILED";
+    // An unknown outcome is never retried automatically: the reply may already be on Facebook.
+    const unknown=message==="COMMENTS_REPLY_OUTCOME_UNKNOWN";
+    await db`UPDATE comment_replies SET status=${unknown?"outcome_unknown":"failed"},failed_at=now(),error_code=${unknown?message:"FACEBOOK_GRAPH_ERROR"},error_message=${message.slice(0,500)},updated_at=now() WHERE id=${replyId}::uuid`;
+    await commentsAudit("comment.reply_failed",id,{replyId,code:message.slice(0,100)});
+    throw error;
+  }
 }
 export async function ingestComment(pageId:string,remote:RemoteComment,pageRemoteId:string){
   const db=database();const fromPage=remote.authorId===pageRemoteId;const sentiment=classify(remote.message);

@@ -33,7 +33,7 @@ export async function GET(request:NextRequest){
     if(view==="notifications")return NextResponse.json(await commentNotifications(principal.id));
     if(view==="catalog")return NextResponse.json(await store.inboxCatalog(principal.id));
     if(view==="analytics")return NextResponse.json(await store.commentsAdvancedAnalytics());
-    if(view==="capabilities")return NextResponse.json({...await commentsProvider.capabilities(),flags:flags(),safeMode:!flags().replies,realRepliesEnabled:false});
+    if(view==="capabilities")return NextResponse.json({...await commentsProvider.capabilities(),flags:flags(),safeMode:!flags().replies,realRepliesEnabled:flags().replies});
     if(view==="templates")return NextResponse.json(await store.listQuickReplies());
     if(view==="rules")return NextResponse.json(await store.listCommentRules());
     if(view==="metrics")return NextResponse.json(await store.commentsMetrics());

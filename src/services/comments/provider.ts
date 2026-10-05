@@ -1,4 +1,5 @@
 import { callTool, contentJson, discoverWindsorPublishing } from "../windsor-mcp";
+import { isGraphConfigured, replyToCommentGraph } from "../facebook-graph";
 
 export type RemoteComment = { id:string; pageId:string; postId:string|null; parentId:string|null; message:string; createdTime:Date; hidden:boolean; authorId:string|null; authorName:string|null; authorAvatar:string|null; permalink:string|null };
 export type CommentsCapabilities = { connected:boolean; pageIds:string[]; read:boolean; repliesRead:boolean; reply:boolean; hide:boolean; unhide:boolean; delete:boolean; author:boolean; permalink:boolean; webhook:boolean; rateLimitKnown:boolean; reason:string|null; checkedAt:string };
@@ -27,9 +28,9 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
       const fields=unwrap(contentJson(result.payload.result)) as Array<{id:string}>;
       const ids=new Set(Array.isArray(fields)?fields.map(f=>f.id):[]);
       const read=COMMENT_FIELDS.every(id=>ids.has(id));
-      // Verified action schemas contain only create_post and create_photo_post.
-      // A new arbitrary action must NOT silently become an enabled reply capability.
-      return {connected:pageIds.length>0,pageIds,read,repliesRead:read&&ids.has("comment_parent_id"),reply:false,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:read?"COMMENTS_REPLY_UNAVAILABLE":"COMMENTS_READ_UNAVAILABLE",checkedAt};
+      // Windsor has no reply action; replies go through the Graph page token when one is configured.
+      const reply=isGraphConfigured();
+      return {connected:pageIds.length>0,pageIds,read,repliesRead:read&&ids.has("comment_parent_id"),reply,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:!read?"COMMENTS_READ_UNAVAILABLE":reply?null:"COMMENTS_REPLY_UNAVAILABLE",checkedAt};
     } catch {return {connected:false,pageIds:[],read:false,repliesRead:false,reply:false,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:"COMMENTS_AUTH_REQUIRED",checkedAt};}
   }
   async listPostComments(pageId:string,from:string,to:string) {
@@ -47,7 +48,7 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
   }
   async getComment(pageId:string,id:string,from:string,to:string){return (await this.listPostComments(pageId,from,to)).find(c=>c.id===id)??null;}
   async getReplies(pageId:string,id:string,from:string,to:string){return (await this.listPostComments(pageId,from,to)).filter(c=>c.parentId===id);}
-  async replyToComment():Promise<{id:string}>{throw new Error("COMMENTS_REPLY_UNAVAILABLE");}
+  async replyToComment(pageId:string,commentId:string,content:string):Promise<{id:string}>{if(!isGraphConfigured())throw new Error("COMMENTS_REPLY_UNAVAILABLE");return replyToCommentGraph(pageId,commentId,content);}
   async hideComment():Promise<void>{throw new Error("COMMENTS_HIDE_UNAVAILABLE");}
   async unhideComment():Promise<void>{throw new Error("COMMENTS_HIDE_UNAVAILABLE");}
   async markHandled():Promise<void>{throw new Error("COMMENTS_INTERNAL_ACTION_ONLY");}
