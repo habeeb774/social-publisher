@@ -347,3 +347,92 @@ details.disclosure > summary { cursor: pointer; color: var(--muted); font-size: 
 .page-header { margin-bottom: var(--s-6); }
 .metric { padding: var(--s-5) var(--s-6); }
 .metric strong { font-size: var(--fs-26); }
+
+
+/* ---------- Mobile responsive hardening ---------- */
+@media (max-width: 767px) {
+  .form-layout, .detail-layout, .composer-layout, .import-layout, .dashboard-grid, .split {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+  }
+
+  .page-header, .page-intro, .detail-top, .welcome-row, .settings-heading {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+    gap: var(--s-3);
+    margin-bottom: var(--s-4);
+  }
+  .page-header > *, .page-intro > *, .detail-top > *, .welcome-row > *, .settings-heading > * { min-width: 0; max-width: 100%; }
+  .page-header h1, .page-intro h2, .detail-top h1, .welcome-row h1, .settings-heading h1 { font-size: 21px; line-height: 1.4; }
+  .page-header p, .page-intro p, .detail-top p, .welcome-row p, .settings-heading p { font-size: var(--fs-13); line-height: 1.75; overflow-wrap: anywhere; }
+
+  .card, .panel-card, .integration-card, .log-card, .settings-content, .detail-preview, .page-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: var(--s-4);
+  }
+  .card-grid { width: 100%; max-width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+
+  .tabs, .status-tabs, .comments-tabs {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-bottom: var(--s-3);
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline proximity;
+  }
+  .tabs > a, .tabs > button, .status-tabs > a, .status-tabs > button, .comments-tabs > a, .comments-tabs > button {
+    flex: 0 0 auto;
+    padding: 9px 11px;
+    scroll-snap-align: start;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select {
+    min-height: 44px;
+  }
+  textarea { min-height: 150px; }
+  .post-form { gap: var(--s-4); }
+  .field-row, .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .inline-field { align-items: stretch; }
+  .inline-field > input, .inline-field > select { width: 100%; min-width: 0; }
+
+  .toolbar, .media-toolbar, .post-toolbar, .comments-toolbar, .calendar-filters {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .toolbar > input, .toolbar .search { flex: 1 1 100%; min-width: 0; }
+  .toolbar select, .toolbar input[type="date"], .bulk-bar select { width: 100%; min-width: 0; }
+
+  .metric-strip, .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric { padding: var(--s-3); }
+  .metric strong { font-size: 20px; }
+
+  .bar-list li { grid-template-columns: minmax(70px, auto) minmax(0, 1fr) 34px; gap: var(--s-2); }
+  .list-row, .integration-row, .setting-row { min-width: 0; }
+  .list-row > *, .integration-row > *, .setting-row > * { min-width: 0; }
+
+  .form-actions { width: 100%; }
+  .form-actions .btn, .form-actions .primary-button, .form-actions .secondary-button { min-height: 44px; }
+
+  .empty-state, .ui-empty-state, .comments-empty, .table-empty { padding: var(--s-8) var(--s-4); }
+
+  .dialog {
+    width: calc(100% - 24px);
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    padding: var(--s-4);
+  }
+
+  .preview-image { max-height: 320px; }
+}
+
+@media (max-width: 380px) {
+  .metric-strip, .metrics-row { grid-template-columns: minmax(0, 1fr); }
+}
