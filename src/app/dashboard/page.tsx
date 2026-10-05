@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { dashboardData } from "@/services/dashboard";
-import { insightsFrom, systemAnalytics } from "@/services/analytics";
+import { systemAnalytics } from "@/services/analytics";
 import { currentMonth, goalsWithProgress } from "@/services/goals";
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { setupProgress } from "@/services/setup";
@@ -22,7 +22,6 @@ export default async function Dashboard() {
   if (!setup.dismissed && analytics.totals.total === 0 && !setup.complete) redirect("/onboarding");
   const live = isPublishingEnabled();
   const t = data.totals;
-  const insights = insightsFrom(analytics);
   const max = Math.max(1, ...data.series.map((s) => s.count));
   const next = data.upcoming[0];
   const todayDiff = t.today - t.yesterday;
@@ -30,7 +29,7 @@ export default async function Dashboard() {
   const greeting = hour < 12 ? "صباح الخير" : "مساء الخير";
 
   return <AppShell title="لوحة التحكم">
-    <PageHeader title={`${greeting}، حبيب`} description="هذه نظرة سريعة على حالة المحتوى والنشر اليوم." actions={<><Link className="btn btn-secondary" href="/queue"><Icon name="queue" width={16} />الطابور</Link><Link className="btn btn-primary" href="/posts/new"><Icon name="plus" width={16} />إنشاء منشور</Link></>} />
+    <PageHeader title={`${greeting}، حبيب`} description="هذه نظرة سريعة على حالة المحتوى والنشر اليوم." actions={<><Link className="btn btn-primary" href="/posts/new"><Icon name="plus" width={16} />إنشاء منشور</Link></>} />
     {!setup.complete && !setup.dismissed && <SetupProgress steps={setup.steps} percent={setup.percent} />}
     <MetricStrip items={[
       { label: "منشورات اليوم", value: t.today, trend: { dir: todayDiff > 0 ? "up" : todayDiff < 0 ? "down" : "flat", text: `${todayDiff >= 0 ? "+" : ""}${todayDiff} عن أمس` }, spark: data.series.map((s) => s.count), href: "/posts?status=published" },
@@ -38,7 +37,6 @@ export default async function Dashboard() {
       { label: "نسبة نجاح النشر", value: data.successRate === null ? "—" : `${data.successRate}%`, hint: `آخر 30 يومًا · ${data.attempts} محاولة`, href: "/failed" },
       { label: "بانتظار الرد", value: data.commentsWaiting ?? "—", hint: data.commentsWaiting === null ? "التعليقات غير متاحة" : "تعليقات تحتاج ردًا", href: "/inbox" },
     ]} />
-    {insights.length > 0 && <div className="insights">{insights.slice(0, 2).map((line) => <p key={line} className="insight">{line}</p>)}</div>}
 
     <div className="dashboard-grid">
       <div className="stack">

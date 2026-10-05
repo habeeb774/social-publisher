@@ -10,10 +10,10 @@ export const metadata: Metadata = { title: { default: "Social Publisher", templa
 export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F7F8FA" }, { media: "(prefers-color-scheme: dark)", color: "#090B10" }] };
 
 // Applies the saved theme before first paint to avoid a light/dark flash.
-const themeScript = `try{var t=localStorage.getItem("sp-theme");document.documentElement.dataset.theme=(t==="dark"||t==="light"||t==="system")?t:"system";var d=localStorage.getItem("sp-density");if(d)document.documentElement.dataset.density=d}catch(e){document.documentElement.dataset.theme="system"}`;
+const themeScript = `try{var t=localStorage.getItem("sp-theme");document.documentElement.dataset.theme=(t==="dark"||t==="light"||t==="system")?t:"light";var d=localStorage.getItem("sp-density");if(d)document.documentElement.dataset.density=d}catch(e){document.documentElement.dataset.theme="light"}`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ar" dir="rtl" data-theme="system" suppressHydrationWarning>
+  return <html lang="ar" dir="rtl" data-theme="light" suppressHydrationWarning>
     <head>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

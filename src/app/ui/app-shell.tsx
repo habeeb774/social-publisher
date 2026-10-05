@@ -10,23 +10,29 @@ import { afterRender, setRootData, writePref } from "./client-prefs";
 type NavLink = { icon: string; label: string; href: string; badge?: "inbox" | "failed" | "reviews" };
 type NavGroup = { key: string; title: string; links: NavLink[] };
 
-// Only finished features appear in navigation.
+// Sidebar shows one entry per section (the first link); the rest of a section appear as tabs at the top of its pages.
 export const NAV: NavGroup[] = [
-  { key: "home", title: "الرئيسية", links: [{ icon: "home", label: "لوحة التحكم", href: "/dashboard" }] },
-  { key: "content", title: "المحتوى", links: [
-    { icon: "posts", label: "المنشورات", href: "/posts" }, { icon: "queue", label: "الطابور", href: "/queue" }, { icon: "calendar", label: "التقويم", href: "/calendar" },
-    { icon: "library", label: "المكتبة", href: "/library" }, { icon: "media", label: "الوسائط", href: "/media" }, { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },
+  { key: "home", title: "لوحة التحكم", links: [{ icon: "home", label: "لوحة التحكم", href: "/dashboard" }] },
+  { key: "posts", title: "المنشورات", links: [
+    { icon: "posts", label: "المنشورات", href: "/posts" }, { icon: "queue", label: "الطابور", href: "/queue" },
+    { icon: "review", label: "المراجعة", href: "/reviews", badge: "reviews" }, { icon: "failed", label: "المتعثرة", href: "/failed", badge: "failed" },
   ] },
-  { key: "engage", title: "التفاعل", links: [
+  { key: "calendar", title: "التقويم", links: [{ icon: "calendar", label: "التقويم", href: "/calendar" }] },
+  { key: "library", title: "المكتبة", links: [
+    { icon: "library", label: "المكتبة", href: "/library" }, { icon: "media", label: "الوسائط", href: "/media" },
+    { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },
+  ] },
+  { key: "engage", title: "صندوق الوارد", links: [
     { icon: "inbox", label: "صندوق الوارد", href: "/inbox", badge: "inbox" }, { icon: "reply", label: "الردود الجاهزة", href: "/templates/replies" },
-    { icon: "automation", label: "أتمتة التعليقات", href: "/automations/comments" }, { icon: "review", label: "مركز المراجعة", href: "/reviews", badge: "reviews" },
+    { icon: "automation", label: "الأتمتة", href: "/automations/comments" },
   ] },
   { key: "insights", title: "التحليلات", links: [
-    { icon: "analytics", label: "التحليلات", href: "/analytics" }, { icon: "performance", label: "أداء المحتوى", href: "/performance" }, { icon: "goals", label: "الأهداف", href: "/goals" }, { icon: "report", label: "التقارير", href: "/reports" },
+    { icon: "analytics", label: "التحليلات", href: "/analytics" }, { icon: "performance", label: "أداء المحتوى", href: "/performance" },
+    { icon: "goals", label: "الأهداف", href: "/goals" }, { icon: "report", label: "التقارير", href: "/reports" },
   ] },
-  { key: "system", title: "النظام", links: [
-    { icon: "pages", label: "صفحات Facebook", href: "/pages" }, { icon: "integrations", label: "التكاملات", href: "/settings/integrations" },
-    { icon: "failed", label: "مركز الفشل", href: "/failed", badge: "failed" }, { icon: "logs", label: "السجلات", href: "/logs" }, { icon: "status", label: "حالة النظام", href: "/status" }, { icon: "settings", label: "الإعدادات", href: "/settings" },
+  { key: "system", title: "الإعدادات", links: [
+    { icon: "settings", label: "الإعدادات", href: "/settings" }, { icon: "pages", label: "صفحات Facebook", href: "/pages" },
+    { icon: "integrations", label: "التكاملات", href: "/settings/integrations" }, { icon: "logs", label: "السجلات", href: "/logs" }, { icon: "status", label: "حالة النظام", href: "/status" },
   ] },
 ];
 const ALL_LINKS = NAV.flatMap((g) => g.links);
@@ -49,7 +55,7 @@ type PaletteItem = { group: string; label: string; href: string; icon: string; h
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
 const isActive = (pathname: string, href: string) => href === "/settings" ? pathname === "/settings" || (pathname.startsWith("/settings/") && !pathname.startsWith("/settings/integrations")) : pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
-const readTheme = (): Theme => { try { const t = localStorage.getItem("sp-theme"); return t === "dark" || t === "light" || t === "system" ? t : "system"; } catch { return "system"; } };
+const readTheme = (): Theme => { try { const t = localStorage.getItem("sp-theme"); return t === "dark" || t === "light" || t === "system" ? t : "light"; } catch { return "light"; } };
 const themeLabel = (t: Theme) => t === "light" ? "فاتح" : t === "dark" ? "داكن" : "حسب النظام";
 const alertTone = (type: string) => /fail|invalid|gap|error/.test(type) ? "bad" : type === "published" || type === "approved" ? "ok" : "warn";
 
@@ -60,21 +66,33 @@ function Brand() {
 const COMMENT_PATHS = ["/inbox", "/settings/replies", "/templates/replies", "/automations/comments", "/analytics/comments"];
 const COMMENT_NAV: NavGroup[] = [{ key: "comments", title: "إدارة التعليقات", links: NAV.flatMap((g) => g.links).filter((l) => COMMENT_PATHS.includes(l.href)) }];
 
+function sectionOf(pathname: string, groups: NavGroup[]) {
+  let best: { group: NavGroup; len: number } | null = null;
+  for (const g of groups) for (const l of g.links) if (isActive(pathname, l.href) && (!best || l.href.length > best.len)) best = { group: g, len: l.href.length };
+  return best?.group;
+}
+
 function SideNav({ pathname, counts, onNavigate, commentsOnly = false }: { pathname: string; counts: Record<string, number>; onNavigate?: () => void; commentsOnly?: boolean }) {
-  const [collapsed, setCollapsed] = useState<string[]>([]);
-  useEffect(() => afterRender(() => { try { setCollapsed(JSON.parse(localStorage.getItem("sp-nav-collapsed") ?? "[]")); } catch {} }), []);
-  const toggle = (key: string) => setCollapsed((c) => { const next = c.includes(key) ? c.filter((k) => k !== key) : [...c, key]; try { localStorage.setItem("sp-nav-collapsed", JSON.stringify(next)); } catch {} return next; });
-  return <nav className="side-nav" aria-label="التنقل الرئيسي">{(commentsOnly ? COMMENT_NAV : NAV).map((g) => {
-    const hasActive = g.links.some((l) => isActive(pathname, l.href));
-    const isCollapsed = collapsed.includes(g.key) && !hasActive;
-    return <div key={g.key} className={`nav-group ${isCollapsed ? "collapsed" : ""}`}>
-      {g.key !== "home" && <button type="button" aria-expanded={!isCollapsed} onClick={() => toggle(g.key)}>{g.title}<span className="chev">⌄</span></button>}
-      <div className="nav-items">{g.links.map((l) => {
-        const active = isActive(pathname, l.href);
-        const count = l.badge ? counts[l.badge] ?? 0 : 0;
-        return <Link key={l.href} href={l.href} onClick={onNavigate} className={`nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined}><Icon name={l.icon} />{l.label}{count > 0 && <span className="count">{count > 99 ? "99+" : count}</span>}</Link>;
-      })}</div>
-    </div>;
+  const groups = commentsOnly ? COMMENT_NAV : NAV;
+  const current = sectionOf(pathname, groups);
+  const items = commentsOnly ? groups[0].links.map((l) => ({ key: l.href, link: l, badges: l.badge ? [l.badge] : [] })) : groups.map((g) => ({ key: g.key, link: g.links[0], badges: g.links.flatMap((l) => l.badge ? [l.badge] : []) }));
+  const main = items.filter((i) => i.key !== "system"), bottom = items.filter((i) => i.key === "system");
+  const row = ({ key, link, badges }: typeof items[number]) => {
+    const active = commentsOnly ? isActive(pathname, link.href) : current?.key === key;
+    const count = badges.reduce((n, b) => n + (counts[b] ?? 0), 0);
+    return <Link key={key} href={link.href} onClick={onNavigate} className={`nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined}><Icon name={link.icon} />{link.label}{count > 0 && <span className="count">{count > 99 ? "99+" : count}</span>}</Link>;
+  };
+  return <nav className="side-nav" aria-label="التنقل الرئيسي"><div className="nav-items">{main.map(row)}</div>{bottom.length > 0 && <div className="nav-items nav-items-end">{bottom.map(row)}</div>}</nav>;
+}
+
+/** Tabs for the pages inside the current section. */
+function SectionTabs({ pathname, counts }: { pathname: string; counts: Record<string, number> }) {
+  const group = sectionOf(pathname, NAV);
+  if (!group || group.links.length < 2) return null;
+  const activeHref = group.links.filter((l) => isActive(pathname, l.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  return <nav className="section-tabs" aria-label={group.title}>{group.links.map((l) => {
+    const count = l.badge ? counts[l.badge] ?? 0 : 0;
+    return <Link key={l.href} href={l.href} className={l.href === activeHref ? "active" : ""} aria-current={l.href === activeHref ? "page" : undefined}>{l.label}{count > 0 && <span className="count">{count}</span>}</Link>;
   })}</nav>;
 }
 
@@ -161,7 +179,7 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
           <button className="theme-toggle kbd-only" onClick={cycleTheme} aria-label={`المظهر الحالي: ${themeLabel(theme)}`} data-tooltip={`المظهر: ${themeLabel(theme)}`}><Icon name={theme === "dark" ? "moon" : "sun"} /></button>
         </div>
       </header>
-      <main className="app-content" id="content">{children}</main>
+      <main className="app-content" id="content">{!commentsOnly && <SectionTabs pathname={pathname} counts={counts} />}{children}</main>
     </div>
 
     <nav className="bottom-nav" aria-label="التنقل السفلي">
