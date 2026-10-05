@@ -8,7 +8,7 @@ import { toast } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
 
-type Comment = { id: string; message: string; author_name: string | null; page_name: string; post_id: string | null; created_time: string; status: string; sentiment: string; needs_reply: boolean };
+type Comment = { id: string; message: string; author_name: string | null; page_name: string; post_id: string | null; created_time: string; status: string; sentiment: string; needs_reply: boolean; facebook_comment_id?: string };
 type Reply = { id: string; content: string; status: string; reply_type: string; created_at: string };
 type Detail = { comment: Comment; thread: Comment[]; replies: Reply[]; notes: Array<{ id: string; body: string; author: string; created_at?: string }>; tags: Array<{ id: string; name: string }>; post: { id: string; content: string; campaign_name: string | null } | null };
 type Caps = { connected: boolean; read: boolean; reply: boolean; reason: string | null; flags?: { replies: boolean } };
@@ -78,10 +78,10 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
           </div>
           {canReply && <div className="reply-composer">
             {templates.length > 0 && <div className="chips">{templates.slice(0, 6).map((t) => <button key={t.id} type="button" className="chip" onClick={() => { setDraft(t.content); setTemplateId(t.id); }}>{t.name}</button>)}</div>}
-            <textarea aria-label="نص الرد" placeholder={caps?.reply ? "اكتب ردك…" : "اكتب مسودة الرد (لن تُرسل إلى Facebook)…"} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <textarea aria-label="نص الرد" placeholder={caps?.reply ? "اكتب ردك…" : "اكتب ردك، ثم انسخه وافتح التعليق في Facebook…"} value={draft} onChange={(e) => setDraft(e.target.value)} />
             <div className="row-between"><small><Icon name="ideas" width={12} /> اقتراح ذكي: يتوفر عند تفعيل المساعد الذكي</small><div className="row">
               <button className="btn btn-secondary btn-sm" disabled={busy || !draft.trim()} onClick={() => mutate({ action: "draft", id: c.id, content: draft, templateId }, "حُفظت المسودة")}>حفظ كمسودة</button>
-              <button className="btn btn-primary btn-sm" disabled title={caps?.reply ? "" : "الرد على Facebook غير متاح عبر الموصل الحالي"}><Icon name="send" width={14} />إرسال الرد</button></div></div>
+              <button className="btn btn-primary btn-sm" disabled={!draft.trim() || !c.facebook_comment_id} title="ينسخ الرد ويفتح التعليق في Facebook لتلصقه وترسله بنفسك" onClick={() => { navigator.clipboard?.writeText(draft).then(() => toast("نُسخ الرد — الصقه في Facebook وأرسله"), () => toast("تعذر النسخ؛ انسخ النص يدويًا", "error")); window.open(`https://www.facebook.com/${c.facebook_comment_id}`, "_blank", "noopener"); mutate({ action: "draft", id: c.id, content: draft, templateId }, "حُفظ الرد في السجل"); }}><Icon name="send" width={14} />نسخ وفتح في Facebook</button></div></div>
             <form className="inline-field" onSubmit={(e) => { e.preventDefault(); if (note.trim()) { mutate({ action: "note", id: c.id, value: note }, "أُضيفت الملاحظة"); setNote(""); } }}><input aria-label="ملاحظة داخلية" placeholder="ملاحظة داخلية للفريق…" value={note} onChange={(e) => setNote(e.target.value)} /><button className="btn btn-ghost btn-sm" disabled={!note.trim()}>إضافة ملاحظة</button></form>
           </div>}
         </>}
