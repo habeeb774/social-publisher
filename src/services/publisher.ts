@@ -50,6 +50,9 @@ export async function publishDuePosts(limit = 10) {
       db.update(posts).set({status:result.dryRun?"draft":"published",facebookPostId:result.dryRun?null:result.id,facebookPermalink:result.permalink,publishedAt:result.dryRun?null:new Date(),lastError:null,failedAt:null,updatedAt:new Date()}).where(eq(posts.id,post.id)),
     ]);
     results.push({id:post.id,status:result.dryRun?"dry_run":"published"});
+    if(!result.dryRun)await sendAlert("published",`تم نشر منشور (${post.id.slice(0,8)})`,`${post.content.slice(0,120)}${result.permalink?`
+
+${result.permalink}`:""}`,0);
   }
   return results;
 }

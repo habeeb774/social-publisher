@@ -5,10 +5,13 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { postInputSchema } from "@/services/posts";
 import { isAdminRequest } from "@/services/request-auth";
+import { syncImage, toPostFields } from "@/services/post-save";
+import { logAudit } from "@/services/audit";
+import { sendAlert } from "@/services/alerts";
 
 export async function GET(request:NextRequest) {
   if(!(await isAdminRequest(request)))return NextResponse.json({error:"Unauthorized"},{status:401});
-  try{return NextResponse.json(await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(200));}
+  try{return NextResponse.json(await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(Math.min(Number(request.nextUrl.searchParams.get("limit"))||50,200)).offset(Math.max(Number(request.nextUrl.searchParams.get("offset"))||0,0)));}
   catch{return NextResponse.json({error:"تعذر تحميل المنشورات"},{status:500});}
 }
 export async function POST(request:NextRequest) {
@@ -22,7 +25,10 @@ export async function POST(request:NextRequest) {
     const db=getDb();
     const [page]=await db.select({id:facebookPages.id}).from(facebookPages).where(and(eq(facebookPages.isActive,true),data.pageId==="habeb"?eq(facebookPages.facebookPageId,"1330947143441946"):eq(facebookPages.id,data.pageId))).limit(1);
     if(!page)return NextResponse.json({error:"الصفحة غير متاحة. تحقق من اتصال Facebook Organic."},{status:409});
-    const [post]=await db.insert(posts).values({pageId:page.id,content:data.content,scheduledAt:data.status==="scheduled"?data.scheduledAt:null,timezone:data.timezone,status:data.status}).returning();
+    const [post]=await db.insert(posts).values({pageId:page.id,...await toPostFields(data)}).returning();
+    await syncImage(post.id,data.imageUrl);
+    await logAudit("post.created","post",post.id,{status:post.status});
+    if(post.status==="scheduled")await sendAlert("scheduled",`تمت جدولة منشور (${post.id.slice(0,8)})`,post.content.slice(0,120),0);
     return NextResponse.json(post,{status:201});
   }catch{return NextResponse.json({error:"تعذر حفظ المنشور. تحقق من القائمة قبل إعادة المحاولة."},{status:500});}
 }

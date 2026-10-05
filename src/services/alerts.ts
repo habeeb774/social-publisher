@@ -2,7 +2,23 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
 
-export type AlertType = "publish_failed" | "scheduler_gap" | "token_expiring" | "token_invalid";
+import { getSetting } from "./settings-store";
+
+export const ALERT_TYPES = {
+  scheduled: "تمت جدولة منشور",
+  published: "تم نشر منشور",
+  publish_failed: "فشل النشر",
+  approved: "تمت الموافقة",
+  rejected: "تم رفض منشور",
+  token_invalid: "Facebook يحتاج إعادة ربط",
+  token_expiring: "توكن Facebook ينتهي قريبًا",
+  scheduler_gap: "توقف عامل النشر",
+  storage_error: "خطأ في التخزين",
+} as const;
+export type AlertType = keyof typeof ALERT_TYPES;
+export type AlertPrefs = Partial<Record<AlertType, { inApp: boolean; email: boolean }>>;
+/** Defaults: everything in-app; email only for problems that need action. */
+export const defaultPref = (type: AlertType) => ({ inApp: true, email: ["publish_failed", "token_invalid", "token_expiring", "scheduler_gap", "storage_error"].includes(type) });
 
 /**
  * Records an in-app notification and, when RESEND_API_KEY is set, emails ALERT_EMAIL (or ADMIN_EMAIL).
@@ -13,9 +29,11 @@ export async function sendAlert(type: AlertType, title: string, message: string,
     const db = getDb();
     const since = new Date(Date.now() - dedupeHours * 3600 * 1000);
     const [existing] = await db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.title, title), gt(notifications.createdAt, since))).limit(1);
-    if (existing) return { sent: false, reason: "duplicate" as const };
-    await db.insert(notifications).values({ type, title, message });
-    const emailed = await sendEmail(title, message);
+    if (dedupeHours > 0 && existing) return { sent: false, reason: "duplicate" as const };
+    const prefs = await getSetting<AlertPrefs>("notification_prefs", {}).catch(() => ({} as AlertPrefs));
+    const pref = { ...defaultPref(type), ...prefs[type] };
+    if (pref.inApp) await db.insert(notifications).values({ type, title, message });
+    const emailed = pref.email ? await sendEmail(title, message) : false;
     return { sent: true, emailed };
   } catch (error) {
     console.error("Alert delivery failed", { type, error: error instanceof Error ? error.message : String(error) });
