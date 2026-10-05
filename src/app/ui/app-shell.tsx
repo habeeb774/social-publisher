@@ -151,7 +151,7 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
   const crumbsParent = parent ?? (() => { const l = ALL_LINKS.find((x) => isActive(pathname, x.href)); return l && l.label !== title ? { label: l.label, href: l.href } : undefined; })();
   const grouped = items.map((item, i) => ({ item, i, header: i === 0 || items[i - 1].group !== item.group ? item.group : null }));
 
-  return <div className="app-layout">
+  return <><div className="app-layout">
     <aside className="sidebar" aria-label="الشريط الجانبي">
       <Brand />
       <SideNav pathname={pathname} counts={counts} commentsOnly={commentsOnly} />
@@ -181,6 +181,7 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
       </header>
       <main className="app-content" id="content">{!commentsOnly && <SectionTabs pathname={pathname} counts={counts} />}{children}</main>
     </div>
+  </div>
 
     <nav className="bottom-nav" aria-label="التنقل السفلي">
       <Link href="/dashboard" className={isActive(pathname, "/dashboard") ? "active" : ""}><Icon name="home" />الرئيسية</Link>
@@ -198,5 +199,5 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
       <div className="palette-help"><span><kbd>↑</kbd><kbd>↓</kbd> تنقل</span><span><kbd>Enter</kbd> فتح</span><span><kbd>Esc</kbd> إغلاق</span><span><kbd>N</kbd> منشور جديد</span></div>
     </div></div>}
     <FeedbackHost />
-  </div>;
+  </>;
 }
