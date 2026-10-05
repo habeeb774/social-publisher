@@ -135,8 +135,12 @@ async function planAutomation(comment:Row){
     const [event]=await db`INSERT INTO comment_automation_events(comment_id,rule_id,status) VALUES(${String(comment.id)}::uuid,${match.rule.id}::uuid,'matched') ON CONFLICT DO NOTHING RETURNING id`;if(!event)continue;
     if(match.action==="reply_template"){
       const [template]=await db`SELECT content FROM quick_replies WHERE id=${match.rule.templateId}::uuid AND active`;
-      if(template)await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation','pending_approval',${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()}) ON CONFLICT DO NOTHING`;
-      if(template)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
+      if(!template)continue;
+      // With AUTO_COMMENT_REPLIES_ENABLED the reply is approved and sent right away; otherwise it waits for a human.
+      const auto=flags().autoReplies&&flags().replies;
+      const [created]=await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at,approved_by) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation',${auto?"approved":"pending_approval"},${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()},${auto?"automation":null}) ON CONFLICT DO NOTHING RETURNING id`;
+      if(created&&auto)await sendReply(String(comment.id),String(created.id)).catch(()=>db`INSERT INTO notifications(type,title,message) VALUES('comment_reply_failed','تعذر إرسال رد تلقائي',${String(comment.message).slice(0,300)})`);
+      else if(created)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
     }else if(match.action==="important"){await internalAction(String(comment.id),"status","important");await db`INSERT INTO notifications(type,title,message) VALUES('comment_important','تعليق مهم',${String(comment.message).slice(0,300)})`;}
     else if(match.action==="follow_up")await internalAction(String(comment.id),"status","needs_reply");
     else if(match.action==="tag"&&match.rule.tag)await internalAction(String(comment.id),"tag",match.rule.tag);
