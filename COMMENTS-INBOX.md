@@ -16,14 +16,23 @@ Webhook and polling rate limits are unverified. `/api/cron/comments-sync` authen
 - Unique remote comments; a partial unique index reserves at most one automated draft per comment.
 - Independent flags default false. Unsupported write methods fail closed regardless of flags. No direct Graph API fallback in this module.
 - Real DB-backed analytics, notifications for new/sensitive comments and audit records.
-- Admin-only authenticated APIs, same-origin mutation checks, Zod validation, DB-backed request rate limits.
+- Admin/Editor/Viewer authorization with DB-validated, revocable team sessions; team accounts are scoped to comments, not publishing administration. Same-origin mutation checks, Zod validation and DB-backed request rate limits.
+- Private saved views, date/page/post/assignment/tag/reply-type/rule filters and microsecond-safe cursor pagination.
+- Full rule editing with page/post/campaign/author conditions, exclusions and configurable Riyadh business hours.
+- DB-backed keyword/post/rule analytics, author history when an actual author ID exists, searchable quick replies and per-user notification read markers.
+- Optional AI provider interface fails closed until an actual provider is configured. Comments onboarding and dedicated team-management/login pages.
+
+## Additive team migrations
+
+Run `node scripts/migrate-comment-team.mjs` with DATABASE_URL scoped to the intended branch. Drizzle uses a separate `comment_team_migrations` ledger; migrations add team credentials, notification read markers and query indexes without modifying publishing tables.
+
+Validation includes role matrix, revocation, private views, draft/approval attribution and cursor pagination across 52 comments with identical microsecond timestamps. Synthetic fixtures are confined to an isolated Neon test branch and removed after tests.
 
 ## Still required before full acceptance
 
 - Windsor-supported reply/hide mappings and credentials; actual populated read/reply-thread verification.
 - Known polling limits and persistent pending-job continuation before enabling a sync scheduler. Manual pending reads return COMMENTS_READ_PENDING, not a successful empty sync.
-- Existing app authenticates one admin; Editor/Viewer identities and scoped authorization are not implemented here. Do not claim multi-role support.
-- Rich saved views/filter builder, author history, template search, AI assistance, full rule editing/page/campaign targeting and analytics by keyword/post remain follow-up scope.
+- Actual AI suggestions, optional email alerts and future @mentions are not enabled. Bulk tagging/assignment is supported by the internal API; the current bulk toolbar exposes status changes only.
 - Pending approvals and delay values are persisted, but there is no live reply dispatcher. Automation always creates pending drafts, even if approval is unchecked: conservative safety override.
 - No real reply, hiding or deletion was executed. UI send button stays disabled.
 

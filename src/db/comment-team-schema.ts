@@ -1,0 +1,4 @@
+import { pgTable,uuid,text,integer,boolean,timestamp,primaryKey } from "drizzle-orm/pg-core";
+import { users,notifications } from "./schema";
+export const commentTeamMembers=pgTable("comment_team_members",{userId:uuid("user_id").primaryKey().references(()=>users.id),passwordHash:text("password_hash").notNull(),active:boolean("active").default(true).notNull(),sessionVersion:integer("session_version").default(0).notNull(),createdAt:timestamp("created_at",{withTimezone:true}).defaultNow().notNull()});
+export const commentNotificationReads=pgTable("comment_notification_reads",{notificationId:uuid("notification_id").notNull().references(()=>notifications.id),owner:text("owner").notNull(),readAt:timestamp("read_at",{withTimezone:true}).defaultNow().notNull()},t=>[primaryKey({columns:[t.notificationId,t.owner]})]);

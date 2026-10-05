@@ -1,0 +1,7 @@
+import { z } from "zod";
+export const inboxFilterSchema=z.object({q:z.string().max(200).default(""),status:z.enum(["all","new","unread","needs_reply","replied","resolved","important","spam","hidden","failed"]).default("all"),page:z.union([z.uuid(),z.literal("")]).default(""),post:z.string().max(150).default(""),from:z.union([z.iso.date(),z.literal("")]).default(""),to:z.union([z.iso.date(),z.literal("")]).default(""),assigned:z.union([z.uuid(),z.literal(""),z.literal("unassigned")]).default(""),tag:z.string().max(80).default(""),replyType:z.enum(["","manual","template","automation","ai_assisted"]).default(""),rule:z.union([z.uuid(),z.literal("")]).default(""),sentiment:z.enum(["","neutral","positive","negative","complaint","price","purchase","question","spam"]).default("")}).refine(f=>!f.from||!f.to||f.from<=f.to,"الفترة غير صالحة");
+export type InboxFilter=z.infer<typeof inboxFilterSchema>;
+export const filterParams=(params:URLSearchParams)=>inboxFilterSchema.parse(Object.fromEntries(Object.keys(inboxFilterSchema.shape).map(k=>[k,params.get(k)??""]).filter(([k,v])=>v!==""||k!=="status")));
+const cursorSchema=z.object({time:z.iso.datetime(),id:z.uuid()});
+export function decodeCommentCursor(value:string|null){if(!value)return null;try{return cursorSchema.parse(JSON.parse(Buffer.from(value,"base64url").toString("utf8")));}catch{throw new Error("INVALID_CURSOR");}}
+export function encodeCommentCursor(time:string,id:string){return Buffer.from(JSON.stringify({time,id})).toString("base64url");}

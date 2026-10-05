@@ -28,7 +28,8 @@ type Alert = { id: string; title: string; message: string; isRead: boolean; crea
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
 
-export function AppShell({ children, title }: { children: React.ReactNode; title: string; eyebrow?: string }) {
+export function AppShell({ children, title, commentsOnly=false }: { children: React.ReactNode; title: string; eyebrow?: string;commentsOnly?:boolean }) {
+  const navigation=commentsOnly?[{title:"إدارة التعليقات",links:[["✉","صندوق الوارد","/inbox"],["❏","قوالب الردود","/settings/replies"],["↻","قواعد التعليقات","/automations/comments"],["▲","تحليلات التعليقات","/analytics/comments"]] as Array<[string,string,string]>}]:groups;
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -49,13 +50,14 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   useEffect(() => { const load=()=>fetch("/api/comments?view=metrics").then(r=>r.ok?r.json():null).then(d=>{if(d)setNeedsReply(d.needs_reply??0);}).catch(()=>{});load();const timer=setInterval(load,60000);return()=>clearInterval(timer); },[]);
-  useEffect(() => { const load = () => fetch("/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {}); load(); const timer = setInterval(load, 60000); return () => clearInterval(timer); }, []);
+  useEffect(() => { const load = () => fetch(commentsOnly?"/api/comments?view=notifications":"/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {}); load(); const timer = setInterval(load, 60000); return () => clearInterval(timer); }, [commentsOnly]);
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null)); }, []);
   // Debounced global search shared by the topbar box and the command palette.
   useEffect(() => { if (query.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((d) => setResults(d.results ?? [])).catch(() => {}), 250); return () => clearTimeout(t); }, [query]);
   useEffect(() => { if (paletteQuery.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(paletteQuery)}`).then((r) => r.json()).then((d) => setPaletteResults(d.results ?? [])).catch(() => {}), 250); return () => clearTimeout(t); }, [paletteQuery]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if(commentsOnly)return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette(true); setPaletteQuery(""); setActive(0); setTimeout(() => paletteRef.current?.focus(), 0); return; }
       if (e.key === "Escape") { setPalette(false); setCreateOpen(false); setNotificationsOpen(false); setOpen(false); setResults([]); return; }
       if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -63,7 +65,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
       else if (e.key.toLowerCase() === "n" || e.key === "ى") { e.preventDefault(); router.push("/posts/new"); }
     }
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, [router]);
+  }, [router,commentsOnly]);
 
   // Stale results are hidden (not cleared) when the query is too short.
   const shownResults = query.trim().length >= 2 ? results : [];
@@ -73,13 +75,13 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const go = (href: string) => { setPalette(false); setResults([]); setQuery(""); router.push(href); };
   const isActive = (href: string) => pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
 
-  return <div className="app-layout">
+  return <div className={`app-layout ${commentsOnly?"comment-only-shell":""}`}>
     <button className="mobile-menu" aria-label="فتح القائمة" onClick={() => setOpen(true)}>☰</button>
     {open && <button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setOpen(false)} />}
     <aside className={`sidebar ${open ? "drawer-open" : ""}`}>
       <div className="app-brand"><div><BrandLogo /><small>منصة النشر الذكي</small></div><button className="drawer-close" aria-label="إغلاق القائمة" onClick={() => setOpen(false)}>×</button></div>
-      <nav className="side-nav" aria-label="التنقل الرئيسي">{groups.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}{href==="/inbox"&&needsReply>0&&<b className="comment-tag">{needsReply}</b>}</Link>)}</div>)}</nav>
-      <div className="side-bottom"><div className="safe-mini"><span className="status-dot" />{live ? "النشر الحقيقي" : "وضع الاختبار"}<small>{live ? "المنشورات المجدولة تُنشر فعليًا" : live === null ? "جارٍ التحقق من الحالة" : "النشر الحقيقي متوقف"}</small></div><div className="profile-mini"><span className="avatar">م</span><div><strong>م. حبيب</strong><small>مشرف النظام</small></div><Link href="/settings" aria-label="إعدادات الحساب">⚙</Link></div><form method="post" action="/api/auth/logout"><button className="logout" type="submit">↪ تسجيل الخروج</button></form></div>
+      <nav className="side-nav" aria-label="التنقل الرئيسي">{navigation.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}{href==="/inbox"&&needsReply>0&&<b className="comment-tag">{needsReply}</b>}</Link>)}</div>)}</nav>
+      {commentsOnly?<div className="side-bottom"><div className="safe-mini">الردود في وضع الاختبار<small>لا تُرسل ردود حقيقية</small></div><Link href="/comments/login">دخول فريق التعليقات</Link></div>:<div className="side-bottom"><div className="safe-mini"><span className="status-dot" />{live ? "النشر الحقيقي" : "وضع الاختبار"}<small>{live ? "المنشورات المجدولة تُنشر فعليًا" : live === null ? "جارٍ التحقق من الحالة" : "النشر الحقيقي متوقف"}</small></div><div className="profile-mini"><span className="avatar">م</span><div><strong>م. حبيب</strong><small>مشرف النظام</small></div><Link href="/settings" aria-label="إعدادات الحساب">⚙</Link></div><form method="post" action="/api/auth/logout"><button className="logout" type="submit">↪ تسجيل الخروج</button></form></div>}
     </aside>
     <main className="app-main">
       <header className="topbar"><div className="crumbs"><span>Social Publisher</span><b>/</b><strong>{title}</strong></div>
@@ -89,9 +91,9 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
             {shownResults.length > 0 && <div className="search-results" role="listbox">{shownResults.map((r, i) => <button key={i} role="option" aria-selected={false} onClick={() => go(r.href)}><small>{r.type}</small>{r.label}</button>)}</div>}</div>
           <button className="top-icon kbd-hint" aria-label="لوحة الأوامر (Ctrl+K)" title="لوحة الأوامر (Ctrl+K)" onClick={() => { setPalette(true); setTimeout(() => paletteRef.current?.focus(), 0); }}>⌘K</button>
           <button className="theme-toggle" aria-label={theme === "dark" ? "تفعيل الثيم الفاتح" : "تفعيل الثيم الداكن"} onClick={toggleTheme}>{theme === "dark" ? "☀" : "☾"}</button>
-          <div className="notification-wrap"><button className="top-icon" aria-label="الإشعارات" aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((v) => !v); if (alerts.unread) fetch("/api/notifications", { method: "POST" }).then(() => setAlerts((a) => ({ ...a, unread: 0 }))).catch(() => {}); }}>♧{alerts.unread > 0 && <b className="notification-count">{alerts.unread}</b>}<i /></button>
+          <div className="notification-wrap"><button className="top-icon" aria-label="الإشعارات" aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((v) => !v); if (alerts.unread) fetch(commentsOnly?"/api/comments":"/api/notifications", { method: "POST",...(commentsOnly?{headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"read_notifications"})}:{}) }).then(() => setAlerts((a) => ({ ...a, unread: 0 }))).catch(() => {}); }}>♧{alerts.unread > 0 && <b className="notification-count">{alerts.unread}</b>}<i /></button>
             {notificationsOpen && <div className="notification-panel"><div className="row-between"><strong>الإشعارات</strong><Link href="/settings/notifications">الإعدادات</Link></div>{alerts.items.length ? alerts.items.map((item) => <div key={item.id} className="notification-item"><b className={item.isRead ? "" : "unread"}>{item.title}</b><small style={{ whiteSpace: "pre-wrap" }}>{item.message}</small><small className="muted">{new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</small></div>) : <><span>لا توجد إشعارات جديدة</span><small>تظهر هنا تنبيهات النشر والفشل والموافقات والجدولة.</small></>}</div>}</div>
-          <span className="top-safe"><span className="status-dot" />{live ? "النشر الحقيقي مفعّل" : "وضع الاختبار"}</span>
+          <span className="top-safe"><span className="status-dot" />{commentsOnly?"الردود في وضع الاختبار":live ? "النشر الحقيقي مفعّل" : "وضع الاختبار"}</span>
         </div>
       </header>
       {children}

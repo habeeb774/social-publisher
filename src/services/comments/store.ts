@@ -1,16 +1,24 @@
 import { neon } from "@neondatabase/serverless";
 import { classify, evaluateRules, flags, type CommentRule } from "./rules";
 import { commentsProvider, type RemoteComment } from "./provider";
-import { currentActor } from "../audit";
+import { commentsActor as currentActor } from "./actor";
+import { filterParams,decodeCommentCursor,encodeCommentCursor,inboxFilterSchema,type InboxFilter } from "./filters";
 const database=()=>{if(!process.env.DATABASE_URL)throw new Error("DATABASE_UNAVAILABLE");return neon(process.env.DATABASE_URL);};
 type Row=Record<string,unknown>;
 export async function commentsAudit(action:string,id:string|null,metadata:Row={}){
   const db=database();await db`INSERT INTO activity_logs(action,entity_type,entity_id,metadata) VALUES (${action},'facebook_comment',${id}::uuid,${JSON.stringify({actor:currentActor(),...metadata})}::jsonb)`;
 }
 export async function inbox(query:URLSearchParams){
-  const db=database();const q=(query.get("q")??"").slice(0,200);const status=query.get("status")??"all";const page=query.get("page")??"";const cursor=query.get("cursor");
-  const items=await db`SELECT c.*,p.name AS page_name FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE (${q}='' OR c.message ILIKE ${`%${q}%`} OR c.author_name ILIKE ${`%${q}%`} OR c.post_id=${q}) AND (${status}='all' OR c.status=${status} OR (${status}='needs_reply' AND c.needs_reply)) AND (${page}='' OR c.page_id::text=${page}) AND (${cursor}::timestamptz IS NULL OR c.created_time<${cursor}::timestamptz) ORDER BY c.created_time DESC,c.id DESC LIMIT 51`;
-  return {items:items.slice(0,50),nextCursor:items.length>50?items[49].created_time:null};
+  const db=database();const f=filterParams(query),cursor=decodeCommentCursor(query.get("cursor"));
+  const items=await db`SELECT c.*,p.name AS page_name,to_char(c.created_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE
+  (${f.q}='' OR c.message ILIKE ${`%${f.q}%`} OR c.author_name ILIKE ${`%${f.q}%`} OR c.post_id=${f.q} OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name ILIKE ${`%${f.q}%`}))
+  AND (${f.status}='all' OR c.status=${f.status} OR (${f.status}='needs_reply' AND c.needs_reply)) AND (${f.page}='' OR c.page_id::text=${f.page})
+  AND (${f.post}='' OR c.post_id=${f.post}) AND (${f.from}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date>=NULLIF(${f.from},'')::date) AND (${f.to}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date<=NULLIF(${f.to},'')::date)
+  AND (${f.assigned}='' OR c.assigned_to::text=${f.assigned} OR (${f.assigned}='unassigned' AND c.assigned_to IS NULL)) AND (${f.sentiment}='' OR c.sentiment=${f.sentiment})
+  AND (${f.tag}='' OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name=${f.tag}))
+  AND (${f.replyType}='' OR EXISTS(SELECT 1 FROM comment_replies r WHERE r.comment_id=c.id AND r.reply_type=${f.replyType})) AND (${f.rule}='' OR EXISTS(SELECT 1 FROM comment_automation_events e WHERE e.comment_id=c.id AND e.rule_id::text=${f.rule}))
+  AND (${cursor?.time??null}::timestamptz IS NULL OR (c.created_time,c.id)<(${cursor?.time??null}::timestamptz,${cursor?.id??null}::uuid)) ORDER BY c.created_time DESC,c.id DESC LIMIT 51`;
+  return {items:items.slice(0,50),nextCursor:items.length>50?encodeCommentCursor(String(items[49].cursor_time),String(items[49].id)):null};
 }
 export async function commentDetail(id:string){
   const db=database();const [comment]=await db`SELECT c.*,p.name AS page_name,p.facebook_page_id FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE c.id=${id}::uuid`;
@@ -23,7 +31,20 @@ export async function commentDetail(id:string){
     db`SELECT id,name,email FROM users ORDER BY name LIMIT 100`,
     db`SELECT p.id,p.content,p.facebook_permalink,p.published_at,c.name AS campaign_name FROM posts p LEFT JOIN campaigns c ON c.id=p.campaign_id WHERE p.facebook_post_id=${comment.post_id} LIMIT 1`,
   ]);
-  return {comment,thread,replies,notes,tags,users,post:related[0]??null};
+  const history=comment.author_id?await db`SELECT id,message,created_time,status FROM facebook_comments WHERE author_id=${comment.author_id} AND page_id=${comment.page_id}::uuid ORDER BY created_time DESC LIMIT 10`:[];
+  const [authorTotal]=comment.author_id?await db`SELECT count(*)::int AS count FROM facebook_comments WHERE author_id=${comment.author_id} AND page_id=${comment.page_id}::uuid`:[{count:0}];
+  return {comment,thread,replies,notes,tags,users,post:related[0]??null,history,authorTotal:comment.author_id?authorTotal.count:null};
+}
+export async function inboxCatalog(owner:string){const db=database();const [pages,users,tags,views,campaigns]=await Promise.all([db`SELECT id,name FROM facebook_pages WHERE is_active`,db`SELECT id,name,email FROM users ORDER BY name LIMIT 100`,db`SELECT id,name FROM comment_tags ORDER BY name LIMIT 200`,db`SELECT id,name,query FROM saved_filters WHERE scope=${`comments:${owner}`} ORDER BY created_at DESC LIMIT 50`,db`SELECT id,name FROM campaigns ORDER BY name LIMIT 200`]);return {pages,users,tags,campaigns,views:views.map(v=>({...v,filter:inboxFilterSchema.parse(JSON.parse(String(v.query)))}))};}
+export async function saveInboxView(owner:string,name:string,filter:InboxFilter){const [view]=await database()`INSERT INTO saved_filters(name,scope,query) VALUES(${name},${`comments:${owner}`},${JSON.stringify(filter)}) RETURNING id`;return view;}
+export async function deleteInboxView(owner:string,id:string){await database()`DELETE FROM saved_filters WHERE id=${id}::uuid AND scope=${`comments:${owner}`}`;return {ok:true};}
+export async function commentsAdvancedAnalytics(){
+ const db=database();const [response,keywords,byPost,byRule]=await Promise.all([
+ db`SELECT count(*)::int AS total,count(*) FILTER(WHERE EXISTS(SELECT 1 FROM comment_replies r WHERE r.comment_id=c.id AND r.status='sent' AND r.sent_at IS NOT NULL))::int AS answered FROM facebook_comments c WHERE NOT c.is_from_page`,
+ db`SELECT word,count(*)::int AS count FROM facebook_comments c CROSS JOIN LATERAL regexp_split_to_table(lower(c.message),'[^[:alnum:]ء-ي]+') word WHERE NOT c.is_from_page AND length(word)>2 AND word NOT IN ('على','الى','إلى','هذا','هذه','with','that','the','for','and') GROUP BY word ORDER BY count DESC,word LIMIT 15`,
+ db`SELECT c.post_id,count(*)::int AS count,max(p.content) AS content FROM facebook_comments c LEFT JOIN posts p ON p.facebook_post_id=c.post_id WHERE NOT c.is_from_page GROUP BY c.post_id ORDER BY count DESC LIMIT 20`,
+ db`SELECT r.id,r.name,(SELECT count(*)::int FROM comment_automation_events e WHERE e.rule_id=r.id AND e.status='matched') AS matched,(SELECT count(*)::int FROM comment_automation_events e WHERE e.rule_id=r.id AND e.status='skipped') AS skipped,(SELECT count(*)::int FROM comment_replies p WHERE p.rule_id=r.id AND p.status='sent') AS replied,(SELECT count(*)::int FROM comment_replies p WHERE p.rule_id=r.id AND p.status='failed') AS failed,(SELECT count(*)::int FROM comment_replies p WHERE p.rule_id=r.id AND p.status='pending_approval') AS human_review FROM comment_rules r ORDER BY r.priority LIMIT 200`,
+ ]);const total=Number(response[0].total),answered=Number(response[0].answered);return {total,answered,unanswered:total-answered,responseRate:total?Math.round(answered/total*10000)/100:null,keywords,byPost,byRule};
 }
 export async function commentsMetrics(){
   const db=database();const [totals,replies,lastSync,lastComment,rules]=await Promise.all([
@@ -42,12 +63,14 @@ export async function saveQuickReply(input:{name:string;content:string;category:
 }
 export async function listCommentRules(){return database()`SELECT * FROM comment_rules ORDER BY priority,id LIMIT 200`;}
 export async function saveCommentRule(input:Omit<CommentRule,"id">,id?:string){
+  if(input.action==="hide")throw new Error("COMMENTS_HIDE_UNAVAILABLE");
   const db=database();if(input.templateId){const rows=await db`SELECT id FROM quick_replies WHERE id=${input.templateId}::uuid AND active`;if(!rows.length)throw new Error("TEMPLATE_UNAVAILABLE");}
   const [row]=id?await db`UPDATE comment_rules SET name=${input.name},active=${input.active},priority=${input.priority},config=${JSON.stringify(input)}::jsonb,updated_at=now() WHERE id=${id}::uuid RETURNING *`:await db`INSERT INTO comment_rules(name,active,priority,config,created_by) VALUES(${input.name},${input.active},${input.priority},${JSON.stringify(input)}::jsonb,${currentActor()}) RETURNING *`;
   if(!row)throw new Error("NOT_FOUND");await commentsAudit("comment.rule_saved",null,{ruleId:row.id});return row;
 }
 export async function internalAction(id:string,action:string,value:string){
   const db=database();await commentDetail(id);
+  if(action==="assign"&&value){const rows=await db`SELECT id FROM users WHERE id=${value}::uuid`;if(!rows.length)throw new Error("USER_NOT_FOUND");}
   if(action==="status")await db`UPDATE facebook_comments SET status=${value},needs_reply=${!["resolved","replied","spam","hidden"].includes(value)},updated_at=now() WHERE id=${id}::uuid`;
   else if(action==="note")await db`INSERT INTO comment_notes(comment_id,body,author) VALUES(${id}::uuid,${value},${currentActor()})`;
   else if(action==="assign")await db`UPDATE facebook_comments SET assigned_to=${value||null}::uuid,updated_at=now() WHERE id=${id}::uuid`;
@@ -61,6 +84,7 @@ export async function draftReply(id:string,content:string,templateId:string|null
   const db=database();await commentDetail(id);
   if(templateId){const rows=await db`SELECT id FROM quick_replies WHERE id=${templateId}::uuid AND active`;if(!rows.length)throw new Error("TEMPLATE_UNAVAILABLE");}
   const [row]=await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,sent_by,template_id) VALUES(${id}::uuid,${content},${templateId?"template":"manual"},'draft',${currentActor()},${templateId}::uuid) RETURNING *`;
+  if(templateId)await db`UPDATE quick_replies SET usage_count=usage_count+1 WHERE id=${templateId}::uuid`;
   await commentsAudit("comment.reply_draft",id,{replyId:row.id});return row;
 }
 export async function approveReply(id:string,replyId:string){
@@ -86,15 +110,18 @@ export async function ingestComment(pageId:string,remote:RemoteComment,pageRemot
   return true;
 }
 async function planAutomation(comment:Row){
+  const [relatedPost]=await database()`SELECT campaign_id FROM posts WHERE facebook_post_id=${comment.post_id as string|null} LIMIT 1`;
   const rules=(await listCommentRules()).map(r=>({...r.config as Omit<CommentRule,"id">,id:String(r.id)}));
-  const result=evaluateRules({message:String(comment.message),pageId:String(comment.page_id),postId:comment.post_id as string|null,authorId:comment.author_id as string|null,isFromPage:Boolean(comment.is_from_page),hidden:Boolean(comment.is_hidden),replied:comment.status==="replied"},rules);
+  const result=evaluateRules({message:String(comment.message),pageId:String(comment.page_id),postId:comment.post_id as string|null,authorId:comment.author_id as string|null,campaignId:relatedPost?.campaign_id as string|null,spam:comment.status==="spam",isFromPage:Boolean(comment.is_from_page),hidden:Boolean(comment.is_hidden),replied:comment.status==="replied"},rules);
   const db=database();if(result.reason){await db`INSERT INTO comment_automation_events(comment_id,status,reason) VALUES(${String(comment.id)}::uuid,'skipped',${result.reason})`;return;}
   for(const match of result.matches){
     const [event]=await db`INSERT INTO comment_automation_events(comment_id,rule_id,status) VALUES(${String(comment.id)}::uuid,${match.rule.id}::uuid,'matched') ON CONFLICT DO NOTHING RETURNING id`;if(!event)continue;
     if(match.action==="reply_template"){
       const [template]=await db`SELECT content FROM quick_replies WHERE id=${match.rule.templateId}::uuid AND active`;
       if(template)await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation','pending_approval',${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()}) ON CONFLICT DO NOTHING`;
-    }else if(match.action==="important")await internalAction(String(comment.id),"status","important");
+      if(template)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
+    }else if(match.action==="important"){await internalAction(String(comment.id),"status","important");await db`INSERT INTO notifications(type,title,message) VALUES('comment_important','تعليق مهم',${String(comment.message).slice(0,300)})`;}
+    else if(match.action==="follow_up")await internalAction(String(comment.id),"status","needs_reply");
     else if(match.action==="tag"&&match.rule.tag)await internalAction(String(comment.id),"tag",match.rule.tag);
     await commentsAudit("comment.automation_matched",String(comment.id),{ruleId:match.rule.id,action:match.action});
   }

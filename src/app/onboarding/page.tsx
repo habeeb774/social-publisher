@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CommentsOnboarding } from "../inbox/comments-onboarding";
 import { setupProgress } from "@/services/setup";
 import { AppShell } from "../ui/app-shell";
 import { DismissOnboarding } from "./dismiss";
@@ -15,6 +16,7 @@ export default async function Onboarding() {
       <div className="row-between"><strong><span className="step-num">{s.done ? "✓" : i + 1}</span> {s.label}{s.optional && <small> (اختياري)</small>}</strong>{!s.done && <Link className={s.key === current?.key ? "primary-button" : "secondary-button"} href={s.href}>ابدأ</Link>}</div>
       <p>{s.help}</p>
     </li>)}</ol>
+    <CommentsOnboarding/>
     {complete && <Link className="primary-button" href="/dashboard">الذهاب للوحة التحكم</Link>}
   </AppShell>;
 }
