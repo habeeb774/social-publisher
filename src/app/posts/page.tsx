@@ -37,7 +37,7 @@ export default async function Posts({ searchParams }: { searchParams: Promise<{ 
   const countOf = (s: string) => s === "all" ? total : counts.find((c) => c.status === s)?.n ?? 0;
   const href = (s: string, p = 1) => `/posts?${new URLSearchParams({ ...(s !== "all" ? { status: s } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
   return <AppShell title="المنشورات">
-    <div className="page-intro"><div><h2>كل محتواك في مكان واحد</h2><p>إدارة المحتوى المجدول والمنشور والمسودات · {total} منشور</p></div><div className="intro-actions"><Link className="secondary-button" href="/posts/archive">الأرشيف</Link><Link className="primary-button" href="/posts/new">＋ منشور جديد</Link></div></div>
+    <div className="page-intro"><div><h2>كل محتواك في مكان واحد</h2><p>إدارة المحتوى المجدول والمنشور والمسودات · {total} منشور</p></div><div className="intro-actions"><Link className="secondary-button" href="/posts/archive">الأرشيف</Link><Link className="secondary-button" href="/posts/trash">سلة المحذوفات</Link><Link className="primary-button" href="/posts/new">＋ منشور جديد</Link></div></div>
     <nav className="status-tabs" aria-label="حالة المنشور">{FILTERS.filter((f) => f !== "archived").map((f) => <Link key={f} href={href(f)} className={status === f ? "active" : ""} aria-current={status === f ? "page" : undefined}>{f === "all" ? "الكل" : STATUS_LABELS[f]} <b>{countOf(f)}</b></Link>)}</nav>
     <div className="panel-card table-card posts-table">
       {failed ? <div role="alert" className="banner">تعذر تحميل المنشورات من قاعدة البيانات. أعد تحميل الصفحة للمحاولة.</div>

@@ -5,6 +5,7 @@ import { schedulerRuns } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
+import { purgeExpiredTrash } from "@/services/trash";
 
 const GAP_ALERT_MINUTES = 10;
 
@@ -15,6 +16,7 @@ async function runHealthChecks() {
     const gapMinutes = previous ? Math.round((Date.now() - previous.triggeredAt.getTime()) / 60000) : 0;
     if (gapMinutes > GAP_ALERT_MINUTES) await sendAlert("scheduler_gap", "توقف عامل النشر ثم عاد", `لم يعمل عامل النشر لمدة ${gapMinutes} دقيقة. المنشورات المستحقة خلال التوقف تُنشر الآن. تحقق من مهمة cron-job.org إذا تكرر هذا.`, 1);
     // Token inspection is a network call; once an hour is enough.
+    if (new Date().getUTCMinutes() === 0) await purgeExpiredTrash();
     if (isGraphConfigured() && new Date().getUTCMinutes() === 0) {
       const token = await inspectGraphToken();
       if (!token.valid) await sendAlert("token_invalid", "توكن فيسبوك غير صالح", `النشر سيفشل حتى تولّد توكناً جديداً وتضعه في META_PAGE_ACCESS_TOKEN على Vercel.

@@ -22,6 +22,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const [campaignId, setCampaignId] = useState(initial?.campaignId ?? "");
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? prefill?.imageUrl ?? "");
   const [picker, setPicker] = useState(false);
+  const [checks, setChecks] = useState<Array<{ key: string; label: string; ok: boolean; critical: boolean; detail?: string }> | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -59,6 +60,14 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
     try {
       const scheduledAt = intent === "scheduled" ? riyadhInputToIso(date) : date ? riyadhInputToIso(date) : undefined;
       if (intent === "scheduled" && new Date(scheduledAt!).getTime() <= Date.now()) throw new Error("حدد موعدًا في المستقبل بتوقيت الرياض");
+      if (intent === "scheduled") {
+        // Pre-publish checklist: critical failures stop here; warnings ask for confirmation.
+        const result = await api<{ items: NonNullable<typeof checks>; blocking: boolean }>("/api/posts/check", { method: "POST", body: { pageId, content: body, scheduledAt, imageUrl: imageUrl.trim() || null, postId: post?.id } });
+        setChecks(result.items);
+        if (result.blocking) throw new Error("أصلح المشاكل في قائمة الفحص قبل الجدولة");
+        const warnings = result.items.filter((i) => !i.ok);
+        if (warnings.length && !confirm(["تنبيه:", ...warnings.map((w) => `• ${w.label}: ${w.detail ?? ""}`), "", "المتابعة بالجدولة؟"].join("\n"))) return;
+      }
       const payload = { pageId, content: body, scheduledAt, timezone: "Asia/Riyadh", status: intent === "scheduled" ? "scheduled" : "draft", category: category || null, tags: tags.split(/[\s,،]+/).filter(Boolean), campaignId: campaignId || null, imageUrl: imageUrl.trim() || null, updatedAt: post?.updatedAt };
       const result = await api<{ id: string }>(post ? `/api/posts/${post.id}` : "/api/posts", { method: post ? "PATCH" : "POST", body: payload });
       if (intent === "queue") await api(`/api/posts/${result.id}/queue`, { method: "POST" });
@@ -80,6 +89,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
     <div className="form-layout composer-layout"><section className="panel-card form-card"><p className="banner">{publishingEnabled ? "النشر الحقيقي مفعّل. المنشور المجدول يُنشر تلقائيًا عند موعده." : "وضع الاختبار مفعّل. لن يُنشر المحتوى فعليًا."}{approvalRequired && " · الجدولة تمر بالموافقة أولًا."}</p>
       {!editable && <p role="alert">لا يمكن تعديل منشور بدأ تنفيذه أو انتهى. راجع سجل المحاولات.</p>}
       {error && <p className="banner" role="alert">{error}</p>}
+      {checks && <ul className="checklist" aria-label="فحص ما قبل الجدولة">{checks.map((c) => <li key={c.key} className={c.ok ? "ok" : c.critical ? "bad" : "warn"}>{c.ok ? "✓" : c.critical ? "✕" : "!"} {c.label}{c.detail && <small> · {c.detail}</small>}</li>)}</ul>}
       <form className="post-form" onSubmit={submit}><fieldset disabled={saving || !editable || !pages.length} style={{ border: 0, padding: 0, minWidth: 0 }}>
         <label htmlFor="editor-page">الصفحة<select id="editor-page" value={pageId} onChange={(e) => setPageId(e.target.value)} disabled={Boolean(post)}>{pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}</select></label>
         <label htmlFor="editor-content">نص المنشور<textarea id="editor-content" required rows={9} value={body} onChange={(event) => setBody(event.target.value)} /><small>{body.length.toLocaleString("ar-SA")} حرفًا</small></label>

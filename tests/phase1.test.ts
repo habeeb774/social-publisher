@@ -3,6 +3,7 @@ import test from "node:test";
 import { nextFreeSlots } from "../src/services/queue-slots";
 import { classifyError } from "../src/services/error-classes";
 import { normalizeTags } from "../src/services/catalog";
+import { mapRows, parseDate, parseTime, suggestMapping } from "../src/services/import";
 
 // ---------- Pure logic (always runs) ----------
 // 2026-10-05 is a Monday. Riyadh = UTC+3.
@@ -44,11 +45,44 @@ test("tags are normalized and de-duplicated", () => {
   assert.deepEqual(normalizeTags(["#عروض", "عروض", " أكتوبر ", ""]), ["عروض", "أكتوبر"]);
 });
 
+test("import suggests a column mapping from Arabic and English headers", () => {
+  const m = suggestMapping(["رقم المنشور", "تاريخ النشر", "نص المنشور", "رابط الصورة", "جاهز للنشر", "ملاحظات"]);
+  assert.equal(m.content, "نص المنشور"); assert.equal(m.date, "تاريخ النشر"); assert.equal(m.imageUrl, "رابط الصورة"); assert.equal(m.ready, "جاهز للنشر");
+  assert.equal(suggestMapping(["Post Text", "Publish Date"]).date, "Publish Date");
+});
+
+test("import parses Saudi day-first dates and 12h Arabic times", () => {
+  assert.equal(parseDate("2026-10-05"), "2026-10-05");
+  assert.equal(parseDate("5/10/2026"), "2026-10-05");
+  assert.equal(parseDate("31/02/2026"), null);
+  assert.equal(parseTime("8:30 م"), "20:30");
+  assert.equal(parseTime("12:00 ص"), "00:00");
+  assert.equal(parseTime("25:00"), null);
+});
+
+test("import row mapping validates, converts Drive links and flags duplicates", () => {
+  const rows = [
+    { t: "منشور أ", d: "2099-01-01", i: "https://drive.google.com/file/d/ABC123/view?usp=drivesdk", r: "نعم" },
+    { t: "", d: "2099-01-02", i: "", r: "نعم" },
+    { t: "منشور أ", d: "2099-01-01", i: "", r: "نعم" },
+    { t: "منشور ب", d: "bad", i: "http://insecure", r: "لا" },
+  ];
+  const out = mapRows(rows, { content: "t", date: "d", imageUrl: "i", ready: "r" }, "20:00");
+  assert.equal(out[0].errors.length, 0);
+  assert.equal(out[0].imageUrl, "https://drive.google.com/uc?export=download&id=ABC123");
+  assert.equal(out[0].scheduledAt!.toISOString(), "2099-01-01T17:00:00.000Z", "20:00 Riyadh");
+  assert.ok(out[1].errors.includes("النص فارغ"));
+  assert.ok(out[2].errors.includes("صف مكرر"));
+  assert.ok(out[3].errors.some((e) => e.includes("تاريخ")) && out[3].errors.some((e) => e.includes("https")));
+  assert.equal(out[3].ready, false);
+});
+
 // ---------- Database behaviour (runs against a disposable Neon branch when TEST_DATABASE_URL is set) ----------
 const dbUrl = process.env.TEST_DATABASE_URL;
 test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, async (t) => {
   process.env.DATABASE_URL = dbUrl;
   delete process.env.RESEND_API_KEY;
+  process.env.WINDSOR_API_KEY ||= "test-only"; // satisfies the "publishing connection configured" check; no network call is made
   const { getDb } = await import("../src/db");
   const schema = await import("../src/db/schema");
   const ops = await import("../src/services/post-ops");
@@ -146,6 +180,30 @@ test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, asyn
     const { classifyError: classify } = await import("../src/services/error-classes");
     assert.equal(classify(transient.lastError).retryable, true);
     assert.equal(classify(auth.lastError).retryable, false);
+  });
+
+  await t.test("pre-publish checklist blocks critical problems and warns on conflicts", async () => {
+    const { prePublishChecks } = await import("../src/services/prepublish");
+    const past = await prePublishChecks({ pageId: page.id, content: "", scheduledAt: new Date(Date.now() - 1000) });
+    assert.equal(past.blocking, true);
+    assert.ok(past.items.find((i) => i.key === "content" && !i.ok) && past.items.find((i) => i.key === "time" && !i.ok));
+    const at = new Date(Date.now() + 5 * 86400000);
+    await make({ status: "scheduled", scheduledAt: at }); await make({ status: "scheduled", scheduledAt: new Date(at.getTime() + 60000) });
+    const ok = await prePublishChecks({ pageId: page.id, content: "نص", scheduledAt: at });
+    assert.equal(ok.blocking, false, "conflicts are warnings, not blocks");
+    assert.equal(ok.items.find((i) => i.key === "conflict")!.ok, false);
+  });
+
+  await t.test("trash: deleted drafts restore and purge; posts with history are never purged", async () => {
+    const trash = await import("../src/services/trash");
+    const draft = await make({ deletedAt: new Date() });
+    assert.equal((await trash.restoreFromTrash(draft.id)).deletedAt, null);
+    await db.update(schema.posts).set({ deletedAt: new Date() }).where(eq(schema.posts.id, draft.id));
+    assert.equal(await trash.purgePosts([draft.id]), 1);
+    created.splice(created.indexOf(draft.id), 1);
+    const withHistory = await make({ deletedAt: new Date() });
+    await db.insert(schema.publicationAttempts).values({ postId: withHistory.id, attemptNumber: 1, status: "failed" });
+    assert.equal(await trash.purgePosts([withHistory.id]), 0);
   });
 
   // Clean up everything this test created (disposable branch, but keep it tidy).

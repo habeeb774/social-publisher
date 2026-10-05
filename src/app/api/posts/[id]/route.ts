@@ -9,6 +9,7 @@ import { syncImage, toPostFields } from "@/services/post-save";
 import { snapshotPost } from "@/services/post-ops";
 import { logAudit } from "@/services/audit";
 import { sendAlert } from "@/services/alerts";
+import { prePublishChecks } from "@/services/prepublish";
 
 export async function PATCH(request:NextRequest,{params}:{params:Promise<{id:string}>}) {
   if(!(await isAdminRequest(request)))return NextResponse.json({error:"Unauthorized"},{status:401});
@@ -23,6 +24,8 @@ export async function PATCH(request:NextRequest,{params}:{params:Promise<{id:str
   const db=getDb();
   const [before]=await db.select().from(posts).where(and(eq(posts.id,id),isNull(posts.deletedAt))).limit(1);
   if(!before)return NextResponse.json({error:"المنشور غير موجود"},{status:404});
+    // Server-side gate: critical checklist failures block scheduling regardless of the UI.
+    if(data.status==="scheduled"){const check=await prePublishChecks({pageId:data.pageId,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:id});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
   // A concurrent worker claim or editor save invalidates this compare-and-update.
   const [updated]=await db.update(posts).set({...await toPostFields(data),inQueue:false,queueOrder:null,updatedAt:sql`greatest(clock_timestamp(), ${posts.updatedAt} + interval '1 millisecond')`,lastError:null}).where(and(eq(posts.id,id),eq(posts.pageId,data.pageId),isNull(posts.deletedAt),inArray(posts.status,["draft","scheduled","pending_approval","approved"]),sql`date_trunc('milliseconds', ${posts.updatedAt}) = ${version.data}::timestamptz`)).returning();
   if(!updated)return NextResponse.json({error:"تغير المنشور أو بدأ تنفيذه. أعد تحميل الصفحة قبل التعديل."},{status:409});

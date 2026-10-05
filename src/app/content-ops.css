@@ -116,3 +116,15 @@ button.chip{cursor:pointer}
 .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;border:1px solid var(--sp-line);border-radius:12px;background:var(--sp-card);margin-bottom:16px;overflow:hidden}
 :root:not([data-theme="dark"]) .metric strong{color:#111318}
 [data-theme="dark"] .metric strong{color:#f5f7fa}
+.checklist{list-style:none;padding:10px 12px;margin:8px 0;display:grid;gap:4px;border:1px solid var(--sp-line);border-radius:10px}
+.checklist .ok{color:var(--sp-ok)}.checklist .bad{color:var(--sp-danger)}.checklist .warn{color:var(--sp-warn)}
+.checklist small{color:var(--sp-muted)}
+.calendar-entry{display:block;font-size:12px;overflow-wrap:anywhere;padding:3px 5px;margin-top:4px;border-radius:6px;background:var(--sp-soft);color:inherit;text-decoration:none}
+.calendar-entry[draggable="true"]{cursor:grab}
+.calendar-entry.conflict{outline:1px solid var(--sp-warn)}
+.calendar-day.drop-target{outline:2px dashed var(--sp-accent);outline-offset:-2px}
+.calendar-filters{margin:10px 0}
+.mapping-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin:10px 0}
+.mapping-grid label{display:grid;gap:4px}
+.mapping-grid small{color:var(--sp-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mode-choice{display:grid;gap:6px;border:1px solid var(--sp-line);border-radius:10px;padding:10px 14px;margin:10px 0}

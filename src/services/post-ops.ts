@@ -5,6 +5,7 @@ import { getSetting } from "./settings-store";
 import { currentActor, logAudit } from "./audit";
 import { nextFreeSlots } from "./queue-slots";
 import { sendAlert } from "./alerts";
+import { prePublishChecks } from "./prepublish";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -61,6 +62,9 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
     let result: Post[] = [];
     if (action === "schedule") {
       if (!["draft", "approved"].includes(post.status) || !post.scheduledAt || post.scheduledAt.getTime() <= now + 60000) { skipped.push({ id: post.id, reason: "يحتاج موعدًا مستقبليًا وحالة مسودة أو موافق عليه" }); continue; }
+      const [image] = await db.select({ url: postMedia.url }).from(postMedia).where(eq(postMedia.postId, post.id)).limit(1);
+      const check = await prePublishChecks({ pageId: post.pageId, content: post.content, scheduledAt: post.scheduledAt, imageUrl: image?.url, postId: post.id });
+      if (check.blocking) { skipped.push({ id: post.id, reason: check.items.filter((i) => i.critical && !i.ok).map((i) => i.label).join("، ") }); continue; }
       if (post.status === "draft" && await approvalRequired()) result = await db.update(posts).set({ status: "pending_approval", updatedAt: new Date() }).where(guard(["draft"])).returning();
       else result = await db.update(posts).set({ status: "scheduled", updatedAt: new Date() }).where(guard(["draft", "approved"])).returning();
     } else if (action === "to_draft" || action === "unschedule") {
