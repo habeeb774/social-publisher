@@ -131,3 +131,14 @@ button.chip{cursor:pointer}
 .goal-row{display:grid;gap:4px;margin-bottom:8px}
 .saved-filters{margin:0 0 10px}
 .saved-filters a{color:inherit;text-decoration:none}
+.help-tip{display:inline-block;position:relative;vertical-align:middle}
+.help-tip summary{list-style:none;cursor:pointer;color:var(--sp-accent);font-size:14px;padding:0 4px}
+.help-tip summary::-webkit-details-marker{display:none}
+.help-tip span{position:absolute;z-index:20;top:22px;right:0;width:min(280px,80vw);padding:10px;border-radius:10px;border:1px solid var(--sp-line);background:var(--sp-card);color:inherit;font-size:12px;font-weight:400;line-height:1.7;box-shadow:0 10px 24px #0002}
+.wizard-list{list-style:none;padding:0;display:grid;gap:10px;margin:14px 0}
+.wizard-list li.done{opacity:.7}
+.wizard-list li.current{outline:2px solid var(--sp-accent)}
+.step-num{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;background:var(--sp-soft);color:var(--sp-accent);margin-left:6px}
+.setup-card{margin-bottom:14px}
+.library-search{width:100%;min-height:40px;margin-bottom:10px;padding:0 10px;border:1px solid var(--sp-line);border-radius:10px;background:transparent;color:inherit;font:inherit}
+.ai-assist{display:grid;gap:6px;margin:6px 0}

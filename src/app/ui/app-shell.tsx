@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 // Only finished features appear here (no half-built pages in production navigation).
 const groups: Array<{ title: string; links: Array<[string, string, string]> }> = [
   { title: "المحتوى", links: [["⌂", "الرئيسية", "/dashboard"], ["▤", "المنشورات", "/posts"], ["☰", "الطابور", "/queue"], ["◷", "التقويم", "/calendar"], ["✦", "الحملات", "/campaigns"], ["◎", "الأهداف", "/goals"]] },
-  { title: "المكتبة", links: [["▦", "الوسائط", "/media"], ["❏", "القوالب", "/templates"], ["↻", "إعادة الاستخدام", "/recycle"], ["⇧", "الاستيراد", "/import"]] },
+  { title: "المكتبة", links: [["▦", "الوسائط", "/media"], ["❏", "القوالب", "/templates"], ["❖", "المكتبة", "/library"], ["✎", "الأفكار", "/ideas"], ["↻", "إعادة الاستخدام", "/recycle"], ["⇧", "الاستيراد", "/import"]] },
   { title: "المتابعة", links: [["▲", "التحليلات", "/analytics"], ["!", "المنشورات الفاشلة", "/failed"], ["⌁", "السجلات", "/logs"], ["◉", "حالة النظام", "/status"]] },
   { title: "الإعداد", links: [["f", "صفحات Facebook", "/pages"], ["⚙", "الإعدادات", "/settings"]] },
 ];
@@ -17,6 +17,8 @@ const commands: Array<{ label: string; href: string; keys?: string }> = [
   { label: "إضافة قالب", href: "/templates" },
   ...groups.flatMap((g) => g.links.map(([, label, href]) => ({ label: `فتح ${label}`, href }))),
   { label: "إعدادات الإشعارات", href: "/settings/notifications" },
+  { label: "فكرة جديدة", href: "/ideas" },
+  { label: "معالج الإعداد", href: "/onboarding" },
   { label: "قواعد النشر (أوقات وأيام الإيقاف)", href: "/settings/publishing" },
   { label: "التصدير والنسخ الاحتياطي", href: "/settings/export" },
 ];

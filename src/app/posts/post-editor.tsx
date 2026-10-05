@@ -6,12 +6,14 @@ import { isoToRiyadhInput, riyadhInputToIso } from "@/services/post-time";
 import { POST_CATEGORIES } from "@/services/catalog";
 import { AppShell } from "../ui/app-shell";
 import { ago, api } from "../ui/api";
+import { AiAssist } from "./ai-assist";
+import { HelpTip, HELP } from "../ui/help-tip";
 
 export type EditorPost = { id: string; pageId: string; content: string; scheduledAt: string | null; updatedAt: string; status: string; category?: string | null; tags?: string[]; campaignId?: string | null; imageUrl?: string | null };
 type Option = { id: string; name: string };
 const AUTOSAVE_MS = 6000;
 
-export default function PostEditor({ initial, pages, publishingEnabled, campaigns = [], media = [], hashtags = [], approvalRequired = false, prefill }: { initial?: EditorPost; pages: Option[]; publishingEnabled: boolean; campaigns?: Option[]; media?: Array<{ id: string; name: string; url: string }>; hashtags?: Array<{ tag: string; uses: number }>; approvalRequired?: boolean; prefill?: { content?: string; imageUrl?: string; category?: string; tags?: string[] } }) {
+export default function PostEditor({ initial, pages, publishingEnabled, campaigns = [], media = [], hashtags = [], approvalRequired = false, aiEnabled = false, prefill }: { initial?: EditorPost; pages: Option[]; publishingEnabled: boolean; campaigns?: Option[]; media?: Array<{ id: string; name: string; url: string }>; hashtags?: Array<{ tag: string; uses: number }>; approvalRequired?: boolean; aiEnabled?: boolean; prefill?: { content?: string; imageUrl?: string; category?: string; tags?: string[] } }) {
   const router = useRouter();
   const [post, setPost] = useState<{ id: string; updatedAt: string; status: string } | null>(initial ? { id: initial.id, updatedAt: initial.updatedAt, status: initial.status } : null);
   const [body, setBody] = useState(initial?.content ?? prefill?.content ?? "");
@@ -86,13 +88,16 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
 
   return <AppShell title={initial ? "تحرير المنشور" : "إنشاء منشور"}>
     <div className="detail-top"><h1>{initial ? "تحرير المحتوى" : "إنشاء منشور"}</h1><span className="autosave-status" aria-live="polite">{status}</span><Link href="/posts" className="secondary-button">العودة للمنشورات</Link></div>
-    <div className="form-layout composer-layout"><section className="panel-card form-card"><p className="banner">{publishingEnabled ? "النشر الحقيقي مفعّل. المنشور المجدول يُنشر تلقائيًا عند موعده." : "وضع الاختبار مفعّل. لن يُنشر المحتوى فعليًا."}{approvalRequired && " · الجدولة تمر بالموافقة أولًا."}</p>
+    <div className="form-layout composer-layout"><section className="panel-card form-card"><p className="banner">{publishingEnabled ? "النشر الحقيقي مفعّل. المنشور المجدول يُنشر تلقائيًا عند موعده." : "وضع الاختبار مفعّل. لن يُنشر المحتوى فعليًا."}<HelpTip text={HELP.safeMode} />{approvalRequired && " · الجدولة تمر بالموافقة أولًا."}</p>
       {!editable && <p role="alert">لا يمكن تعديل منشور بدأ تنفيذه أو انتهى. راجع سجل المحاولات.</p>}
       {error && <p className="banner" role="alert">{error}</p>}
       {checks && <ul className="checklist" aria-label="فحص ما قبل الجدولة">{checks.map((c) => <li key={c.key} className={c.ok ? "ok" : c.critical ? "bad" : "warn"}>{c.ok ? "✓" : c.critical ? "✕" : "!"} {c.label}{c.detail && <small> · {c.detail}</small>}</li>)}</ul>}
       <form className="post-form" onSubmit={submit}><fieldset disabled={saving || !editable || !pages.length} style={{ border: 0, padding: 0, minWidth: 0 }}>
         <label htmlFor="editor-page">الصفحة<select id="editor-page" value={pageId} onChange={(e) => setPageId(e.target.value)} disabled={Boolean(post)}>{pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}</select></label>
         <label htmlFor="editor-content">نص المنشور<textarea id="editor-content" required rows={9} value={body} onChange={(event) => setBody(event.target.value)} /><small>{body.length.toLocaleString("ar-SA")} حرفًا</small></label>
+        {aiEnabled && <AiAssist text={body} onApply={(value, mode) => setBody(mode === "append" ? `${body}
+
+${value}` : value)} />}
         <div className="field"><span>الصورة (اختياري)</span><div className="inline-field"><input aria-label="رابط الصورة" type="url" inputMode="url" placeholder="https://…" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} /><button type="button" className="secondary-button" onClick={() => setPicker((v) => !v)}>من المكتبة</button></div>
           {picker && <div className="media-picker">{media.length ? media.map((m) => <button type="button" key={m.id} onClick={() => { setImageUrl(m.url); setPicker(false); }} title={m.name}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={m.url} alt={m.name} loading="lazy" /></button>) : <small>المكتبة فارغة. <Link href="/media">أضف صورًا</Link></small>}</div>}</div>
         <div className="field-row">

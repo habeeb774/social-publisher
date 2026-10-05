@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { posts, queueSlots } from "@/db/schema";
 import { AppShell } from "../ui/app-shell";
 import { QueueClient } from "./queue-client";
+import { HelpTip, HELP } from "../ui/help-tip";
 
 export const dynamic = "force-dynamic";
 export default async function Queue() {
@@ -14,7 +15,7 @@ export default async function Queue() {
   ]);
   const iso = (rows: typeof queued) => rows.map((r) => ({ ...r, scheduledAt: r.scheduledAt?.toISOString() ?? null }));
   return <AppShell title="طابور المحتوى">
-    <div className="page-intro"><div><h2>طابور المحتوى</h2><p>حدّد أوقاتك الثابتة مرة واحدة، ثم أضف المنشورات وسيُوزعها النظام تلقائيًا. اسحب لإعادة الترتيب.</p></div></div>
+    <div className="page-intro"><div><h2>طابور المحتوى <HelpTip text={HELP.queue} /></h2><p>حدّد أوقاتك الثابتة مرة واحدة، ثم أضف المنشورات وسيُوزعها النظام تلقائيًا. اسحب لإعادة الترتيب.</p></div></div>
     <QueueClient initialSlots={slots} queued={iso(queued)} drafts={iso(drafts)} />
   </AppShell>;
 }
