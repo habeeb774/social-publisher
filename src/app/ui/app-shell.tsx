@@ -1,4 +1,5 @@
 "use client";
+import { BrandLogo } from "./brand-logo";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -74,7 +75,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     <button className="mobile-menu" aria-label="فتح القائمة" onClick={() => setOpen(true)}>☰</button>
     {open && <button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setOpen(false)} />}
     <aside className={`sidebar ${open ? "drawer-open" : ""}`}>
-      <div className="app-brand"><div className="brand-mark">SP</div><div><strong>Social Publisher</strong><small>منصة النشر الذكي</small></div><button className="drawer-close" aria-label="إغلاق القائمة" onClick={() => setOpen(false)}>×</button></div>
+      <div className="app-brand"><div><BrandLogo /><small>منصة النشر الذكي</small></div><button className="drawer-close" aria-label="إغلاق القائمة" onClick={() => setOpen(false)}>×</button></div>
       <nav className="side-nav" aria-label="التنقل الرئيسي">{groups.map((g) => <div key={g.title} className="nav-group"><small className="nav-title">{g.title}</small>{g.links.map(([icon, label, href]) => <Link onClick={() => setOpen(false)} className={isActive(href) ? "active" : ""} href={href} key={href}><span aria-hidden="true">{icon}</span>{label}</Link>)}</div>)}</nav>
       <div className="side-bottom"><div className="safe-mini"><span className="status-dot" />{live ? "النشر الحقيقي" : "وضع الاختبار"}<small>{live ? "المنشورات المجدولة تُنشر فعليًا" : live === null ? "جارٍ التحقق من الحالة" : "النشر الحقيقي متوقف"}</small></div><div className="profile-mini"><span className="avatar">م</span><div><strong>م. حبيب</strong><small>مشرف النظام</small></div><Link href="/settings" aria-label="إعدادات الحساب">⚙</Link></div><form method="post" action="/api/auth/logout"><button className="logout" type="submit">↪ تسجيل الخروج</button></form></div>
     </aside>
