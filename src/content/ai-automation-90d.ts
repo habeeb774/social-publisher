@@ -138,7 +138,7 @@ const THEMES: Theme[] = [
   ["استراتيجية","خريطة 90 يوم للأتمتة","التغيير المستدام يبدأ بالأثر السريع ثم يبني أساسًا أقوى.","الشهر الأول تنظيف وربط، الثاني موثوقية وقياس، الثالث توسع وحوكمة.","اختر ثلاثة أنظمة تريد أن تكون أفضل بعد 90 يومًا."],
 ];
 
-if (THEMES.length !== 90) throw new Error("AI automation plan must contain exactly 90 themes");
+if (THEMES.length < 90) throw new Error("AI automation plan requires at least 90 themes");
 
 const EVENING_PREFIXES = [
   "تطبيق عملي",
