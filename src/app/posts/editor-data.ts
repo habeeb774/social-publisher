@@ -1,4 +1,4 @@
-import { desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { campaigns, facebookPages, mediaAssets, posts, postTemplates } from "@/db/schema";
 import { storageProvider } from "@/services/storage";
@@ -8,10 +8,10 @@ import { getAiProvider } from "@/services/ai-assistant";
 import { listMetaAccounts } from "@/services/meta-accounts";
 
 /** Shared server data for the composer (new + edit). Each list is capped. */
-export async function editorData() {
+export async function editorData(allowed: Set<string> | null = null) {
   const db = getDb();
   const [rawPages, campaignList, media, hashtags, approval, templates, metaAccounts] = await Promise.all([
-    db.select({ id: facebookPages.id, name: facebookPages.name, facebookPageId: facebookPages.facebookPageId, platform: facebookPages.platform }).from(facebookPages).where(eq(facebookPages.isActive, true)),
+    db.select({ id: facebookPages.id, name: facebookPages.name, facebookPageId: facebookPages.facebookPageId, platform: facebookPages.platform }).from(facebookPages).where(and(eq(facebookPages.isActive, true), allowed === null ? undefined : allowed.size ? inArray(facebookPages.id, Array.from(allowed)) : sql`false`)),
     db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).where(sql`${campaigns.status} in ('draft','active')`).orderBy(desc(campaigns.createdAt)).limit(50),
     db.select({ id: mediaAssets.id, name: mediaAssets.name, url: mediaAssets.url }).from(mediaAssets).where(isNull(mediaAssets.deletedAt)).orderBy(desc(mediaAssets.createdAt)).limit(40),
     // Previously used internal tags, most used first. Nothing is generated automatically.
