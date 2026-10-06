@@ -24,16 +24,16 @@ export function decryptToken(stored: string) {
 }
 /** The token saved for this Facebook page, if any. */
 export async function storedPageToken(facebookPageId: string) {
-  try {
-    const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, facebookPageId), eq(facebookPages.platform, "facebook"))).limit(1);
-    return row?.enc ? decryptToken(row.enc) : null;
-  } catch { return null; }
+  const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, facebookPageId), eq(facebookPages.platform, "facebook"))).limit(1);
+  if (!row?.enc) return null;
+  try { return decryptToken(row.enc); }
+  catch (cause) { throw new Error("PAGE_TOKEN_DECRYPT_FAILED", { cause }); }
 }
 
 /** Token for an Instagram account: the saved token of the Facebook page it is linked to. */
 export async function storedInstagramToken(igUserId: string) {
-  try {
-    const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, igUserId), eq(facebookPages.platform, "instagram"))).limit(1);
-    return row?.enc ? decryptToken(row.enc) : null;
-  } catch { return null; }
+  const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, igUserId), eq(facebookPages.platform, "instagram"))).limit(1);
+  if (!row?.enc) return null;
+  try { return decryptToken(row.enc); }
+  catch (cause) { throw new Error("INSTAGRAM_TOKEN_DECRYPT_FAILED", { cause }); }
 }
