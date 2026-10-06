@@ -1,10 +1,11 @@
-import { desc, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, schedulerRuns } from "@/db/schema";
 import { checkGraphAccess, inspectGraphToken, isGraphConfigured } from "./facebook-graph";
 import { testWindsorMcp } from "./windsor-mcp";
 import { storageProvider } from "./storage";
 import { isPublishingEnabled } from "./publishing-mode";
+import { storedPageToken } from "./page-tokens";
 
 export type Check = { key: string; label: string; state: "healthy" | "warning" | "error" | "off"; detail: string };
 const timed = async <T,>(fn: () => Promise<T>, ms = 10000) => Promise.race([fn(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("انتهت المهلة")), ms))]);
@@ -21,25 +22,54 @@ export async function runDiagnostics(deep: boolean): Promise<{ checks: Check[]; 
     lastRunSeconds = run ? Math.round((Date.now() - run.at.getTime()) / 1000) : null;
     const stale = lastRunSeconds === null || lastRunSeconds > 1500;
     checks.push({ key: "scheduler", label: "الجدولة", state: stale ? "error" : run.status === "success" ? "healthy" : "warning", detail: lastRunSeconds === null ? "لم يعمل بعد" : `آخر تشغيل قبل ${formatAgo(lastRunSeconds)}` });
-    if (deep && isGraphConfigured()) {
-      const [page] = await db.select().from(facebookPages).limit(1);
-      if (page) {
-        try { const visible = await timed(() => checkGraphAccess(page.facebookPageId)); checks.push({ key: "facebook_page", label: "صفحة Facebook", state: "healthy", detail: `ظاهرة: ${visible.name}` }); }
-        catch (error) { checks.push({ key: "facebook_page", label: "صفحة Facebook", state: "error", detail: error instanceof Error ? error.message : "تعذر الوصول" }); }
+
+    const graphPages = await db.select({
+      id: facebookPages.id,
+      name: facebookPages.name,
+      facebookPageId: facebookPages.facebookPageId,
+      hasStoredToken: sql<boolean>`${facebookPages.accessTokenEnc} is not null`,
+    }).from(facebookPages).where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)));
+
+    if (!deep) {
+      const oauthCount = graphPages.filter((p) => p.hasStoredToken).length;
+      const available = oauthCount > 0 || isGraphConfigured();
+      checks.push({
+        key: "facebook",
+        label: "اتصال Facebook",
+        state: available ? "healthy" : "warning",
+        detail: oauthCount ? `${oauthCount} صفحة مرتبطة عبر OAuth · شغّل التشخيص للتحقق من الصلاحية` : isGraphConfigured() ? "توكن عام مُعد · شغّل التشخيص للتحقق" : "لا يوجد ربط Meta صالح",
+      });
+    } else if (!graphPages.length) {
+      checks.push({ key: "facebook", label: "اتصال Facebook", state: "warning", detail: "لا توجد صفحات Facebook نشطة" });
+    } else {
+      for (const page of graphPages) {
+        try {
+          const saved = await storedPageToken(page.facebookPageId);
+          if (!saved && !isGraphConfigured()) {
+            checks.push({ key: `facebook_${page.id}`, label: `Facebook · ${page.name}`, state: "error", detail: "لا يوجد توكن محفوظ لهذه الصفحة" });
+            continue;
+          }
+          const token = await timed(() => inspectGraphToken(saved ?? undefined));
+          if (!token.valid) {
+            checks.push({ key: `facebook_${page.id}`, label: `Facebook · ${page.name}`, state: "error", detail: token.reason ?? "التوكن غير صالح" });
+            continue;
+          }
+          const visible = await timed(() => checkGraphAccess(page.facebookPageId));
+          const soon = token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400000;
+          checks.push({
+            key: `facebook_${page.id}`,
+            label: `Facebook · ${page.name}`,
+            state: soon ? "warning" : "healthy",
+            detail: `متصل عبر ${saved ? "OAuth" : "التوكن العام"} · ${visible.name} · ${token.expiresAt ? `ينتهي ${token.expiresAt.toISOString().slice(0, 10)}` : "لا يظهر تاريخ انتهاء"}`,
+          });
+        } catch (error) {
+          checks.push({ key: `facebook_${page.id}`, label: `Facebook · ${page.name}`, state: "error", detail: error instanceof Error ? error.message : "تعذر التحقق" });
+        }
       }
     }
   } catch (error) {
     checks.push({ key: "database", label: "قاعدة البيانات", state: "error", detail: error instanceof Error ? error.message : "غير متصلة" });
   }
-  if (isGraphConfigured()) {
-    if (deep) {
-      try {
-        const token = await timed(() => inspectGraphToken());
-        const soon = token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400000;
-        checks.push({ key: "facebook", label: "اتصال Facebook (توكن)", state: !token.valid ? "error" : soon ? "warning" : "healthy", detail: !token.valid ? token.reason ?? "غير صالح" : token.expiresAt ? `ينتهي ${token.expiresAt.toISOString().slice(0, 10)}` : "لا ينتهي" });
-      } catch (error) { checks.push({ key: "facebook", label: "اتصال Facebook (توكن)", state: "error", detail: error instanceof Error ? error.message : "تعذر الفحص" }); }
-    } else checks.push({ key: "facebook", label: "اتصال Facebook (توكن)", state: "healthy", detail: "مُعد — شغّل التشخيص للتحقق" });
-  } else checks.push({ key: "facebook", label: "اتصال Facebook (توكن)", state: "warning", detail: "غير مُعد؛ النشر يعتمد على Windsor" });
   if (deep && process.env.WINDSOR_API_KEY) {
     try { const mcp = await timed(() => testWindsorMcp()); checks.push({ key: "windsor", label: "Windsor MCP", state: mcp.facebookOrganicConnected ? "healthy" : "warning", detail: mcp.facebookOrganicConnected ? "متصل (قراءة فقط؛ لا يملك صلاحية النشر)" : "facebook_organic غير متصل" }); }
     catch (error) { checks.push({ key: "windsor", label: "Windsor MCP", state: "warning", detail: error instanceof Error ? error.message.split(":")[0] : "تعذر الاتصال" }); }
