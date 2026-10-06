@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guard } from "@/services/api-guard";
 import { currentUser } from "@/services/rbac";
+import { allowedPageIds } from "@/services/access-scope";
 import * as comments from "@/services/comments/store";
 import { listConversations } from "@/services/messenger";
 
@@ -26,13 +27,14 @@ export async function GET(request: NextRequest) {
   if (page) commentParams.set("page", page);
   if (q) commentParams.set("q", q);
 
-  const [commentResult, messengerRows, catalog] = await Promise.all([
+  const [commentResult, messengerRows, catalog, allowed] = await Promise.all([
     source === "messenger" ? Promise.resolve({ items: [] as Row[] }) : comments.inbox(commentParams),
     source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account) as Promise<Row[]>,
     comments.inboxCatalog(user.id),
+    allowedPageIds(user),
   ]);
 
-  const commentItems = (commentResult.items as Row[]).map((item) => ({
+  const commentItems = (commentResult.items as Row[]).filter((item) => allowed === null || allowed.has(String(item.page_id))).map((item) => ({
     kind: "comment" as const,
     id: String(item.id),
     person: item.author_name ? String(item.author_name) : "متابع",
@@ -46,6 +48,7 @@ export async function GET(request: NextRequest) {
   }));
 
   const messageItems = messengerRows
+    .filter((item) => allowed === null || allowed.has(String(item.page_id)))
     .filter((item) => !q || String(item.participant_name ?? "").toLowerCase().includes(q) || String(item.last_message ?? "").toLowerCase().includes(q))
     .map((item) => ({
       kind: "messenger" as const,
@@ -67,8 +70,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     items,
     catalog: {
-      accounts: catalog.accounts ?? [],
-      pages: catalog.pages ?? [],
+      accounts: (catalog.accounts ?? []).filter((account: { id: string }) => {
+        if (allowed === null) return true;
+        return (catalog.pages ?? []).some((page: { id: string; account_id?: string | null }) => page.account_id === account.id && allowed.has(page.id));
+      }),
+      pages: (catalog.pages ?? []).filter((page: { id: string }) => allowed === null || allowed.has(page.id)),
     },
   }, { headers: { "Cache-Control": "no-store" } });
 }
