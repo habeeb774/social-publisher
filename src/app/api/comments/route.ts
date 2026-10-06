@@ -7,6 +7,8 @@ import { inboxFilterSchema } from "@/services/comments/filters";
 import { flags,ruleSchema,templateSchema } from "@/services/comments/rules";
 import { commentsProvider } from "@/services/comments/provider";
 import * as store from "@/services/comments/store";
+import { currentUser } from "@/services/rbac";
+import { allowedPageIds } from "@/services/access-scope";
 import { commentNotifications,readCommentNotifications } from "@/services/comments/notification-store";
 export const dynamic="force-dynamic";
 const mutation=z.discriminatedUnion("action",[
@@ -27,19 +29,33 @@ const mutation=z.discriminatedUnion("action",[
 function failure(error:unknown){const code=error instanceof z.ZodError?"INVALID_FILTER":error instanceof Error?error.message:"COMMENTS_INTERNAL_ERROR";return NextResponse.json({code:code.length<100?code:"COMMENTS_INTERNAL_ERROR",error:code==="COMMENTS_REPLY_UNAVAILABLE"?"موصل Facebook الحالي لا يوفر صلاحية الرد على التعليقات.":"تعذر تنفيذ العملية؛ راجع حالة التكامل."},{status:code.startsWith("INVALID")?400:code.includes("NOT_FOUND")?404:code.includes("UNAVAILABLE")?409:503});}
 export async function GET(request:NextRequest){
   const principal=await commentsPrincipal(request);if(!principal)return NextResponse.json({error:"Unauthorized"},{status:401});
+  const mainUser=await currentUser(request);
+  const allowed=mainUser?await allowedPageIds(mainUser):null;
   try{
     if(!await store.enforceCommentsRateLimit(`${principal.id}:read`))return NextResponse.json({code:"RATE_LIMITED"},{status:429});
     const params=request.nextUrl.searchParams;const view=params.get("view");
     if(view==="me")return NextResponse.json(principal);
     if(view==="notifications")return NextResponse.json(await commentNotifications(principal.id));
-    if(view==="catalog")return NextResponse.json(await store.inboxCatalog(principal.id));
-    if(view==="analytics")return NextResponse.json(await store.commentsAdvancedAnalytics());
+    if(view==="catalog"){
+      const catalog=await store.inboxCatalog(principal.id);
+      if(allowed===null)return NextResponse.json(catalog);
+      const pages=catalog.pages.filter((page:{id:unknown})=>allowed.has(String(page.id)));
+      const accounts=(catalog.accounts??[]).filter((account:{id:string})=>pages.some((page:{account_id?:string|null})=>page.account_id===account.id));
+      return NextResponse.json({...catalog,pages,accounts});
+    }
+    if(view==="analytics"){if(allowed!==null)return NextResponse.json({error:"التحليلات العامة غير متاحة خارج نطاقك"},{status:403});return NextResponse.json(await store.commentsAdvancedAnalytics());}
     if(view==="capabilities")return NextResponse.json({...await commentsProvider.capabilities(),flags:flags(),safeMode:!flags().replies,realRepliesEnabled:flags().replies});
     if(view==="templates")return NextResponse.json(await store.listQuickReplies());
     if(view==="rules")return NextResponse.json(await store.listCommentRules());
-    if(view==="metrics")return NextResponse.json(await store.commentsMetrics());
-    if(params.has("id")){const id=params.get("id");if(!z.uuid().safeParse(id).success)return NextResponse.json({code:"INVALID_ID"},{status:400});return NextResponse.json(await store.commentDetail(id!));}
-    return NextResponse.json(await store.inbox(params));
+    if(view==="metrics"){if(allowed!==null)return NextResponse.json({error:"المؤشرات العامة غير متاحة خارج نطاقك"},{status:403});return NextResponse.json(await store.commentsMetrics());}
+    if(params.has("id")){
+      const id=params.get("id");if(!z.uuid().safeParse(id).success)return NextResponse.json({code:"INVALID_ID"},{status:400});
+      const detail=await store.commentDetail(id!);
+      if(allowed!==null&&!allowed.has(String(detail.comment.page_id)))return NextResponse.json({error:"ليست لديك صلاحية لهذه الصفحة"},{status:403});
+      return NextResponse.json(detail);
+    }
+    const result=await store.inbox(params);
+    return NextResponse.json(allowed===null?result:{...result,items:result.items.filter((item:Record<string,unknown>)=>allowed.has(String(item.page_id))) });
   }catch(error){return failure(error);}
 }
 export async function POST(request:NextRequest){
@@ -47,6 +63,17 @@ export async function POST(request:NextRequest){
   if(request.headers.get("origin")!==request.nextUrl.origin)return NextResponse.json({error:"Invalid origin"},{status:403});
   const parsed=mutation.safeParse(await request.json().catch(()=>null));if(!parsed.success)return NextResponse.json({code:"INVALID_INPUT",error:parsed.error.issues[0]?.message},{status:400});
   if(!canComment(principal.role,parsed.data.action==="delete_view"?"save_view":parsed.data.action))return NextResponse.json({code:"FORBIDDEN",error:"الدور لا يسمح بهذا الإجراء"},{status:403});
+  const mainUser=await currentUser(request);
+  const allowed=mainUser?await allowedPageIds(mainUser):null;
+  if(allowed!==null){
+    const action=parsed.data.action;
+    const ids:string[]=action==="status"||action==="tag"||action==="assign"?parsed.data.ids:
+      ["hide","unhide","note","draft","approve","send"].includes(action)?[parsed.data.id]:[];
+    for(const id of ids){
+      const detail=await store.commentDetail(id);
+      if(!allowed.has(String(detail.comment.page_id)))return NextResponse.json({error:"ليست لديك صلاحية لهذه الصفحة"},{status:403});
+    }
+  }
   return withCommentsActor(principal.email,async()=>{
   try{
     if(!await store.enforceCommentsRateLimit(`${principal.id}:write`))return NextResponse.json({code:"RATE_LIMITED"},{status:429});
