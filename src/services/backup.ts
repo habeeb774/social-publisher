@@ -2,7 +2,7 @@ import { gzipSync } from "node:zlib";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { resolveAlerts, sendAlert, sendEmail } from "./alerts";
-import { setSetting } from "./settings-store";
+import { getSetting, setSetting } from "./settings-store";
 
 // Content and configuration only. Secrets never leave the database: page tokens, password hashes,
 // and any settings key that looks like a credential are excluded.
@@ -25,7 +25,15 @@ const TABLES: Array<{ name: string; query: ReturnType<typeof sql> }> = [
 export async function buildBackup() {
   const db = getDb();
   const data: Record<string, unknown[]> = {};
-  for (const t of TABLES) data[t.name] = (await db.execute(t.query).catch(() => ({ rows: [] }))).rows;
+  const errors: string[] = [];
+  for (const t of TABLES) {
+    try {
+      data[t.name] = (await db.execute(t.query)).rows;
+    } catch {
+      errors.push(t.name);
+    }
+  }
+  if (errors.length) throw new Error(`BACKUP_INCOMPLETE: تعذر قراءة الجداول: ${errors.join(", ")}`);
   const counts = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.length]));
   return { file: { format: "social-publisher-backup", version: 1, createdAt: new Date().toISOString(), counts, data }, counts };
 }
@@ -37,14 +45,17 @@ export async function emailBackup() {
     const day = new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10);
     const content = gzipSync(Buffer.from(JSON.stringify(file))).toString("base64");
     const summary = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `- ${k}: ${n}`).join("\n");
+    const previous = await getSetting<{ lastSuccessAt?: string | null } | null>("backup_status", null);
     const sent = await sendEmail(`نسخة احتياطية ${day}`, `مرفق نسخة احتياطية من محتوى النظام وإعداداته (بدون رموز وصول أو كلمات مرور).\n\n${summary}\n\nاحتفظ بها في مكان آمن.`, [{ filename: `social-publisher-backup-${day}.json.gz`, content }]);
-    await setSetting("backup_status", { lastAttemptAt: new Date().toISOString(), lastSuccessAt: sent ? new Date().toISOString() : null, ok: sent, counts });
+    const now = new Date().toISOString();
+    await setSetting("backup_status", { lastAttemptAt: now, lastSuccessAt: sent ? now : previous?.lastSuccessAt ?? null, ok: sent, counts });
     if (sent) await resolveAlerts(["backup_failed"]);
     else await sendAlert("backup_failed", "تعذر إرسال النسخة الاحتياطية", "تم إنشاء النسخة الاحتياطية لكن تعذر إرسالها عبر البريد. تحقق من إعدادات البريد.", 12);
     return sent;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await setSetting("backup_status", { lastAttemptAt: new Date().toISOString(), lastSuccessAt: null, ok: false, error: message.slice(0, 300) }).catch(() => {});
+    const previous = await getSetting<{ lastSuccessAt?: string | null } | null>("backup_status", null).catch(() => null);
+    await setSetting("backup_status", { lastAttemptAt: new Date().toISOString(), lastSuccessAt: previous?.lastSuccessAt ?? null, ok: false, error: message.slice(0, 300) }).catch(() => {});
     await sendAlert("backup_failed", "فشل إنشاء النسخة الاحتياطية", message.slice(0, 900), 12);
     throw error;
   }
