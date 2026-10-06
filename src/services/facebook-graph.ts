@@ -13,7 +13,8 @@ export function isGraphConfigured() {
 }
 
 async function graph(path: string, init?: RequestInit) {
-  const response = await fetch(`${base()}${path}`, { ...init, signal: AbortSignal.timeout(20000) });
+  // Paging links from Graph are absolute URLs; everything else is a path under the versioned base.
+  const response = await fetch(path.startsWith("https://") ? path : `${base()}${path}`, { ...init, signal: AbortSignal.timeout(20000) });
   const body = await response.json().catch(() => ({})) as GraphError & Record<string, unknown>;
   return { ok: response.ok && !body.error, body };
 }
@@ -105,7 +106,7 @@ export async function listPageCommentsGraph(pageId: string, since: Date, until: 
       for (const c of post.comments?.data ?? []) { add(c, null); for (const r of c.comments?.data ?? []) add(r, c.id); }
     }
     const next = (result.body.paging as { next?: string } | undefined)?.next;
-    path = next ? next.replace(base(), "") : null;
+    path = next ?? null;
   }
   return out;
 }
