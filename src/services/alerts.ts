@@ -18,11 +18,12 @@ export const ALERT_TYPES = {
   comments_sync_failed: "تعذر مزامنة التعليقات",
   messenger_sync_failed: "تعذر مزامنة Messenger",
   backup_failed: "فشل النسخة الاحتياطية",
+  webhook_disconnected: "Webhook Facebook يحتاج إعادة ربط",
 } as const;
 export type AlertType = keyof typeof ALERT_TYPES;
 export type AlertPrefs = Partial<Record<AlertType, { inApp: boolean; email: boolean }>>;
 /** Defaults: everything in-app; email only for problems that need action. */
-export const defaultPref = (type: AlertType) => ({ inApp: true, email: ["publish_failed", "token_invalid", "token_expiring", "scheduler_gap", "storage_error", "comments_sync_failed", "messenger_sync_failed", "backup_failed"].includes(type) });
+export const defaultPref = (type: AlertType) => ({ inApp: true, email: ["publish_failed", "token_invalid", "token_expiring", "scheduler_gap", "storage_error", "comments_sync_failed", "messenger_sync_failed", "backup_failed", "webhook_disconnected"].includes(type) });
 
 /**
  * Records an in-app notification and, when RESEND_API_KEY is set, emails ALERT_EMAIL (or ADMIN_EMAIL).
