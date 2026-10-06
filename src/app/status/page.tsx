@@ -5,12 +5,13 @@ import { AppShell } from "../ui/app-shell";
 import { MetricStrip } from "../ui/kit";
 import { StatusClient } from "./status-client";
 import { CommentsHealth } from "../inbox/comments-health";
+import { getSetting } from "@/services/settings-store";
 
 export const dynamic = "force-dynamic";
 
 export default async function Status() {
   const db = getDb();
-  const [diagnostics, attempts, recovering] = await Promise.all([
+  const [diagnostics, attempts, recovering, backup] = await Promise.all([
     runDiagnostics(false),
     db.execute(sql`
       select
@@ -31,6 +32,7 @@ export default async function Status() {
           where pa.post_id = posts.id and pa.status = 'failed'
         )
     `).then((r) => Number((r.rows[0] as { n: number })?.n ?? 0)).catch(() => 0),
+    getSetting<{ lastAttemptAt?: string; lastSuccessAt?: string | null; ok?: boolean } | null>("backup_status", null),
   ]);
   const total = attempts.success + attempts.failed + attempts.uncertain;
   const successRate = total ? Math.round((attempts.success / total) * 1000) / 10 : null;
@@ -41,6 +43,12 @@ export default async function Status() {
       { label: "قيد Auto Recovery", value: recovering, hint: "للأخطاء المؤقتة فقط" },
       { label: "فشل · 24 ساعة", value: attempts.failed, href: "/failed" },
       { label: "نتيجة غير مؤكدة", value: attempts.uncertain, hint: "لا تُعاد تلقائيًا", href: "/failed" },
+      {
+        label: "آخر نسخة احتياطية",
+        value: backup?.lastSuccessAt ? new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", month: "short", day: "numeric" }).format(new Date(backup.lastSuccessAt)) : "—",
+        hint: backup?.ok ? "آخر إرسال ناجح" : backup?.lastAttemptAt ? "آخر محاولة لم تنجح" : "لم تُرسل بعد",
+        href: "/settings/export",
+      },
     ]} />
     <StatusClient initial={diagnostics} />
     <CommentsHealth />
