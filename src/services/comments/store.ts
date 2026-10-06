@@ -140,7 +140,10 @@ async function planAutomation(comment:Row){
       // The worker sends it when due_at is reached, so rule delays are respected.
       const auto=flags().autoReplies&&flags().replies&&!match.rule.requireApproval;
       const [created]=await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at,approved_by) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation',${auto?"approved":"pending_approval"},${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()},${auto?"automation":null}) ON CONFLICT DO NOTHING RETURNING id`;
-      if(created&&auto)await db`INSERT INTO notifications(type,title,message) VALUES('comment_auto_scheduled','رد تلقائي مجدول',${String(comment.message).slice(0,300)})`;
+      if(created&&auto&&match.dueAt.getTime()<=Date.now()){
+        try{await sendReply(String(comment.id),String(created.id));}
+        catch(error){const message=error instanceof Error?error.message:"COMMENTS_REPLY_FAILED";await db`INSERT INTO notifications(type,title,message) VALUES('comment_reply_failed','تعذر إرسال رد تلقائي',${message.slice(0,300)})`;}
+      }else if(created&&auto)await db`INSERT INTO notifications(type,title,message) VALUES('comment_auto_scheduled','رد تلقائي مجدول',${String(comment.message).slice(0,300)})`;
       else if(created)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
     }else if(match.action==="hide"){
       try{await setHidden(String(comment.id),true);}
