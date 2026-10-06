@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { getPlanPost } from "@/content/ai-automation-90d";
+import { getCampaignVisual } from "@/content/campaign-visuals";
 
 export const runtime = "edge";
 
@@ -261,7 +261,7 @@ function Scene(props: SceneProps & { kind: string }) {
 export async function GET(_request: Request, context: { params: Promise<{ index: string }> }) {
   const { index } = await context.params;
   const n = Math.max(1, Math.min(180, Number(index) || 1));
-  const post = getPlanPost(n - 1);
+  const post = getCampaignVisual(n);
   const palette = PALETTES[post.category] ?? PALETTES["تقنية"];
   const kind = sceneKind(post.category, post.title);
 
