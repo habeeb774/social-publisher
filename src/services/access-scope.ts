@@ -40,7 +40,7 @@ export async function setUserAccessScope(userId: string, scope: UserAccessScope)
   return next;
 }
 
-export async function allowedPageIds(user: CurrentUser) {
+export async function allowedPageIds(user: Pick<CurrentUser, "id" | "role">) {
   if (user.role === "admin" || user.id === "env-admin") return null;
   const scope = await getUserAccessScope(user.id);
   if (scope.unrestricted) return null;
@@ -61,12 +61,12 @@ export async function allowedPageIds(user: CurrentUser) {
   return ids;
 }
 
-export async function canAccessPage(user: CurrentUser, pageId: string) {
+export async function canAccessPage(user: Pick<CurrentUser, "id" | "role">, pageId: string) {
   const allowed = await allowedPageIds(user);
   return allowed === null || allowed.has(pageId);
 }
 
-export async function filterPageIdsForUser(user: CurrentUser, pageIds: string[]) {
+export async function filterPageIdsForUser(user: Pick<CurrentUser, "id" | "role">, pageIds: string[]) {
   const allowed = await allowedPageIds(user);
   return allowed === null ? pageIds : pageIds.filter((id) => allowed.has(id));
 }
