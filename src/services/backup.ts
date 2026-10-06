@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { sendAlert, sendEmail } from "./alerts";
+import { resolveAlerts, sendAlert, sendEmail } from "./alerts";
 import { setSetting } from "./settings-store";
 
 // Content and configuration only. Secrets never leave the database: page tokens, password hashes,
@@ -39,7 +39,8 @@ export async function emailBackup() {
     const summary = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `- ${k}: ${n}`).join("\n");
     const sent = await sendEmail(`نسخة احتياطية ${day}`, `مرفق نسخة احتياطية من محتوى النظام وإعداداته (بدون رموز وصول أو كلمات مرور).\n\n${summary}\n\nاحتفظ بها في مكان آمن.`, [{ filename: `social-publisher-backup-${day}.json.gz`, content }]);
     await setSetting("backup_status", { lastAttemptAt: new Date().toISOString(), lastSuccessAt: sent ? new Date().toISOString() : null, ok: sent, counts });
-    if (!sent) await sendAlert("backup_failed", "تعذر إرسال النسخة الاحتياطية", "تم إنشاء النسخة الاحتياطية لكن تعذر إرسالها عبر البريد. تحقق من إعدادات البريد.", 12);
+    if (sent) await resolveAlerts(["backup_failed"]);
+    else await sendAlert("backup_failed", "تعذر إرسال النسخة الاحتياطية", "تم إنشاء النسخة الاحتياطية لكن تعذر إرسالها عبر البريد. تحقق من إعدادات البريد.", 12);
     return sent;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
