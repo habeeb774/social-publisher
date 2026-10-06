@@ -4,14 +4,18 @@ import { getDb } from "@/db";
 import { mediaAssets, postTemplates } from "@/db/schema";
 import PostEditor from "../post-editor";
 import { editorData } from "../editor-data";
+import { pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 export const dynamic = "force-dynamic";
 
 /** Supports ?template=<id> and ?media=<id> to start from a template or a library image. */
 export default async function NewPost({ searchParams }: { searchParams: Promise<{ template?: string; media?: string }> }) {
   const params = await searchParams;
   const db = getDb();
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const [data, template, asset] = await Promise.all([
-    editorData(),
+    editorData(allowed),
     z.uuid().safeParse(params.template).success ? db.select().from(postTemplates).where(eq(postTemplates.id, params.template!)).limit(1) : Promise.resolve([]),
     z.uuid().safeParse(params.media).success ? db.select().from(mediaAssets).where(and(eq(mediaAssets.id, params.media!), isNull(mediaAssets.deletedAt))).limit(1) : Promise.resolve([]),
   ]);
