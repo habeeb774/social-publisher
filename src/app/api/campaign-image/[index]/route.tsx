@@ -1,5 +1,32 @@
 import { ImageResponse } from "next/og";
+import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { getCampaignVisual } from "@/content/campaign-visuals";
+
+type StyledProps = { style?: Record<string, unknown>; children?: ReactNode };
+/**
+ * The image engine (Satori) only supports flex layout: a div with several children needs display:flex,
+ * and display:grid is rejected (the response is then an empty PNG). Expand components and normalize every
+ * div so no scene can silently produce a broken image.
+ */
+function normalizeLayout(node: ReactNode): ReactNode {
+  if (Array.isArray(node)) return node.map(normalizeLayout);
+  if (!isValidElement(node)) return node;
+  const el = node as ReactElement<StyledProps>;
+  if (typeof el.type === "function") return normalizeLayout((el.type as (p: StyledProps) => ReactNode)(el.props));
+  const kids = Children.toArray(el.props.children).map(normalizeLayout);
+  let style = el.props.style;
+  if (el.type === "div") {
+    const display = style?.display;
+    if (display === "grid") {
+      const { gridTemplateColumns, gridTemplateRows, ...rest } = style ?? {};
+      void gridTemplateColumns; void gridTemplateRows;
+      style = { ...rest, display: "flex", flexWrap: "wrap", alignContent: "stretch" };
+    } else if (kids.length > 1 && display !== "flex" && display !== "contents" && display !== "none") {
+      style = { ...style, display: "flex" };
+    }
+  }
+  return cloneElement(el, { style }, ...kids);
+}
 
 export const runtime = "edge";
 
@@ -168,7 +195,7 @@ function CalendarScene({ accent, accent2 }: SceneProps) {
         {[0,1,2,3].map(i=><div key={i} style={{width:120+i*20,height:12,borderRadius:10,background:i===0?accent:"rgba(255,255,255,.09)"}}/>)}
       </div>
       <div style={{position:"absolute",left:45,right:45,top:135,bottom:45,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gridTemplateRows:"repeat(4,1fr)",gap:18}}>
-        {Array.from({length:16},(_,i)=><div key={i} style={{borderRadius:24,...glass,display:"flex",padding:18,alignItems:"flex-end"}}>
+        {Array.from({length:16},(_,i)=><div key={i} style={{width:168,height:138,boxSizing:"border-box",borderRadius:24,...glass,display:"flex",padding:18,alignItems:"flex-end"}}>
           {(i%5===0||i%7===0)&&<div style={{width:"78%",height:32,borderRadius:12,background:i%2?`${accent}33`:`${accent2}33`,border:`1px solid ${i%2?accent:accent2}66`}}/>}
         </div>)}
       </div>
@@ -277,7 +304,7 @@ export async function GET(_request: Request, context: { params: Promise<{ index:
   const kind = sceneKind(post.category, post.title, post.slot === "evening");
 
   return new ImageResponse(
-    <div style={{
+    normalizeLayout(<div style={{
       width:"100%", height:"100%", display:"flex", position:"relative", overflow:"hidden",
       background:"linear-gradient(155deg,#040b16 0%,#071525 52%,#081a2f 100%)",
     }}>
@@ -288,7 +315,7 @@ export async function GET(_request: Request, context: { params: Promise<{ index:
       <div style={{position:"absolute",left:90+((n*71)%820),top:120+((n*59)%900),width:12+(n%5)*4,height:12+(n%5)*4,borderRadius:999,background:palette.accent2,boxShadow:`0 0 38px ${palette.accent2}`,opacity:.62}}/>
       <Scene {...palette} n={n} evening={post.slot==="evening"} kind={kind}/>
       <div style={{position:"absolute",left:58,right:58,bottom:48,height:8,borderRadius:20,background:`linear-gradient(90deg,${palette.accent},${palette.accent2},transparent)`,opacity:.45}}/>
-    </div>,
+    </div>) as ReactElement,
     {
       width:1080,
       height:1350,
