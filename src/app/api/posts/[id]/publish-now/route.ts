@@ -6,6 +6,7 @@ import { guard, isUuid } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { prePublishChecks } from "@/services/prepublish";
 import { isPublishingEnabled } from "@/services/publishing-mode";
+import { denyPostOutsideScope } from "@/services/access-scope";
 
 /**
  * Queues a draft/approved/scheduled post for the very next worker run (≤1 minute).
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const denied = await guard(request, true, "content.publish"); if (denied) return denied;
   const { id } = await params;
   if (!isUuid(id)) return NextResponse.json({ error: "المنشور غير موجود" }, { status: 404 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   const db = getDb();
   const [post] = await db.select().from(posts).where(and(eq(posts.id, id), isNull(posts.deletedAt))).limit(1);
   if (!post || !["draft", "approved", "scheduled"].includes(post.status)) return NextResponse.json({ error: "حالة المنشور لا تسمح بالنشر الآن" }, { status: 409 });
