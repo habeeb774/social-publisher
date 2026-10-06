@@ -52,8 +52,9 @@ export async function inboxCatalog(owner:string){
     db`SELECT id,name FROM campaigns ORDER BY name LIMIT 200`,
     listMetaAccounts(),
   ]);
-  const mappedPages=pages.map(page=>{
-    const account=accounts.find(item=>item.pageIds.includes(String(page.facebook_page_id)));
+  const pageRows=pages as Array<{id:string;name:string;facebook_page_id:string}>;
+  const mappedPages=pageRows.map(page=>{
+    const account=accounts.find(item=>item.pageIds.includes(page.facebook_page_id));
     return {...page,account_id:account?.id??null,account_name:account?.name??null};
   });
   return {pages:mappedPages,accounts:accounts.map(account=>({id:account.id,name:account.name,status:account.status})),users,tags,campaigns,views:views.map(v=>({...v,filter:inboxFilterSchema.parse(JSON.parse(String(v.query)))}))};
