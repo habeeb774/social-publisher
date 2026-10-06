@@ -84,8 +84,32 @@ async function run(request: Request) {
     await gapCheck;
     if (!(await hasMetaAccess())) return;
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
-    await syncComments(day(2), day(0)).catch(log("Comments sync failed"));
-    await syncMessenger().catch(log("Messenger sync failed"));
+    try {
+      const comments = await syncComments(day(2), day(0));
+      if ("errors" in comments && Array.isArray(comments.errors) && comments.errors.length) {
+        await sendAlert("comments_sync_failed", "مزامنة التعليقات جزئية", comments.errors.join("\n").slice(0, 900), 6);
+      } else {
+        await resolveAlerts(["comments_sync_failed"]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await sendAlert("comments_sync_failed", "تعذر مزامنة التعليقات", message.slice(0, 900), 6);
+      log("Comments sync failed")(error);
+    }
+
+    try {
+      const messenger = await syncMessenger();
+      const failed = Object.entries(messenger.status).filter(([, error]) => Boolean(error));
+      if (failed.length) {
+        await sendAlert("messenger_sync_failed", "مزامنة Messenger غير مكتملة", failed.map(([name, error]) => `${name}: ${error}`).join("\n").slice(0, 900), 6);
+      } else {
+        await resolveAlerts(["messenger_sync_failed"]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await sendAlert("messenger_sync_failed", "تعذر مزامنة Messenger", message.slice(0, 900), 6);
+      log("Messenger sync failed")(error);
+    }
   });
   try {
     const results = await publishDuePosts();
