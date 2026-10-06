@@ -5,6 +5,7 @@ import { facebookPages } from "@/db/schema";
 import { isGraphConfigured } from "@/services/facebook-graph";
 import { metaOAuthConfigured } from "@/services/meta-oauth";
 import { pageCan } from "@/services/session-server";
+import { getSetting } from "@/services/settings-store";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -22,7 +23,7 @@ export const metadata = { title: "صفحات Facebook" };
 export default async function Pages({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const db = getDb();
-  const [rows, canDiagnose, canManage] = await Promise.all([
+  const [rows, canDiagnose, canManage, metaProfile] = await Promise.all([
     db.select({
       page: facebookPages,
       published: sql<number>`(select count(*)::int from posts p where p.page_id = ${facebookPages.id} and p.status = 'published')`,
@@ -32,11 +33,12 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     }).from(facebookPages).orderBy(asc(facebookPages.createdAt)),
     pageCan("system.diagnose"),
     pageCan("settings.manage"),
+    getSetting<{ id: string; name: string; pictureUrl?: string | null; connectedAt?: string } | null>("meta_connected_profile", null),
   ]);
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY), oauthReady = metaOAuthConfigured();
   const metaState = typeof params.meta === "string" ? params.meta : null;
   const metaMessage = metaState === "connected"
-    ? `تم ربط Meta بنجاح · صفحات: ${typeof params.pages === "string" ? params.pages : "0"} · Instagram: ${typeof params.instagram === "string" ? params.instagram : "0"}`
+    ? `تم ربط Meta بنجاح · الملف الشخصي: ${params.profile === "1" ? "متصل" : "غير متاح"} · صفحات: ${typeof params.pages === "string" ? params.pages : "0"} · Instagram: ${typeof params.instagram === "string" ? params.instagram : "0"}`
     : metaState === "missing-config" ? "الربط التلقائي جاهز، ويحتاج فقط META_APP_ID و META_APP_SECRET في Vercel."
     : metaState === "no-pages" ? "تم تسجيل الدخول إلى Meta، لكن لم نجد صفحة تديرها بهذه الصلاحيات."
     : metaState === "cancelled" ? "أُلغي ربط Meta قبل إكمال التفويض."
@@ -46,6 +48,26 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
   return <AppShell title="صفحات Facebook">
     <PageHeader title="الصفحات والحسابات" description="مركز اتصال Facebook وInstagram. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
     {metaMessage && <div className={`banner ${metaState === "connected" ? "success" : metaState === "missing-config" ? "" : "warning"}`}>{metaMessage}</div>}
+    {metaProfile && <section className="card card-flush" style={{ marginBottom: 16 }}>
+      <div className="integration">
+        {metaProfile.pictureUrl
+          ? <img src={metaProfile.pictureUrl} alt="" width={48} height={48} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
+          : <span className="logo" style={{ background: "var(--surface-2)", fontWeight: 700 }}>{metaProfile.name.slice(0, 1)}</span>}
+        <div>
+          <h3>{metaProfile.name}</h3>
+          <small><code>{metaProfile.id}</code> · ملف Meta الشخصي · هوية الحساب الذي تم الربط منه</small>
+          <div className="caps">
+            <span className="cap on">✓ متصل</span>
+            <span className="cap">إدارة الصفحات والحسابات المرتبطة</span>
+            <span className="cap off">— النشر للملف الشخصي غير مدعوم عبر Graph API</span>
+          </div>
+        </div>
+        <div className="stack" style={{ gap: 6, justifyItems: "end" }}>
+          <span className="badge badge-success">ملف شخصي</span>
+          {metaProfile.connectedAt && <small>آخر ربط: {riyadh(metaProfile.connectedAt)}</small>}
+        </div>
+      </div>
+    </section>}
     <section className="card card-flush">{!rows.length ? <EmptyState icon="pages" title="لا توجد صفحات متصلة" description={oauthReady ? "اربط حساب Meta مرة واحدة ليتم استيراد صفحات Facebook وInstagram تلقائيًا." : "الربط اليدوي يعمل الآن. لتفعيل OAuth أضف META_APP_ID و META_APP_SECRET في Vercel."} action={<Link className="btn btn-secondary btn-sm" href="/settings/integrations">التكاملات</Link>} /> :
       rows.map(({ page, published, scheduled, lastPublish, lastFailure }) => {
         const hasPageToken = Boolean(page.accessTokenEnc);
