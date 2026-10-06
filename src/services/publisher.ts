@@ -3,6 +3,17 @@ import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, publicationAttempts } from "@/db/schema";
 import { publishToFacebook, type FacebookResult } from "./facebook";
 import { sendAlert } from "./alerts";
+import { classifyError } from "./error-classes";
+
+const MAX_AUTOMATIC_ATTEMPTS = 3;
+const AUTO_RETRY_MINUTES = [5, 15];
+
+function automaticRetryDelay(attemptNumber: number, message: string) {
+  const kind = classifyError(message);
+  const transient = kind.key === "connection" || kind.key === "database" || kind.key === "scheduler";
+  if (!transient || attemptNumber >= MAX_AUTOMATIC_ATTEMPTS) return null;
+  return AUTO_RETRY_MINUTES[Math.min(attemptNumber - 1, AUTO_RETRY_MINUTES.length - 1)] ?? 15;
+}
 
 export async function publishDuePosts(limit = 10) {
   const db = getDb();
@@ -28,14 +39,46 @@ export async function publishDuePosts(limit = 10) {
       result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content, imageUrl: media[0]?.url, platform: page.platform });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown publication error";
-      const unknown=message.startsWith("MCP_PUBLISH_OUTCOME_UNKNOWN");
+      const unknown = message.startsWith("MCP_PUBLISH_OUTCOME_UNKNOWN");
+      const retryMinutes = unknown ? null : automaticRetryDelay(attemptNumber, message);
+      const retryAt = retryMinutes ? new Date(Date.now() + retryMinutes * 60000) : null;
+
       await db.batch([
-        db.update(publicationAttempts).set({status:unknown?"outcome_unknown":"failed",finishedAt:new Date(),errorMessage:message}).where(eq(publicationAttempts.id,attemptId)),
-        db.update(posts).set({ status: "failed", lastError: message, failedAt: new Date(), updatedAt: new Date() }).where(eq(posts.id, post.id)),
+        db.update(publicationAttempts).set({
+          status: unknown ? "outcome_unknown" : "failed",
+          finishedAt: new Date(),
+          errorMessage: message,
+        }).where(eq(publicationAttempts.id, attemptId)),
+        db.update(posts).set(retryAt ? {
+          status: "scheduled",
+          scheduledAt: retryAt,
+          lastError: message,
+          failedAt: null,
+          updatedAt: new Date(),
+        } : {
+          status: "failed",
+          lastError: message,
+          failedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(posts.id, post.id)),
       ]);
+
+      if (retryAt) {
+        results.push({ id: post.id, status: "retry_scheduled" });
+        await sendAlert(
+          "publish_retry_scheduled",
+          `إعادة محاولة تلقائية لمنشور (${post.id.slice(0, 8)})`,
+          `تعذر النشر بسبب خطأ مؤقت. ستتم المحاولة ${attemptNumber + 1} من ${MAX_AUTOMATIC_ATTEMPTS} بعد ${retryMinutes} دقائق.
+
+الخطأ: ${message.slice(0, 400)}`,
+          1,
+        );
+        continue;
+      }
+
       results.push({ id: post.id, status: "failed" });
       const when = new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" }).format(post.scheduledAt ?? new Date());
-      await sendAlert("publish_failed", `فشل نشر منشور (${post.id.slice(0, 8)})`, `${unknown ? "نتيجة النشر غير مؤكدة: تحقق من الصفحة قبل إعادة المحاولة." : "لم يُنشر المنشور."}
+      await sendAlert("publish_failed", `فشل نشر منشور (${post.id.slice(0, 8)})`, `${unknown ? "نتيجة النشر غير مؤكدة: تحقق من الصفحة قبل إعادة المحاولة." : "لم يُنشر المنشور بعد استنفاد المحاولات الآمنة."}
 
 الموعد: ${when}
 النص: ${post.content.slice(0, 120)}
