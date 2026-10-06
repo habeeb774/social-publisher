@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages } from "@/db/schema";
 
@@ -38,4 +38,19 @@ export async function storedInstagramToken(igUserId: string) {
   if (!row?.enc) return null;
   try { return decryptToken(row.enc); }
   catch (cause) { throw new Error("INSTAGRAM_TOKEN_DECRYPT_FAILED", { cause }); }
+}
+
+
+/** Whether at least one active Facebook page has its own encrypted OAuth token. */
+export async function hasStoredFacebookPageToken() {
+  if (!process.env.DATABASE_URL?.trim()) return false;
+  const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc })
+    .from(facebookPages)
+    .where(and(
+      eq(facebookPages.platform, "facebook"),
+      eq(facebookPages.isActive, true),
+      isNotNull(facebookPages.accessTokenEnc),
+    ))
+    .limit(1);
+  return Boolean(row?.enc);
 }
