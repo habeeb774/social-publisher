@@ -27,7 +27,9 @@ export async function POST(request: NextRequest) {
     try {
       const res = await renderCampaignImage(request, { params: Promise.resolve({ index: String(index) }) });
       if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) throw new Error(`HTTP ${res.status}`);
-      const blob = await put(`campaigns/ai-automation-90d/static-${index}.png`, Buffer.from(await res.arrayBuffer()), { access: "public", contentType: "image/png", addRandomSuffix: true });
+      const png = Buffer.from(await res.arrayBuffer());
+      if (png.length < 1000) throw new Error("EMPTY_IMAGE");
+      const blob = await put(`campaigns/ai-automation-90d/static-${index}.png`, png, { access: "public", contentType: "image/png", addRandomSuffix: true });
       await db.execute(sql`update post_media set url = ${blob.url} where url = ${row.url}`);
       done.push(index);
     } catch (error) { failed.push(`${index}: ${error instanceof Error ? error.message : "error"}`); }
