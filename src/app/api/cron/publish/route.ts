@@ -11,6 +11,7 @@ import { materializeRecurrences } from "@/services/recurrence";
 import { processDueAutomationReplies, syncComments } from "@/services/comments/store";
 import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
+import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -38,6 +39,25 @@ async function runHealthChecks() {
     // Token inspection is a network call; once an hour is enough.
     if (firstRunOfHour()) await purgeExpiredTrash();
     await maybeSendWeeklyReport().catch((error) => console.error("Weekly report failed", { error: error instanceof Error ? error.message : String(error) }));
+    if (firstRunOfHour()) {
+      try {
+        const webhook = await checkMetaWebhookSubscriptions();
+        if (webhook.configured && webhook.healthy) {
+          await resolveAlerts(["webhook_disconnected"]);
+        } else if (webhook.configured) {
+          const failedPages = webhook.pages.filter((page) => !page.ok).map((page) => page.page).join("، ");
+          await sendAlert(
+            "webhook_disconnected",
+            "Webhook Facebook يحتاج إعادة تفعيل",
+            `اشتراك التطبيق: ${webhook.app ? "سليم" : "غير سليم"}${failedPages ? ` · صفحات متأثرة: ${failedPages}` : ""}. افتح التكاملات واضغط «تفعيل Webhook الآن».`,
+            6,
+          );
+        }
+      } catch (error) {
+        console.error("Meta webhook health check failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
     if (firstRunOfHour()) {
       const pages = await getDb().select({
         name: facebookPages.name,
