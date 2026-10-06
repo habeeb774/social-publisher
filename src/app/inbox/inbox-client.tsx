@@ -38,13 +38,15 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
-  const [pages, setPages] = useState<Array<{ id: string; name: string }>>([]);
+  const [pages, setPages] = useState<Array<{ id: string; name: string; account_id?: string | null; account_name?: string | null }>>([]);
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; status: string }>>([]);
 
   const loadList = useCallback(async (next?: string) => {
-    try { const r = await call<{ items: Comment[]; nextCursor: string | null }>(`?status=${tab}&q=${encodeURIComponent(q)}${page ? `&page=${page}` : ""}${next ? `&cursor=${encodeURIComponent(next)}` : ""}`); setItems((old) => next ? [...(old ?? []), ...r.items] : r.items); setCursor(r.nextCursor); }
+    try { const r = await call<{ items: Comment[]; nextCursor: string | null }>(`?status=${tab}&q=${encodeURIComponent(q)}${account ? `&account=${encodeURIComponent(account)}` : ""}${page ? `&page=${page}` : ""}${next ? `&cursor=${encodeURIComponent(next)}` : ""}`); setItems((old) => next ? [...(old ?? []), ...r.items] : r.items); setCursor(r.nextCursor); }
     catch (e) { setItems([]); toast(e instanceof Error ? e.message : "تعذر تحميل التعليقات", "error"); }
-  }, [tab, q, page]);
+  }, [tab, q, account, page]);
   useEffect(() => { const t = setTimeout(() => loadList(), 250); return () => clearTimeout(t); }, [loadList]);
   useEffect(() => {
     const timer = setInterval(() => {
@@ -52,7 +54,7 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
     }, 15000);
     return () => clearInterval(timer);
   }, [loadList]);
-  useEffect(() => { call<Caps>("?view=capabilities").then(setCaps).catch(() => setCaps({ connected: false, read: false, reply: false, reason: "COMMENTS_AUTH_REQUIRED" })); call<{ pages: Array<{ id: string; name: string }> }>("?view=catalog").then((d) => setPages(d.pages ?? [])).catch(() => {}); call<Template[]>("?view=templates").then((t) => setTemplates(t.filter((x) => x.active))).catch(() => {}); }, []);
+  useEffect(() => { call<Caps>("?view=capabilities").then(setCaps).catch(() => setCaps({ connected: false, read: false, reply: false, reason: "COMMENTS_AUTH_REQUIRED" })); call<{ pages: Array<{ id: string; name: string; account_id?: string | null; account_name?: string | null }>; accounts: Array<{ id: string; name: string; status: string }> }>("?view=catalog").then((d) => { setPages(d.pages ?? []); setAccounts(d.accounts ?? []); }).catch(() => {}); call<Template[]>("?view=templates").then((t) => setTemplates(t.filter((x) => x.active))).catch(() => {}); }, []);
   const open = useCallback(async (id: string) => { try { setDetail(await call<Detail>(`?id=${id}`)); setDraft(""); setTemplateId(null); } catch (e) { toast(e instanceof Error ? e.message : "تعذر فتح المحادثة", "error"); } }, []);
   useEffect(() => { const id = params.get("id"); if (!id) return; const t = setTimeout(() => open(id), 0); return () => clearTimeout(t); }, [params, open]);
 
@@ -91,7 +93,10 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
     <div className={`inbox ${detail ? "has-selection" : ""}`}>
       <section className="inbox-list" aria-label="المحادثات">
         <nav className="tabs" role="tablist">{TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{l}</button>)}</nav>
-        {pages.length > 1 && <div className="search"><select aria-label="الصفحة" value={page} onChange={(e) => setPage(e.target.value)}><option value="">كل الصفحات</option>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
+        {(accounts.length > 1 || pages.length > 1) && <div className="search row">
+          {accounts.length > 1 && <select aria-label="حساب Meta" value={account} onChange={(e) => { setAccount(e.target.value); setPage(""); }}><option value="">كل حسابات Meta</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}
+          {pages.length > 1 && <select aria-label="الصفحة" value={page} onChange={(e) => setPage(e.target.value)}><option value="">كل الصفحات</option>{pages.filter((p) => !account || p.account_id === account).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
+        </div>}
         <div className="search row"><input type="search" aria-label="بحث في التعليقات" placeholder="ابحث بالنص أو الاسم…" value={q} onChange={(e) => setQ(e.target.value)} /><button className="btn btn-icon" aria-label="جلب تعليقات آخر يومين" data-tooltip="مزامنة آخر يومين" disabled={busy || !caps?.read} onClick={sync}><Icon name="recycle" width={16} /></button></div>
         <div className="inbox-items">{items === null ? <div style={{ padding: 16 }}><Skeleton lines={4} /></div> : !items.length ? <EmptyState icon="inbox" title="لا توجد محادثات" description={tab === "needs_reply" ? "لا توجد تعليقات بانتظار الرد." : "جرّب تبويبًا آخر أو امسح البحث."} /> :
           items.map((i) => <button key={i.id} className={`inbox-item ${detail?.comment.id === i.id ? "active" : ""} ${i.status === "unread" || i.status === "new" ? "unread" : ""}`} onClick={() => open(i.id)}><span className="avatar" style={{ width: 32, height: 32 }}>{(i.author_name ?? "؟").slice(0, 1)}</span><span className="row-between"><b>{i.author_name ?? "متابع"}</b><small className="num">{riyadh(i.created_time, "time")}</small></span><p className="clamp-2">{i.message}</p><small><span className="badge badge-info">{i.page_name}</span>{i.sentiment !== "neutral" && <> · <span className={i.sentiment === "complaint" ? "danger" : ""}>{SENTIMENT[i.sentiment] ?? i.sentiment}</span></>}</small></button>)}
