@@ -136,10 +136,11 @@ async function planAutomation(comment:Row){
     if(match.action==="reply_template"){
       const [template]=await db`SELECT content FROM quick_replies WHERE id=${match.rule.templateId}::uuid AND active`;
       if(!template)continue;
-      // With AUTO_COMMENT_REPLIES_ENABLED the reply is approved and sent right away; otherwise it waits for a human.
-      const auto=flags().autoReplies&&flags().replies;
+      // Auto-send only for rules that explicitly do not require human approval.
+      // The worker sends it when due_at is reached, so rule delays are respected.
+      const auto=flags().autoReplies&&flags().replies&&!match.rule.requireApproval;
       const [created]=await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at,approved_by) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation',${auto?"approved":"pending_approval"},${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()},${auto?"automation":null}) ON CONFLICT DO NOTHING RETURNING id`;
-      if(created&&auto)await sendReply(String(comment.id),String(created.id)).catch(()=>db`INSERT INTO notifications(type,title,message) VALUES('comment_reply_failed','تعذر إرسال رد تلقائي',${String(comment.message).slice(0,300)})`);
+      if(created&&auto)await db`INSERT INTO notifications(type,title,message) VALUES('comment_auto_scheduled','رد تلقائي مجدول',${String(comment.message).slice(0,300)})`;
       else if(created)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
     }else if(match.action==="hide"){
       try{await setHidden(String(comment.id),true);}
@@ -150,6 +151,28 @@ async function planAutomation(comment:Row){
     await commentsAudit("comment.automation_matched",String(comment.id),{ruleId:match.rule.id,action:match.action});
   }
 }
+/** Sends due automation replies only. Unknown outcomes are never retried automatically. */
+export async function processDueAutomationReplies(limit=20){
+  if(!flags().automation||!flags().autoReplies||!flags().replies)return {processed:0,sent:0,failed:0};
+  const db=database();
+  const rows=await db`SELECT r.id,r.comment_id FROM comment_replies r
+    WHERE r.reply_type='automation' AND r.status='approved' AND r.due_at IS NOT NULL AND r.due_at<=now()
+    ORDER BY r.due_at ASC LIMIT ${limit}`;
+  let sent=0,failed=0;
+  for(const row of rows){
+    try{
+      const result=await sendReply(String(row.comment_id),String(row.id));
+      if(result&&"realReply" in result&&result.realReply)sent++;
+    }catch(error){
+      failed++;
+      const message=error instanceof Error?error.message:"COMMENTS_REPLY_FAILED";
+      if(message==="COMMENTS_REPLY_OUTCOME_UNKNOWN")continue;
+      await db`INSERT INTO notifications(type,title,message) VALUES('comment_reply_failed','تعذر إرسال رد تلقائي',${message.slice(0,300)})`;
+    }
+  }
+  return {processed:rows.length,sent,failed};
+}
+
 /** Manual reads only until a supported polling frequency/rate limit is confirmed. */
 export async function syncComments(from:string,to:string){
   const db=database();const [run]=await db`INSERT INTO comments_sync_runs(status) VALUES('running') RETURNING id`;
