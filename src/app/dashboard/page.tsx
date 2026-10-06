@@ -5,6 +5,8 @@ import { systemAnalytics } from "@/services/analytics";
 import { currentMonth, goalsWithProgress } from "@/services/goals";
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { setupProgress } from "@/services/setup";
+import { pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -18,8 +20,15 @@ const dayLabel = (iso: string) => new Intl.DateTimeFormat("ar-SA", { weekday: "s
 const stateOf = (s: string) => s === "healthy" ? "ok" : s === "warning" ? "warn" : s === "error" ? "bad" : "off";
 
 export default async function Dashboard() {
-  const [data, analytics, goals, setup] = await Promise.all([dashboardData(), systemAnalytics(), goalsWithProgress(currentMonth()), setupProgress()]);
-  if (!setup.dismissed && analytics.totals.total === 0 && !setup.complete) redirect("/onboarding");
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
+  const [data, analytics, goals, setup] = await Promise.all([
+    dashboardData(allowed),
+    allowed === null ? systemAnalytics() : Promise.resolve(null),
+    allowed === null ? goalsWithProgress(currentMonth()) : Promise.resolve([]),
+    setupProgress(),
+  ]);
+  if (allowed === null && analytics && !setup.dismissed && analytics.totals.total === 0 && !setup.complete) redirect("/onboarding");
   const live = isPublishingEnabled();
   const t = data.totals;
   const max = Math.max(1, ...data.series.map((s) => s.count));
