@@ -4,8 +4,8 @@ import { getDb } from "@/db";
 import { facebookPages, notifications } from "@/db/schema";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
-import { setSetting } from "@/services/settings-store";
 import { setupMetaWebhook } from "@/services/meta-webhook";
+import { upsertMetaAccount } from "@/services/meta-accounts";
 import { encryptToken } from "@/services/page-tokens";
 import {
   exchangeMetaCode,
@@ -50,14 +50,6 @@ export async function GET(request: NextRequest) {
     if (!pages.length) return back(request, { meta: "no-pages" });
 
     const db = getDb();
-    if (profile) {
-      await setSetting("meta_connected_profile", {
-        id: profile.id,
-        name: profile.name,
-        pictureUrl: profile.pictureUrl ?? null,
-        connectedAt: new Date().toISOString(),
-      });
-    }
     let connectedPages = 0;
     let connectedInstagram = 0;
 
@@ -121,6 +113,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (profile) {
+      await upsertMetaAccount({
+        id: profile.id,
+        name: profile.name,
+        pictureUrl: profile.pictureUrl ?? null,
+        permissions,
+        pageIds: pages.map((page) => page.id),
+        instagramIds: pages.flatMap((page) => page.instagram_business_account?.id ? [page.instagram_business_account.id] : []),
+      });
+    }
+
     await logAudit("meta.oauth_connected", "integration", null, {
       pages: connectedPages,
       instagram: connectedInstagram,
@@ -138,7 +141,7 @@ export async function GET(request: NextRequest) {
       console.error("Meta webhook auto-setup failed", { error: error instanceof Error ? error.message : String(error) });
     }
 
-    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, webhook, messenger: messengerGranted ? 1 : 0 });
+    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, account: profile?.id ?? "", webhook, messenger: messengerGranted ? 1 : 0 });
   } catch (error) {
     console.error("Meta OAuth callback failed", { error: error instanceof Error ? error.message : String(error) });
     return back(request, { meta: "failed" });
