@@ -270,10 +270,12 @@ async function resolveCampaignStart() {
 
 export async function GET(request: NextRequest) {
   if (!process.env.CONTENT_SEED_TOKEN || request.nextUrl.searchParams.get("token") !== process.env.CONTENT_SEED_TOKEN) return unauthorized();
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "BLOB_READ_WRITE_TOKEN missing" }, { status: 503 });
+  const fast = request.nextUrl.searchParams.get("fast") === "1";
+  if (!fast && !process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "BLOB_READ_WRITE_TOKEN missing" }, { status: 503 });
 
+  const all = request.nextUrl.searchParams.get("all") === "1";
   const batch = Number(request.nextUrl.searchParams.get("batch") ?? "0");
-  if (!Number.isInteger(batch) || batch < 0 || batch >= Math.ceil(TOTAL_POSTS / POSTS_PER_BATCH)) {
+  if (!all && (!Number.isInteger(batch) || batch < 0 || batch >= Math.ceil(TOTAL_POSTS / POSTS_PER_BATCH))) {
     return NextResponse.json({ error: "Invalid batch" }, { status: 400 });
   }
 
@@ -308,8 +310,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const startIndex = batch * POSTS_PER_BATCH;
-  const plan = getPlanRange(startIndex, POSTS_PER_BATCH);
+  const startIndex = all ? 0 : batch * POSTS_PER_BATCH;
+  const plan = getPlanRange(startIndex, all ? TOTAL_POSTS : POSTS_PER_BATCH);
   const created: Array<{ index: number; postId: string; scheduledAt: string; imageUrl: string }> = [];
   const skipped: number[] = [];
 
@@ -319,13 +321,21 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    const png = visualFor(item.category + ":" + item.title, item.index);
-    const blob = await put(
-      "campaigns/ai-automation-90d/post-" + String(item.index + 1).padStart(3, "0") + ".png",
-      png,
-      { access: "public", contentType: "image/png", addRandomSuffix: true }
-    );
     const scheduledAt = scheduleAt(startDate, item.index);
+    let imageUrl = request.nextUrl.origin + "/api/campaign-image/" + String(item.index + 1);
+    let storageKey: string | null = null;
+    let imageSize: number | null = null;
+    if (!fast) {
+      const png = visualFor(item.category + ":" + item.title, item.index);
+      const blob = await put(
+        "campaigns/ai-automation-90d/post-" + String(item.index + 1).padStart(3, "0") + ".png",
+        png,
+        { access: "public", contentType: "image/png", addRandomSuffix: true }
+      );
+      imageUrl = blob.url;
+      storageKey = blob.pathname;
+      imageSize = png.length;
+    }
 
     const [post] = await db.insert(posts).values({
       pageId: page.id,
@@ -342,18 +352,18 @@ export async function GET(request: NextRequest) {
     await db.insert(postMedia).values({
       postId: post.id,
       type: "image",
-      url: blob.url,
-      storageKey: blob.pathname,
+      url: imageUrl,
+      storageKey,
       mimeType: "image/png",
-      size: png.length,
+      size: imageSize,
     });
 
     await db.insert(mediaAssets).values({
       name: "AI Automation " + String(item.index + 1).padStart(3, "0") + ".png",
-      url: blob.url,
-      storageKey: blob.pathname,
+      url: imageUrl,
+      storageKey,
       mimeType: "image/png",
-      size: png.length,
+      size: imageSize,
       source: "campaign-generator",
     }).onConflictDoNothing();
 
@@ -361,7 +371,7 @@ export async function GET(request: NextRequest) {
       index: item.index + 1,
       postId: post.id,
       scheduledAt: scheduledAt.toISOString(),
-      imageUrl: blob.url,
+      imageUrl,
     });
   }
 
@@ -374,7 +384,7 @@ export async function GET(request: NextRequest) {
       batch,
       created: created.length,
       skipped: skipped.length,
-      range: [startIndex + 1, Math.min(startIndex + POSTS_PER_BATCH, TOTAL_POSTS)],
+      range: [startIndex + 1, all ? TOTAL_POSTS : Math.min(startIndex + POSTS_PER_BATCH, TOTAL_POSTS)],
     },
   });
 
