@@ -8,6 +8,7 @@ type Conversation = { id: string; participant_name: string | null; last_message:
 type Message = { id: string; from_name: string | null; message: string; is_from_page: boolean; created_time: string; sent_by: string | null };
 type Detail = { conversation: { id: string; participant_name: string | null; page_name: string; canReply: boolean }; messages: Message[] };
 type Status = { checkedAt: string; pages: Record<string, string | null> } | null;
+type Catalog = { accounts: Array<{ id: string; name: string; status: string }>; pages: Array<{ id: string; name: string; accountId: string | null; accountName: string | null }> };
 
 const time = (v: string | null) => v ? new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "short", timeStyle: "short" }).format(new Date(v)) : "";
 async function api<T>(query: string, body?: unknown): Promise<T> {
@@ -23,11 +24,14 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [account, setAccount] = useState("");
+  const [page, setPage] = useState("");
+  const [catalog, setCatalog] = useState<Catalog>({ accounts: [], pages: [] });
 
   const load = useCallback(async () => {
-    try { const d = await api<{ items: Conversation[]; status: Status }>(""); setItems(d.items); setStatus(d.status); }
+    try { const d = await api<{ items: Conversation[]; status: Status; catalog: Catalog }>(`?${new URLSearchParams({ ...(account ? { account } : {}), ...(page ? { page } : {}) }).toString()}`); setItems(d.items); setStatus(d.status); setCatalog(d.catalog ?? { accounts: [], pages: [] }); }
     catch (e) { setItems([]); toast(e instanceof Error ? e.message : "تعذر تحميل الرسائل", "error"); }
-  }, []);
+  }, [account, page]);
   useEffect(() => { const t = setTimeout(load, 0); return () => clearTimeout(t); }, [load]);
   useEffect(() => {
     const timer = setInterval(() => {
@@ -51,6 +55,10 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
     <div className={`inbox ${detail ? "has-selection" : ""}`}>
       <section className="inbox-list" aria-label="المحادثات">
         <div className="search row"><strong style={{ flex: 1 }}>رسائل ماسنجر</strong><button className="btn btn-secondary btn-sm" disabled={busy} onClick={sync}>مزامنة</button></div>
+        {(catalog.accounts.length > 1 || catalog.pages.length > 1) && <div className="search row">
+          {catalog.accounts.length > 1 && <select aria-label="حساب Meta" value={account} onChange={(e) => { setAccount(e.target.value); setPage(""); }}><option value="">كل حسابات Meta</option>{catalog.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}
+          {catalog.pages.length > 1 && <select aria-label="الصفحة" value={page} onChange={(e) => setPage(e.target.value)}><option value="">كل الصفحات</option>{catalog.pages.filter((p) => !account || p.accountId === account).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
+        </div>}
         <div className="inbox-items">{items === null ? <div style={{ padding: 16 }}><Skeleton lines={4} /></div> : !items.length ? <EmptyState icon="inbox" title="لا توجد رسائل" description="عند تفعيل pages_messaging تصل الرسائل عبر Meta Webhook مباشرة، وتبقى المزامنة الدورية احتياطية." /> :
           items.map((i) => <button key={i.id} className={`inbox-item ${detail?.conversation.id === i.id ? "active" : ""} ${i.unread ? "unread" : ""}`} onClick={() => open(i.id)}>
             <span className="avatar" style={{ width: 32, height: 32 }}>{(i.participant_name ?? "؟").slice(0, 1)}</span>
