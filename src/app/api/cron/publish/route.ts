@@ -8,7 +8,7 @@ import { resolveAlerts, sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
-import { syncComments } from "@/services/comments/store";
+import { processDueAutomationReplies, syncComments } from "@/services/comments/store";
 import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
 
@@ -95,6 +95,15 @@ async function run(request: Request) {
       const message = error instanceof Error ? error.message : String(error);
       await sendAlert("comments_sync_failed", "تعذر مزامنة التعليقات", message.slice(0, 900), 6);
       log("Comments sync failed")(error);
+    }
+
+    try {
+      const autoReplies = await processDueAutomationReplies();
+      if (autoReplies.failed > 0) {
+        await sendAlert("comments_sync_failed", "بعض الردود التلقائية لم تُرسل", `فشل ${autoReplies.failed} من أصل ${autoReplies.processed} رد تلقائي مستحق.`, 1);
+      }
+    } catch (error) {
+      log("Automatic comment replies failed")(error);
     }
 
     try {
