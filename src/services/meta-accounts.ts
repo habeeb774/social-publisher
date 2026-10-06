@@ -1,3 +1,6 @@
+import { and, eq, inArray } from "drizzle-orm";
+import { getDb } from "@/db";
+import { facebookPages } from "@/db/schema";
 import { getSetting, setSetting } from "./settings-store";
 
 export type MetaAccountRecord = {
@@ -90,4 +93,40 @@ export async function setMetaAccountDisconnected(accountId: string) {
   const accounts = await listMetaAccounts();
   const next = accounts.map((account) => account.id === accountId ? { ...account, status: "disconnected" as const } : account);
   await setSetting(KEY, next);
+}
+
+
+export async function disconnectMetaAccount(accountId: string) {
+  const accounts = await listMetaAccounts();
+  const target = accounts.find((account) => account.id === accountId);
+  if (!target) throw new Error("META_ACCOUNT_NOT_FOUND");
+
+  const otherActive = accounts.filter((account) => account.id !== accountId && account.status === "active");
+  const sharedRemoteIds = new Set(
+    otherActive.flatMap((account) => [...account.pageIds, ...account.instagramIds])
+  );
+  const ownedRemoteIds = [...target.pageIds, ...target.instagramIds];
+  const exclusive = ownedRemoteIds.filter((id) => !sharedRemoteIds.has(id));
+
+  if (exclusive.length) {
+    await getDb().update(facebookPages).set({
+      isActive: false,
+      status: "disconnected",
+      accessTokenEnc: null,
+      updatedAt: new Date(),
+    }).where(and(
+      inArray(facebookPages.facebookPageId, exclusive),
+      eq(facebookPages.isActive, true),
+    ));
+  }
+
+  const next = accounts.map((account) =>
+    account.id === accountId ? { ...account, status: "disconnected" as const } : account
+  );
+  await setSetting(KEY, next);
+  return {
+    ok: true,
+    disabledChannels: exclusive.length,
+    preservedSharedChannels: ownedRemoteIds.length - exclusive.length,
+  };
 }
