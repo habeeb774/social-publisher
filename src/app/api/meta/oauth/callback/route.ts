@@ -5,6 +5,7 @@ import { facebookPages, notifications } from "@/db/schema";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { setSetting } from "@/services/settings-store";
+import { setupMetaWebhook } from "@/services/meta-webhook";
 import { encryptToken } from "@/services/page-tokens";
 import {
   exchangeMetaCode,
@@ -127,7 +128,16 @@ export async function GET(request: NextRequest) {
       permissions: permissions.filter((p) => p === "public_profile" || p.startsWith("pages_") || p.startsWith("instagram_")),
     });
 
-    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0 });
+    let webhook = "pending";
+    try {
+      const setup = await setupMetaWebhook();
+      webhook = setup.pages.some((page) => page.ok) ? "connected" : "partial";
+    } catch (error) {
+      webhook = "failed";
+      console.error("Meta webhook auto-setup failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+
+    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, webhook });
   } catch (error) {
     console.error("Meta OAuth callback failed", { error: error instanceof Error ? error.message : String(error) });
     return back(request, { meta: "failed" });
