@@ -28,7 +28,7 @@ export function QueueClient({ initialSlots, queued, drafts }: { initialSlots: Sl
     try {
       const { assigned } = await api<{ assigned: Array<{ id: string; scheduledAt: string }> }>("/api/queue", { method: "POST", body: { order: next.map((i) => i.id) } });
       const times = new Map(assigned.map((a) => [a.id, a.scheduledAt]));
-      setItems(next.map((i) => ({ ...i, scheduledAt: times.get(i.id) ?? i.scheduledAt })));
+      setItems(next.map((i) => ({ ...i, scheduledAt: times.get(i.id) ?? null })));
       setMessage("أُعيد حساب أوقات النشر حسب الترتيب الجديد");
     } catch (e) { setMessage(e instanceof Error ? e.message : "تعذر إعادة الترتيب"); setItems(items); } finally { setBusy(false); }
   }
@@ -44,10 +44,10 @@ export function QueueClient({ initialSlots, queued, drafts }: { initialSlots: Sl
       <div className="inline-field"><select aria-label="اليوم" value={newDay} onChange={(e) => setNewDay(Number(e.target.value))}>{DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}</select><input aria-label="الوقت" type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} /><button className="btn btn-secondary" onClick={() => !slots.some((s) => s.weekday === newDay && s.time === newTime) && /^\d{2}:\d{2}$/.test(newTime) && setSlots([...slots, { weekday: newDay, time: newTime }])}>إضافة وقت</button><button className="btn btn-secondary" onClick={() => setSlots([...slots.filter((s) => s.time !== newTime), ...DAYS.map((_, i) => ({ weekday: i, time: newTime }))])}>لكل الأيام</button></div>
       {dirtySlots && <button className="btn btn-primary" disabled={busy} onClick={saveSlots}>حفظ الأوقات</button>}
     </section>
-    <section className="card"><h2>الطابور ({items.length})</h2>{message && <p className="banner" role="status">{message}</p>}
+    <section className="card"><h2>الطابور ({items.length})</h2>{message && <p className="banner" role="status">{message}</p>}{items.some((item) => !item.scheduledAt) && <p className="banner warning">يوجد منشور داخل الطابور بلا وقت متاح. عدّل أوقات الطابور أو قواعد النشر قبل الاعتماد على الجدولة.</p>}
       {!items.length ? <p>الطابور فارغ. أضف مسودة من القائمة أدناه أو من صفحة المنشور.</p> : <ol className="queue-list" aria-label="ترتيب الطابور">{items.map((item, i) => <li key={item.id} draggable={!busy} onDragStart={() => setDragging(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragging !== null) move(dragging, i); setDragging(null); }} className={dragging === i ? "dragging" : ""}>
         <span className="drag-handle" aria-hidden="true">⋮⋮</span>
-        <div><Link href={`/posts/${item.id}`}>{item.content.slice(0, 110)}{item.content.length > 110 ? "…" : ""}</Link><small>{riyadh(item.scheduledAt)} · {STATUS_LABELS[item.status]}</small></div>
+        <div><Link href={`/posts/${item.id}`}>{item.content.slice(0, 110)}{item.content.length > 110 ? "…" : ""}</Link><small>{item.scheduledAt ? riyadh(item.scheduledAt) : "⚠ بدون وقت متاح"} · {STATUS_LABELS[item.status]}</small></div>
         <span className="row-actions"><button className="icon-button" aria-label="للأعلى" disabled={busy || i === 0} onClick={() => move(i, i - 1)}>↑</button><button className="icon-button" aria-label="للأسفل" disabled={busy || i === items.length - 1} onClick={() => move(i, i + 1)}>↓</button></span>
       </li>)}</ol>}
     </section>
