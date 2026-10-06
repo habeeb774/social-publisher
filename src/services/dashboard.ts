@@ -29,9 +29,13 @@ export async function dashboardData(allowed: Set<string> | null = null) {
     runDiagnostics(false),
     db.execute(sql`select status, error_code, started_at from comments_sync_runs order by started_at desc limit 1`).then((r) => (r.rows[0] as { status: string; error_code: string | null; started_at: string } | undefined) ?? null).catch(() => undefined),
   ]);
-  const commentsWaiting = comments === null ? null : await db.execute(sql`select count(*)::int as n from facebook_comments where needs_reply and status not in ('spam','hidden','resolved','replied') and (${scoped}=false or page_id::text = any(string_to_array(${allowedCsv}, ',')))`.then((r) => Number((r.rows[0] as { n: number }).n)).catch(() => null);
+  const commentsWaiting = comments === null ? null : await db.execute(
+    sql`select count(*)::int as n from facebook_comments where needs_reply and status not in ('spam','hidden','resolved','replied') and (${scoped}=false or page_id::text = any(string_to_array(${allowedCsv}, ',')))`
+  ).then((r) => Number((r.rows[0] as { n: number }).n)).catch(() => null);
   // Success rate over the last 30 days of real attempts.
-  const rate = await db.execute(sql`select count(*) filter (where a.status='success')::int as ok, count(*) filter (where a.status in ('failed','outcome_unknown'))::int as bad from publication_attempts a join posts p on p.id=a.post_id where a.started_at > now() - interval '30 days' and (${scoped}=false or p.page_id::text = any(string_to_array(${allowedCsv}, ',')))`.then((r) => r.rows[0] as { ok: number; bad: number });
+  const rate = await db.execute(
+    sql`select count(*) filter (where a.status='success')::int as ok, count(*) filter (where a.status in ('failed','outcome_unknown'))::int as bad from publication_attempts a join posts p on p.id=a.post_id where a.started_at > now() - interval '30 days' and (${scoped}=false or p.page_id::text = any(string_to_array(${allowedCsv}, ',')))`
+  ).then((r) => r.rows[0] as { ok: number; bad: number });
   const successRate = rate.ok + rate.bad ? Math.round((rate.ok / (rate.ok + rate.bad)) * 1000) / 10 : null;
   let scopedActivity = activity;
   if (allowed !== null) {
