@@ -54,3 +54,25 @@ async function sendEmail(subject: string, text: string) {
   if (!response.ok) console.error("Resend rejected alert email", { status: response.status });
   return response.ok;
 }
+
+/** Sends a test email and reports Resend's exact answer (no secrets). */
+export async function sendTestEmail() {
+  const key = process.env.RESEND_API_KEY?.trim();
+  const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
+  if (!key) return { ok: false, to: to ?? null, error: "RESEND_API_KEY غير مضاف في Vercel" };
+  if (!to) return { ok: false, to: null, error: "لا يوجد بريد مستلم (ALERT_EMAIL أو ADMIN_EMAIL)" };
+  const from = process.env.ALERT_FROM?.trim() || "Social Publisher <onboarding@resend.dev>";
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject: "[ناشر المحتوى] رسالة تجريبية", text: `هذه رسالة تجريبية من نظام النشر.
+إذا وصلتك فتنبيهات البريد تعمل.
+
+${new Date().toISOString()}` }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const body = await response.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
+    return response.ok ? { ok: true, to, from, id: body.id ?? null } : { ok: false, to, from, error: `Resend ${response.status}: ${body.message ?? body.name ?? "rejected"}` };
+  } catch (error) { return { ok: false, to, from, error: error instanceof Error ? error.message : "network error" }; }
+}
