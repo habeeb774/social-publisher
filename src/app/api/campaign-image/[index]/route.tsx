@@ -225,21 +225,32 @@ function QueueScene({ accent, accent2 }: SceneProps) {
   </div>;
 }
 
-function sceneKind(category: string, title: string) {
+function sceneKind(category: string, title: string, evening: boolean) {
   const s = (category + " " + title).toLowerCase();
-  if (/webhook|api|تكامل|جسر|ربط/.test(s)) return "bridge";
-  if (/crm|lead|مبيعات|عرض|proposal|تأهيل/.test(s)) return "funnel";
-  if (/بيانات|تطبيع|استخراج|مزامنة|تكرار|مصدر حقيقة|نماذج/.test(s)) return "data";
-  if (/تعليق|رد|عميل|خدمة|تذكرة|شكوى|دعم|inbox/.test(s)) return "support";
-  if (/أمان|صلاحية|سر|token|audit|حساسة/.test(s)) return "security";
-  if (/retry|موثوق|فشل|استثناء|idempotency|logs|تنبيه|rollback|backup|استمرارية/.test(s)) return "reliability";
-  if (/تحليل|قياس|dashboard|تقرير|أفضل وقت|metric|kpi/.test(s)) return "analytics";
-  if (/تقويم|محتوى|حملة|نشر|جدولة/.test(s)) return "calendar";
-  if (/متجر|طلب|شحن|مخزون|مرتجع|شراء|دفع|فاتورة|مالية|مصاريف/.test(s)) return "commerce";
-  if (/مستند|pdf|وثيقة|عقد/.test(s)) return "document";
-  if (/ai|ذكاء|prompt|rag|agent|نموذج|model|context|هلوسة/.test(s)) return "ai";
-  if (/queue|دفعات|rate limit|طابور|أولوية/.test(s)) return "queue";
-  return "workflow";
+  let kind =
+    /webhook|api|تكامل|جسر|ربط/.test(s) ? "bridge" :
+    /crm|lead|مبيعات|عرض|proposal|تأهيل/.test(s) ? "funnel" :
+    /بيانات|تطبيع|استخراج|مزامنة|تكرار|مصدر حقيقة|نماذج/.test(s) ? "data" :
+    /تعليق|رد|عميل|خدمة|تذكرة|شكوى|دعم|inbox/.test(s) ? "support" :
+    /أمان|صلاحية|سر|token|audit|حساسة/.test(s) ? "security" :
+    /retry|موثوق|فشل|استثناء|idempotency|logs|تنبيه|rollback|backup|استمرارية/.test(s) ? "reliability" :
+    /تحليل|قياس|dashboard|تقرير|أفضل وقت|metric|kpi/.test(s) ? "analytics" :
+    /تقويم|محتوى|حملة|نشر|جدولة/.test(s) ? "calendar" :
+    /متجر|طلب|شحن|مخزون|مرتجع|شراء|دفع|فاتورة|مالية|مصاريف/.test(s) ? "commerce" :
+    /مستند|pdf|وثيقة|عقد/.test(s) ? "document" :
+    /ai|ذكاء|prompt|rag|agent|نموذج|model|context|هلوسة/.test(s) ? "ai" :
+    /queue|دفعات|rate limit|طابور|أولوية/.test(s) ? "queue" : "workflow";
+
+  if (evening) {
+    const alternate: Record<string,string> = {
+      bridge:"queue", funnel:"analytics", data:"document", support:"workflow",
+      security:"reliability", reliability:"security", analytics:"calendar",
+      calendar:"workflow", commerce:"funnel", document:"data", ai:"bridge",
+      queue:"reliability", workflow:"analytics",
+    };
+    kind = alternate[kind] ?? kind;
+  }
+  return kind;
 }
 
 function Scene(props: SceneProps & { kind: string }) {
@@ -263,7 +274,7 @@ export async function GET(_request: Request, context: { params: Promise<{ index:
   const n = Math.max(1, Math.min(180, Number(index) || 1));
   const post = getCampaignVisual(n);
   const palette = PALETTES[post.category] ?? PALETTES["تقنية"];
-  const kind = sceneKind(post.category, post.title);
+  const kind = sceneKind(post.category, post.title, post.slot === "evening");
 
   return new ImageResponse(
     <div style={{
@@ -271,8 +282,10 @@ export async function GET(_request: Request, context: { params: Promise<{ index:
       background:"linear-gradient(155deg,#040b16 0%,#071525 52%,#081a2f 100%)",
     }}>
       <div style={{position:"absolute",inset:0,opacity:.34,backgroundImage:"linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px)",backgroundSize:"54px 54px"}}/>
-      <div style={{position:"absolute",width:620,height:620,borderRadius:999,top:-290,left:-220,background:palette.accent,opacity:.16,filter:"blur(18px)"}}/>
-      <div style={{position:"absolute",width:720,height:720,borderRadius:999,bottom:-360,right:-260,background:palette.accent2,opacity:.18,filter:"blur(18px)"}}/>
+      <div style={{position:"absolute",width:620+(n%5)*34,height:620+(n%5)*34,borderRadius:999,top:-290+(n%7)*18,left:-250+(n%9)*22,background:palette.accent,opacity:.14,filter:"blur(18px)"}}/>
+      <div style={{position:"absolute",width:700+(n%4)*42,height:700+(n%4)*42,borderRadius:999,bottom:-380+(n%6)*16,right:-300+(n%8)*24,background:palette.accent2,opacity:.17,filter:"blur(18px)"}}/>
+      <div style={{position:"absolute",left:70+((n*47)%880),top:90+((n*83)%960),width:18+(n%4)*5,height:18+(n%4)*5,borderRadius:999,background:palette.accent,boxShadow:`0 0 46px ${palette.accent}`,opacity:.72}}/>
+      <div style={{position:"absolute",left:90+((n*71)%820),top:120+((n*59)%900),width:12+(n%5)*4,height:12+(n%5)*4,borderRadius:999,background:palette.accent2,boxShadow:`0 0 38px ${palette.accent2}`,opacity:.62}}/>
       <Scene {...palette} n={n} evening={post.slot==="evening"} kind={kind}/>
       <div style={{position:"absolute",left:58,right:58,bottom:48,height:8,borderRadius:20,background:`linear-gradient(90deg,${palette.accent},${palette.accent2},transparent)`,opacity:.45}}/>
     </div>,
