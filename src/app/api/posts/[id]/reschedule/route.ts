@@ -7,6 +7,7 @@ import { guard, isUuid } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { snapshotPost } from "@/services/post-ops";
 import { nearbyScheduled } from "@/services/prepublish";
+import { denyPostOutsideScope } from "@/services/access-scope";
 
 /** Moves a scheduled post to a new future time (calendar drag & drop). Published posts are never touched. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
   const parsed = z.object({ scheduledAt: z.coerce.date() }).safeParse(await request.json().catch(() => null));
   if (!isUuid(id) || !parsed.success) return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   const at = parsed.data.scheduledAt;
   if (at.getTime() <= Date.now() + 60000) return NextResponse.json({ error: "لا يمكن النقل إلى موعد في الماضي" }, { status: 422 });
   const db = getDb();
