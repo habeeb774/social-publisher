@@ -3,7 +3,8 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { campaigns, posts } from "@/db/schema";
 import { approvalRequired } from "@/services/post-ops";
-import { pageCan } from "@/services/session-server";
+import { pageCan, pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { PageHeader } from "../ui/kit";
@@ -16,14 +17,17 @@ type Item = { id: string; content: string; scheduledAt: Date | null; campaign: s
 /** List/kanban hybrid: pending, approved, needs changes, rejected. Columns come from post status + latest review note. */
 export default async function Reviews() {
   const db = getDb();
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
+  const scope = allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`;
   const latestNote = sql<string | null>`(select body from post_notes n where n.post_id = ${posts.id} order by n.created_at desc limit 1)`;
   const creator = sql<string | null>`(select metadata->>'actor' from activity_logs a where a.entity_id = ${posts.id} and a.action = 'post.created' limit 1)`;
   const noteCount = sql<number>`(select count(*)::int from post_notes n where n.post_id = ${posts.id})`;
   const select = { id: posts.id, content: posts.content, scheduledAt: posts.scheduledAt, campaign: campaigns.name, creator, note: latestNote, notes: noteCount, updatedAt: posts.updatedAt };
   const [pending, approved, returned, enabled, canReview] = await Promise.all([
-    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.status, "pending_approval"), isNull(posts.deletedAt))).orderBy(posts.scheduledAt).limit(60),
-    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(inArray(posts.status, ["approved", "scheduled", "published"]), isNull(posts.deletedAt), sql`exists (select 1 from activity_logs a where a.entity_id = ${posts.id} and a.action = 'post.approved' and a.created_at > now() - interval '30 days')`)).orderBy(desc(posts.updatedAt)).limit(30),
-    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.status, "draft"), isNull(posts.deletedAt), sql`exists (select 1 from activity_logs a where a.entity_id = ${posts.id} and a.action in ('post.rejected','post.changes_requested'))`)).orderBy(desc(posts.updatedAt)).limit(60),
+    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.status, "pending_approval"), isNull(posts.deletedAt), scope)).orderBy(posts.scheduledAt).limit(60),
+    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(inArray(posts.status, ["approved", "scheduled", "published"]), isNull(posts.deletedAt), scope, sql`exists (select 1 from activity_logs a where a.entity_id = ${posts.id} and a.action = 'post.approved' and a.created_at > now() - interval '30 days')`)).orderBy(desc(posts.updatedAt)).limit(30),
+    db.select(select).from(posts).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.status, "draft"), isNull(posts.deletedAt), scope, sql`exists (select 1 from activity_logs a where a.entity_id = ${posts.id} and a.action in ('post.rejected','post.changes_requested'))`)).orderBy(desc(posts.updatedAt)).limit(60),
     approvalRequired(), pageCan("content.review"),
   ]);
   const changes = returned.filter((r) => r.note?.startsWith("طلب تعديل"));
