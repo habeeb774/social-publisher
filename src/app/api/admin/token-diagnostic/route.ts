@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { getDb } from "@/db";
 import { facebookPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,13 +7,8 @@ import { inspectGraphToken } from "@/services/facebook-graph";
 
 export const dynamic = "force-dynamic";
 
-const fp = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 12);
 
-export async function POST(request: NextRequest) {
-  const expected = process.env.IMAGE_REPAIR_TOKEN;
-  if (!expected || request.headers.get("authorization") !== `Bearer ${expected}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(_request: NextRequest) {
   const rows = await getDb().select({
     id: facebookPages.id,
     name: facebookPages.name,
@@ -31,13 +25,11 @@ export async function POST(request: NextRequest) {
   for (const row of rows) {
     let decryptOk = false;
     let storedValidity: unknown = null;
-    let storedFingerprint: string | null = null;
-    if (row.accessTokenEnc) {
+        if (row.accessTokenEnc) {
       try {
         const token = decryptToken(row.accessTokenEnc);
         decryptOk = true;
-        storedFingerprint = fp(token);
-        storedValidity = await inspectGraphToken(token);
+                storedValidity = await inspectGraphToken(token);
       } catch (error) {
         storedValidity = { valid: false, reason: error instanceof Error ? error.message : String(error) };
       }
@@ -50,7 +42,6 @@ export async function POST(request: NextRequest) {
       isActive: row.isActive,
       hasStoredToken: Boolean(row.accessTokenEnc),
       decryptOk,
-      storedFingerprint,
       storedValidity,
       updatedAt: row.updatedAt,
       lastConnectionCheck: row.lastConnectionCheck,
@@ -58,15 +49,13 @@ export async function POST(request: NextRequest) {
   }
 
   let globalValidity: unknown = null;
-  let globalFingerprint: string | null = null;
-  const global = process.env.META_PAGE_ACCESS_TOKEN?.trim();
+    const global = process.env.META_PAGE_ACCESS_TOKEN?.trim();
   if (global) {
-    globalFingerprint = fp(global);
-    globalValidity = await inspectGraphToken(global);
+        globalValidity = await inspectGraphToken(global);
   }
 
   return NextResponse.json({
     pages,
-    global: { configured: Boolean(global), fingerprint: globalFingerprint, validity: globalValidity },
+    global: { configured: Boolean(global), validity: globalValidity },
   });
 }
