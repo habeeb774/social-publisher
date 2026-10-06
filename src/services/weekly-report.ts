@@ -46,8 +46,21 @@ export async function maybeSendWeeklyReport(now = new Date()) {
   if (!weeklyReportDue(now)) return false;
   const week = new Date(now.getTime() + 3 * 3600000).toISOString().slice(0, 10);
   if ((await getSetting<string>("weekly_report_last", "")) === week) return false;
-  await setSetting("weekly_report_last", week);
+
   const sent = await sendEmail("التقرير الأسبوعي", await buildWeeklyReport());
-  await emailBackup().catch((error) => console.error("Weekly backup failed", { error: error instanceof Error ? error.message : String(error) }));
+  const backupSent = await emailBackup().catch((error) => {
+    console.error("Weekly backup failed", { error: error instanceof Error ? error.message : String(error) });
+    return false;
+  });
+
+  // Mark the week complete only after the report was delivered.
+  // If email delivery is temporarily down, the worker can retry on the next run within the 09:00 Riyadh hour.
+  if (sent) await setSetting("weekly_report_last", week);
+  await setSetting("weekly_delivery_status", {
+    week,
+    checkedAt: new Date().toISOString(),
+    reportSent: sent,
+    backupSent,
+  });
   return sent;
 }
