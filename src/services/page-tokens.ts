@@ -29,3 +29,11 @@ export async function storedPageToken(facebookPageId: string) {
     return row?.enc ? decryptToken(row.enc) : null;
   } catch { return null; }
 }
+
+/** Token for an Instagram account: the saved token of the Facebook page it is linked to. */
+export async function storedInstagramToken(igUserId: string) {
+  try {
+    const [row] = await getDb().select({ enc: facebookPages.accessTokenEnc }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, igUserId), eq(facebookPages.platform, "instagram"))).limit(1);
+    return row?.enc ? decryptToken(row.enc) : null;
+  } catch { return null; }
+}

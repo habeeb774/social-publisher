@@ -1,4 +1,4 @@
-import { storedPageToken } from "./page-tokens";
+import { storedInstagramToken, storedPageToken } from "./page-tokens";
 // Direct Meta Graph API publishing with a token supplied through META_PAGE_ACCESS_TOKEN.
 // Graph error bodies mean Facebook rejected the write (nothing was posted); network failures
 // and missing IDs are reported as uncertain so the publisher never retries them blindly.
@@ -128,7 +128,8 @@ export async function linkedInstagramAccount(pageId: string) {
 export async function publishInstagramGraph(input: { igUserId: string; content: string; imageUrl?: string }, dryRun: boolean) {
   if (!input.imageUrl) throw new Error("INSTAGRAM_IMAGE_REQUIRED: انستجرام لا يقبل منشورًا بدون صورة");
   if (input.content.length > 2200) throw new Error("INSTAGRAM_CAPTION_TOO_LONG: الحد 2200 حرف");
-  const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
+  // Use the token of the Facebook page this account is linked to; fall back to the global token.
+  const token = (await storedInstagramToken(input.igUserId)) ?? process.env.META_PAGE_ACCESS_TOKEN!.trim();
   if (dryRun) {
     const check = await graph(`/${input.igUserId}?fields=id,username&access_token=${encodeURIComponent(token)}`);
     if (!check.ok) throw new Error(graphError(check.body));

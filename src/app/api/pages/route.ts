@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { facebookPages } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { encryptToken } from "@/services/page-tokens";
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
     .values({ name: page.name, facebookPageId: page.id, platform: "facebook", profileUrl: `https://www.facebook.com/${page.id}`, accessTokenEnc: encryptToken(parsed.data.token), isActive: true, status: "active", lastConnectionCheck: new Date() })
     .onConflictDoUpdate({ target: [facebookPages.platform, facebookPages.facebookPageId], set: { name: page.name, accessTokenEnc: encryptToken(parsed.data.token), isActive: true, status: "active", lastConnectionCheck: new Date(), updatedAt: new Date() } })
     .returning({ id: facebookPages.id, name: facebookPages.name });
+  // Instagram accounts linked to this page publish with the same token.
+  await getDb().update(facebookPages).set({ accessTokenEnc: encryptToken(parsed.data.token), updatedAt: new Date() }).where(and(eq(facebookPages.platform, "instagram"), eq(facebookPages.mcpConnectionReference, page.id)));
   await logAudit("page.added", "page", row.id, { facebookPageId: page.id, permanent: !info.expires_at });
   return NextResponse.json({ ...row, permanent: !info.expires_at, canReply: Boolean(info.scopes?.includes("pages_manage_engagement")) });
 }

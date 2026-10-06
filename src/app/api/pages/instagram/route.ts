@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
     try {
       const ig = await linkedInstagramAccount(page.facebookPageId);
       if (!ig) continue;
-      await db.insert(facebookPages).values({ name: `@${ig.username}`, facebookPageId: ig.id, platform: "instagram", profileUrl: `https://www.instagram.com/${ig.username}`, isActive: true, status: "active", lastConnectionCheck: new Date() })
-        .onConflictDoUpdate({ target: [facebookPages.platform, facebookPages.facebookPageId], set: { name: `@${ig.username}`, isActive: true, lastConnectionCheck: new Date(), updatedAt: new Date() } });
+      await db.insert(facebookPages).values({ name: `@${ig.username}`, facebookPageId: ig.id, platform: "instagram", profileUrl: `https://www.instagram.com/${ig.username}`, mcpConnectionReference: page.facebookPageId, accessTokenEnc: page.accessTokenEnc, isActive: true, status: "active", lastConnectionCheck: new Date() })
+        .onConflictDoUpdate({ target: [facebookPages.platform, facebookPages.facebookPageId], set: { name: `@${ig.username}`, mcpConnectionReference: page.facebookPageId, accessTokenEnc: page.accessTokenEnc, isActive: true, lastConnectionCheck: new Date(), updatedAt: new Date() } });
       linked.push(`@${ig.username}`);
     } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
   }
