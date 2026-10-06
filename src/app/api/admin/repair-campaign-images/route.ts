@@ -4,7 +4,9 @@ import { neon } from "@neondatabase/serverless";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  if (!process.env.CONTENT_SEED_TOKEN || request.nextUrl.searchParams.get("token") !== process.env.CONTENT_SEED_TOKEN) {
+  const expected = process.env.CRON_SECRET;
+  const authorization = request.headers.get("authorization");
+  if (!expected || authorization !== `Bearer ${expected}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!process.env.DATABASE_URL) {
