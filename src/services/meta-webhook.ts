@@ -5,6 +5,7 @@ import { activityLogs, facebookPages } from "@/db/schema";
 import { ingestComment } from "@/services/comments/store";
 import type { RemoteComment } from "@/services/comments/provider";
 import { storedPageToken } from "@/services/page-tokens";
+import { ingestMessengerWebhook } from "@/services/messenger";
 
 const version = () => process.env.META_GRAPH_VERSION?.trim() || "v23.0";
 const graphBase = () => `https://graph.facebook.com/${version()}`;
@@ -56,12 +57,25 @@ type FeedValue = {
   from?: { id?: string; name?: string };
 };
 
+type MessagingEvent = {
+  sender?: { id?: string };
+  recipient?: { id?: string };
+  timestamp?: number;
+  message?: {
+    mid?: string;
+    text?: string;
+    is_echo?: boolean;
+    attachments?: unknown[];
+  };
+};
+
 type MetaWebhookPayload = {
   object?: string;
   entry?: Array<{
     id?: string;
     time?: number;
     changes?: Array<{ field?: string; value?: FeedValue }>;
+    messaging?: MessagingEvent[];
   }>;
 };
 
@@ -159,6 +173,38 @@ export async function processMetaWebhook(payload: MetaWebhookPayload) {
   for (const entry of payload.entry) {
     const pageRemoteId = entry.id?.trim();
     if (!pageRemoteId) { ignored++; continue; }
+
+    for (const event of entry.messaging ?? []) {
+      const senderId = event.sender?.id?.trim();
+      const recipientId = event.recipient?.id?.trim();
+      const message = event.message;
+      if (!senderId || !recipientId || !message?.mid) {
+        ignored++;
+        continue;
+      }
+      try {
+        const result = await ingestMessengerWebhook(pageRemoteId, {
+          senderId,
+          recipientId,
+          timestamp: event.timestamp ?? Date.now(),
+          mid: message.mid,
+          text: message.text ?? (message.attachments?.length ? "" : undefined),
+          isEcho: Boolean(message.is_echo),
+        });
+        if (result.status === "processed") {
+          processed++;
+          await audit("processed", { pageRemoteId, field: "messages", messageId: message.mid, ...result });
+        } else {
+          ignored++;
+          await audit("ignored", { pageRemoteId, field: "messages", messageId: message.mid, ...result });
+        }
+      } catch (error) {
+        failed++;
+        const messageText = error instanceof Error ? error.message : String(error);
+        await audit("failed", { pageRemoteId, field: "messages", messageId: message.mid, error: messageText.slice(0, 500) });
+      }
+    }
+
     for (const change of entry.changes ?? []) {
       if (change.field !== "feed" || !change.value) { ignored++; continue; }
       try {
@@ -200,7 +246,7 @@ export async function setupMetaWebhook() {
     body: new URLSearchParams({
       object: "page",
       callback_url: callbackUrl,
-      fields: "feed",
+      fields: "feed,messages,messaging_postbacks",
       include_values: "true",
       verify_token: verifyToken,
       access_token: appAccessToken,
@@ -227,7 +273,7 @@ export async function setupMetaWebhook() {
       }
       await graph(`/${encodeURIComponent(page.facebookPageId)}/subscribed_apps`, {
         method: "POST",
-        body: new URLSearchParams({ subscribed_fields: "feed", access_token: token }),
+        body: new URLSearchParams({ subscribed_fields: "feed,messages,messaging_postbacks", access_token: token }),
       });
       status.push({ page: page.name, pageId: page.facebookPageId, ok: true });
     } catch (error) {
@@ -266,12 +312,14 @@ export async function checkMetaWebhookSubscriptions() {
   try {
     const result = await graph(`/${appId}/subscriptions?access_token=${encodeURIComponent(appAccessToken)}`);
     const subscriptions = Array.isArray(result.data) ? result.data as Array<{ object?: string; callback_url?: string; active?: boolean; fields?: Array<string | { name?: string }> }> : [];
-    app = subscriptions.some((item) =>
-      item.object === "page" &&
-      item.callback_url === callbackUrl &&
-      item.active !== false &&
-      (item.fields ?? []).some((field) => typeof field === "string" ? field === "feed" : field.name === "feed")
-    );
+    app = subscriptions.some((item) => {
+      const fields = (item.fields ?? []).map((field) => typeof field === "string" ? field : field.name ?? "");
+      return item.object === "page" &&
+        item.callback_url === callbackUrl &&
+        item.active !== false &&
+        fields.includes("feed") &&
+        fields.includes("messages");
+    });
   } catch {
     app = false;
   }
@@ -295,7 +343,7 @@ export async function checkMetaWebhookSubscriptions() {
       }
       const result = await graph(`/${encodeURIComponent(page.facebookPageId)}/subscribed_apps?access_token=${encodeURIComponent(token)}`);
       const apps = Array.isArray(result.data) ? result.data as Array<{ id?: string; subscribed_fields?: string[] }> : [];
-      const subscribed = apps.some((item) => item.id === appId && (!item.subscribed_fields || item.subscribed_fields.includes("feed")));
+      const subscribed = apps.some((item) => item.id === appId && (!item.subscribed_fields || (item.subscribed_fields.includes("feed") && item.subscribed_fields.includes("messages"))));
       pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: subscribed });
     } catch (error) {
       pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: false, error: error instanceof Error ? error.message : String(error) });
