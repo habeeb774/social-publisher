@@ -85,13 +85,17 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     </section>}
     <section className="card card-flush">{!rows.length ? <EmptyState icon="pages" title="لا توجد صفحات متصلة" description={oauthReady ? "اربط حساب Meta مرة واحدة ليتم استيراد صفحات Facebook وInstagram تلقائيًا." : "الربط اليدوي يعمل الآن. لتفعيل OAuth أضف META_APP_ID و META_APP_SECRET في Vercel."} action={<Link className="btn btn-secondary btn-sm" href="/settings/integrations">التكاملات</Link>} /> :
       rows.map(({ page, published, scheduled, lastPublish, lastFailure }) => {
+        const accountOwners = metaAccounts.filter((account) =>
+          page.platform === "instagram" ? account.instagramIds.includes(page.facebookPageId) : account.pageIds.includes(page.facebookPageId)
+        );
+        const ownerLabel = accountOwners.length ? accountOwners.map((account) => account.name).join("، ") : null;
         const hasPageToken = Boolean(page.accessTokenEnc);
         const usable = hasPageToken || graph || windsor;
         const state = !page.isActive ? "disabled" : usable ? (lastFailure && (!lastPublish || lastFailure > lastPublish) ? "error" : "connected") : "auth";
         const badge = { connected: ["badge-success", "متصل"], error: ["badge-danger", "خطأ في آخر نشر"], auth: ["badge-warning", "يحتاج تفويض"], disabled: ["badge-neutral", "معطّل"] }[state];
         return <div key={page.id} className="integration">
           <span className="logo" style={{ background: "var(--primary)", color: "#fff", fontWeight: 700 }}>{page.name.replace(/^م\.\s*/, "").slice(0, 1)}</span>
-          <div><h3>{page.name}</h3><small><code>{page.facebookPageId}</code> · {page.platform === "instagram" ? "Instagram" : "Facebook"} · {hasPageToken ? "توكن مشفّر خاص بالحساب" : graph ? "Meta Graph API (احتياطي)" : "Windsor MCP"}</small>
+          <div><h3>{page.name}</h3><small><code>{page.facebookPageId}</code> · {page.platform === "instagram" ? "Instagram" : "Facebook"} · {ownerLabel ? `حساب Meta: ${ownerLabel}` : "غير مصنفة تحت حساب بعد"} · {hasPageToken ? "توكن مشفّر" : graph ? "Meta Graph API (احتياطي)" : "Windsor MCP"}</small>
             <div className="caps"><span className={`cap ${usable ? "on" : "off"}`}>✓ نشر نص</span><span className={`cap ${usable ? "on" : "off"}`}>✓ نشر صورة</span><span className={`cap ${hasPageToken || windsor ? "on" : "off"}`}>{hasPageToken || windsor ? "✓" : "—"} قراءة التفاعل</span><span className={`cap ${hasPageToken ? "on" : "off"}`}>{hasPageToken ? "✓" : "—"} توكن الحساب</span></div>
             <div className="caps"><span className="cap">منشور: {published}</span><span className="cap">مجدول: {scheduled}</span><span className="cap">آخر نشر: {riyadh(lastPublish)}</span><span className="cap">آخر فحص: {riyadh(page.lastConnectionCheck ?? page.updatedAt)}</span></div></div>
           <div className="stack" style={{ gap: 6, justifyItems: "end" }}><span className={`badge ${badge[0]}`}>{badge[1]}</span><Link className="btn btn-ghost btn-sm" href={`/posts?page=${page.id}`}><Icon name="posts" width={14} />المنشورات</Link></div>
