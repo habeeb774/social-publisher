@@ -46,6 +46,12 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
     catch (e) { setItems([]); toast(e instanceof Error ? e.message : "تعذر تحميل التعليقات", "error"); }
   }, [tab, q, page]);
   useEffect(() => { const t = setTimeout(() => loadList(), 250); return () => clearTimeout(t); }, [loadList]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) void loadList();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [loadList]);
   useEffect(() => { call<Caps>("?view=capabilities").then(setCaps).catch(() => setCaps({ connected: false, read: false, reply: false, reason: "COMMENTS_AUTH_REQUIRED" })); call<{ pages: Array<{ id: string; name: string }> }>("?view=catalog").then((d) => setPages(d.pages ?? [])).catch(() => {}); call<Template[]>("?view=templates").then((t) => setTemplates(t.filter((x) => x.active))).catch(() => {}); }, []);
   const open = useCallback(async (id: string) => { try { setDetail(await call<Detail>(`?id=${id}`)); setDraft(""); setTemplateId(null); } catch (e) { toast(e instanceof Error ? e.message : "تعذر فتح المحادثة", "error"); } }, []);
   useEffect(() => { const id = params.get("id"); if (!id) return; const t = setTimeout(() => open(id), 0); return () => clearTimeout(t); }, [params, open]);
