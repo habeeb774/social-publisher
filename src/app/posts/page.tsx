@@ -3,7 +3,8 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, sql, type SQL } fr
 import { getDb } from "@/db";
 import { campaigns, facebookPages, postMedia, posts } from "@/db/schema";
 import { POST_CATEGORIES } from "@/services/catalog";
-import { pageCan } from "@/services/session-server";
+import { pageCan, pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { listMetaAccounts } from "@/services/meta-accounts";
 import { AppShell } from "../ui/app-shell";
 import { STATUS_LABELS } from "../ui/api";
@@ -32,7 +33,8 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
   const sort = params.sort && params.sort in SORTS ? params.sort as keyof typeof SORTS : "updated";
   const p = Math.max(1, Number(params.p) || 1);
   const db = getDb();
-  const metaAccounts = await listMetaAccounts();
+  const [metaAccounts, session] = await Promise.all([listMetaAccounts(), pageSession()]);
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const requestedAccount = (params.account ?? "").trim().slice(0, 200);
   const account = metaAccounts.find((item) => item.id === requestedAccount)?.id ?? "";
   const accountRemoteIds = account
@@ -42,6 +44,7 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
     ? await db.select({ id: facebookPages.id }).from(facebookPages).where(inArray(facebookPages.facebookPageId, accountRemoteIds))
     : [];
   const filters: SQL[] = [isNull(posts.deletedAt)];
+  if (allowed !== null) filters.push(allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`);
   if (account) filters.push(accountLocalPages.length ? inArray(posts.pageId, accountLocalPages.map((item) => item.id)) : sql`false`);
   if (q) filters.push(sql`(${ilike(posts.content, `%${q.replace(/[%_\\]/g, "")}%`)} or ${posts.id}::text like ${`${q.replace(/[%_\\]/g, "")}%`})`);
   if (pageId) filters.push(eq(posts.pageId, pageId));
@@ -55,10 +58,11 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
   const [rows, counts, pageList, campaignList, canWrite] = await Promise.all([
     db.select({ post: posts, pageName: facebookPages.name, campaignName: campaigns.name, image: sql<string | null>`(select ${postMedia.url} from ${postMedia} where ${postMedia.postId} = ${posts.id} limit 1)` }).from(posts).leftJoin(facebookPages, eq(posts.pageId, facebookPages.id)).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(where).orderBy(...order).limit(PAGE_SIZE + 1).offset((p - 1) * PAGE_SIZE),
     db.select({ status: posts.status, n: sql<number>`count(*)::int` }).from(posts).where(base).groupBy(posts.status),
-    db.select({ id: facebookPages.id, name: facebookPages.name }).from(facebookPages).where(eq(facebookPages.isActive, true)),
+    db.select({ id: facebookPages.id, name: facebookPages.name, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.isActive, true), allowed === null ? undefined : allowed.size ? inArray(facebookPages.id, Array.from(allowed)) : sql`false`)),
     db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).orderBy(desc(campaigns.createdAt)).limit(100),
     pageCan("content.write"),
   ]);
+  const visibleMetaAccounts = metaAccounts.filter((accountItem) => pageList.some((pageItem) => accountItem.pageIds.includes(pageItem.facebookPageId) || accountItem.instagramIds.includes(pageItem.facebookPageId)));
   const hasMore = rows.length > PAGE_SIZE;
   const visible = rows.slice(0, PAGE_SIZE);
   const countOf = (s: string) => s === "all" ? counts.filter((c) => c.status !== "archived").reduce((a, c) => a + c.n, 0) : counts.find((c) => c.status === s)?.n ?? 0;
@@ -73,7 +77,7 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
       {status !== "all" && <input type="hidden" name="status" value={status} />}
       <input name="q" type="search" defaultValue={q} placeholder="ابحث في النص أو رقم المنشور…" aria-label="بحث" />
       <FilterToggle active={[account, pageId, campaignId, category, from, to].filter(Boolean).length}>
-      {metaAccounts.length > 1 && <select name="account" defaultValue={account} aria-label="حساب Meta"><option value="">كل حسابات Meta</option>{metaAccounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+      {visibleMetaAccounts.length > 1 && <select name="account" defaultValue={account} aria-label="حساب Meta"><option value="">كل حسابات Meta</option>{visibleMetaAccounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
       <select name="page" defaultValue={pageId} aria-label="الصفحة"><option value="">كل الصفحات</option>{pageList.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <select name="campaign" defaultValue={campaignId} aria-label="الحملة"><option value="">كل الحملات</option>{campaignList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select name="category" defaultValue={category} aria-label="التصنيف"><option value="">كل التصنيفات</option>{POST_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
