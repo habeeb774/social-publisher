@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { guard } from "@/services/api-guard";
-import { conversationDetail, listConversations, messengerStatus, replyMessage, syncMessenger } from "@/services/messenger";
+import { conversationDetail, listConversations, messengerCatalog, messengerStatus, replyMessage, syncMessenger } from "@/services/messenger";
 
 export const dynamic = "force-dynamic";
 const fail = (error: unknown) => NextResponse.json({ error: error instanceof Error ? error.message : "تعذر التنفيذ" }, { status: 400 });
@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   try {
     const id = params.get("id");
     if (id) return NextResponse.json(await conversationDetail(z.uuid().parse(id)));
-    const [items, status] = await Promise.all([listConversations(params.get("page") ?? ""), messengerStatus()]);
-    return NextResponse.json({ items, status });
+    const [items, status, catalog] = await Promise.all([listConversations(params.get("page") ?? "", params.get("account") ?? ""), messengerStatus(), messengerCatalog()]);
+    return NextResponse.json({ items, status, catalog });
   } catch (error) { return fail(error); }
 }
 
