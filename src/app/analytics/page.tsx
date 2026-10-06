@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { bestTimeFromEngagement, insightsFrom, systemAnalytics } from "@/services/analytics";
 import { AppShell } from "../ui/app-shell";
+import { pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +12,8 @@ function Bars({ title, rows, empty }: { title: string; rows: Array<{ label: stri
 }
 
 /** Facebook engagement section streams in separately so the system stats render immediately. */
-async function Engagement() {
-  const result = await bestTimeFromEngagement();
+async function Engagement({ allowedIds }: { allowedIds: string[] | null }) {
+  const result = await bestTimeFromEngagement(15, 5, allowedIds === null ? null : new Set(allowedIds));
   const totals = new Map<string, { label: string; value: number }>();
   for (const { perf } of result.posts) for (const m of perf.metrics) { const t = totals.get(m.key) ?? { label: m.label, value: 0 }; t.value += m.value; totals.set(m.key, t); }
   return <section className="card"><h2>أداء Facebook (آخر {result.samples} منشورًا ببيانات متاحة)</h2>
@@ -23,7 +25,9 @@ async function Engagement() {
 }
 
 export default async function Analytics() {
-  const a = await systemAnalytics();
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
+  const a = await systemAnalytics(undefined, allowed);
   const insights = insightsFrom(a);
   return <AppShell title="التحليلات">
     <div className="page-intro"><div><h2>التحليلات</h2><p>أرقام النظام الفعلية وأداء منشوراتك على Facebook.</p></div></div>
@@ -34,6 +38,6 @@ export default async function Analytics() {
       <Bars title="ساعات النشر الأكثر" rows={a.byHour} empty="لا توجد منشورات منشورة بعد." />
       <Bars title="المنشورات لكل صفحة" rows={a.byPage.map((p) => ({ label: p.name, count: p.n }))} empty="لا توجد صفحات." />
     </div>
-    <Suspense fallback={<section className="card"><h2>أداء Facebook</h2><p>جارٍ جلب البيانات من Facebook…</p></section>}><Engagement /></Suspense>
+    <Suspense fallback={<section className="card"><h2>أداء Facebook</h2><p>جارٍ جلب البيانات من Facebook…</p></section>}><Engagement allowedIds={allowed === null ? null : Array.from(allowed)} /></Suspense>
   </AppShell>;
 }
