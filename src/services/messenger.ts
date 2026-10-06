@@ -9,6 +9,7 @@ import { listMetaAccounts } from "./meta-accounts";
 // Replies are only allowed within Meta's 24-hour window after the customer's last message.
 const version = () => process.env.META_GRAPH_VERSION || "v23.0";
 type Row = Record<string, unknown>;
+type ConversationDetailRow = { id: string; page_id: string; participant_name: string | null; last_customer_message_at: string | null; page_name: string };
 type GraphMsg = { id: string; message?: string; created_time: string; from?: { id: string; name?: string } };
 type GraphConv = { id: string; updated_time: string; participants?: { data: Array<{ id: string; name?: string }> }; messages?: { data: GraphMsg[] } };
 const WINDOW_MS = 24 * 3600000;
@@ -126,7 +127,7 @@ export async function messengerCatalog() {
 
 export async function conversationDetail(id: string) {
   const db = getDb();
-  const [conv] = (await db.execute(sql`select c.id, c.page_id, c.participant_name, c.last_customer_message_at, p.name as page_name from messenger_conversations c join facebook_pages p on p.id = c.page_id where c.id = ${id}::uuid`)).rows as Row[];
+  const [conv] = (await db.execute(sql`select c.id, c.page_id, c.participant_name, c.last_customer_message_at, p.name as page_name from messenger_conversations c join facebook_pages p on p.id = c.page_id where c.id = ${id}::uuid`)).rows as ConversationDetailRow[];
   if (!conv) throw new Error("CONVERSATION_NOT_FOUND");
   const messages = (await db.execute(sql`select id, from_name, message, is_from_page, created_time, sent_by from messenger_messages where conversation_id = ${id}::uuid order by created_time`)).rows;
   await db.execute(sql`update messenger_conversations set unread = false where id = ${id}::uuid`);
