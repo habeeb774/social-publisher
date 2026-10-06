@@ -28,7 +28,7 @@ export async function publicStatus() {
       count(*) filter (where status='failed' and deleted_at is null and failed_at > now()-interval '24 hours')::int as failed_24h from posts`),
     one(sql`select max(started_at) as last_sync, (array_agg(status order by started_at desc))[1] as last_status from comments_sync_runs`),
     getSetting<{ checkedAt: string; pages: Record<string, string | null> } | null>("messenger_status", null),
-    db.execute(sql`select title, created_at from notifications where type in ('publish_failed','token_invalid','token_expiring','scheduler_gap') and created_at > now()-interval '3 days' order by created_at desc limit 5`).then((r) => r.rows as Row[]).catch(() => [] as Row[]),
+    db.execute(sql`select title, created_at from notifications where is_read = false and type in ('publish_failed','token_invalid','token_expiring','scheduler_gap','comments_sync_failed','messenger_sync_failed','backup_failed') and created_at > now()-interval '3 days' order by created_at desc limit 5`).then((r) => r.rows as Row[]).catch(() => [] as Row[]),
   ]);
   const lastRun = run.triggered_at ? new Date(String(run.triggered_at)) : null;
   const minutesSince = lastRun ? Math.round((Date.now() - lastRun.getTime()) / 60000) : null;
