@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { facebookPages, schedulerRuns } from "@/db/schema";
 import { storedPageToken } from "@/services/page-tokens";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
-import { sendAlert } from "@/services/alerts";
+import { resolveAlerts, sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
@@ -58,6 +58,7 @@ async function runHealthChecks() {
 السبب: ${token.reason ?? "غير معروف"}`, 24);
         else if (missingPublishScope) await sendAlert("token_invalid", `صلاحية النشر ناقصة لصفحة ${page.name}`, `التوكن صالح لكن pages_manage_posts غير موجودة. ${fix}`, 24);
         else if (token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400 * 1000) await sendAlert("token_expiring", `رمز صفحة ${page.name} ينتهي قريباً`, `ينتهي في ${token.expiresAt.toISOString().slice(0, 10)}. ${fix}`, 24);
+        else await resolveAlerts(["token_invalid", "token_expiring"], page.name);
       }
     }
   } catch (error) {
@@ -91,6 +92,7 @@ async function run(request: Request) {
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     await getDb().insert(schedulerRuns).values({ finishedAt, processedCount: results.length, publishedCount: results.filter((item) => item.status === "published").length, failedCount: results.filter((item) => item.status === "failed").length, durationMs, status: "success" });
+    await resolveAlerts(["scheduler_gap"]);
     return NextResponse.json({ success: true, processed: results.length, published_count: results.filter((item) => item.status === "published").length, failed_count: results.filter((item) => item.status === "failed").length });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Worker failed";
