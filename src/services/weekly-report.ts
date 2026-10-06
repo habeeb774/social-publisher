@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { sendEmail } from "./alerts";
+import { emailBackup } from "./backup";
 import { getSetting, setSetting } from "./settings-store";
 
 type Row = Record<string, unknown>;
@@ -46,5 +47,7 @@ export async function maybeSendWeeklyReport(now = new Date()) {
   const week = new Date(now.getTime() + 3 * 3600000).toISOString().slice(0, 10);
   if ((await getSetting<string>("weekly_report_last", "")) === week) return false;
   await setSetting("weekly_report_last", week);
-  return sendEmail("التقرير الأسبوعي", await buildWeeklyReport());
+  const sent = await sendEmail("التقرير الأسبوعي", await buildWeeklyReport());
+  await emailBackup().catch((error) => console.error("Weekly backup failed", { error: error instanceof Error ? error.message : String(error) }));
+  return sent;
 }

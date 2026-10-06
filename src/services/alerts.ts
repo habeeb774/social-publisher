@@ -44,12 +44,13 @@ export async function sendAlert(type: AlertType, title: string, message: string,
 const FALLBACK_FROM = "Social Publisher <onboarding@resend.dev>";
 
 /** Posts to Resend from ALERT_FROM; if that domain is not verified yet, retries from Resend's shared address. */
-async function postResend(key: string, to: string, subject: string, text: string) {
+type Attachment = { filename: string; content: string };
+async function postResend(key: string, to: string, subject: string, text: string, attachments?: Attachment[]) {
   const send = (from: string) => fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [to], subject: `[ناشر المحتوى] ${subject}`, text }),
-    signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ from, to: [to], subject: `[ناشر المحتوى] ${subject}`, text, ...(attachments ? { attachments } : {}) }),
+    signal: AbortSignal.timeout(20000),
   });
   const preferred = process.env.ALERT_FROM?.trim();
   let from = preferred || FALLBACK_FROM;
@@ -62,11 +63,11 @@ async function postResend(key: string, to: string, subject: string, text: string
   return { response, from };
 }
 
-export async function sendEmail(subject: string, text: string) {
+export async function sendEmail(subject: string, text: string, attachments?: Attachment[]) {
   const key = process.env.RESEND_API_KEY?.trim();
   const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
   if (!key || !to) return false;
-  const { response } = await postResend(key, to, subject, text);
+  const { response } = await postResend(key, to, subject, text, attachments);
   if (!response.ok) console.error("Resend rejected alert email", { status: response.status });
   return response.ok;
 }

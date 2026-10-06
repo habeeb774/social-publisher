@@ -17,6 +17,7 @@ export function TestEmailButton() {
   return <div className="row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
     <button className="btn btn-secondary" disabled={busy} onClick={send}>{busy ? "جارٍ الإرسال…" : "إرسال بريد تجريبي"}</button>
     <button className="btn btn-ghost" disabled={busy} onClick={async () => { setBusy(true); try { const r = await fetch("/api/notifications/test?kind=weekly", { method: "POST" }); const m = r.ok ? "أُرسل التقرير الأسبوعي إلى بريدك." : "تعذر إرسال التقرير."; setResult(m); toast(m, r.ok ? undefined : "error"); } finally { setBusy(false); } }}>إرسال التقرير الأسبوعي الآن</button>
+    <button className="btn btn-ghost" disabled={busy} onClick={async () => { setBusy(true); try { const r = await fetch("/api/notifications/test?kind=backup", { method: "POST" }); const m = r.ok ? "أُرسلت النسخة الاحتياطية إلى بريدك." : "تعذر إرسال النسخة الاحتياطية."; setResult(m); toast(m, r.ok ? undefined : "error"); } finally { setBusy(false); } }}>إرسال نسخة احتياطية الآن</button>
     {result && <small className="muted">{result}</small>}
   </div>;
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { publishDuePosts } from "@/services/publisher";
 import { getDb } from "@/db";
 import { facebookPages, schedulerRuns } from "@/db/schema";
@@ -52,15 +52,18 @@ async function run(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date();
-  await runHealthChecks();
+  // Publishing comes first; everything else runs after the response so it can never delay a post.
+  const gapCheck = runHealthChecks();
   // Recurring rules create their upcoming instances before the due-post scan.
   await materializeRecurrences().catch((error) => console.error("Recurrence materialization failed", { error: error instanceof Error ? error.message : String(error) }));
-  // Pull new comments on every run (last 2 days); never blocks publishing.
-  if (isGraphConfigured()) {
+  after(async () => {
+    const log = (label: string) => (error: unknown) => console.error(label, { error: error instanceof Error ? error.message : String(error) });
+    await gapCheck;
+    if (!isGraphConfigured()) return;
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
-    await syncComments(day(2), day(0)).catch((error) => console.error("Comments sync failed", { error: error instanceof Error ? error.message : String(error) }));
-  }
-  if (isGraphConfigured()) await syncMessenger().catch((error) => console.error("Messenger sync failed", { error: error instanceof Error ? error.message : String(error) }));
+    await syncComments(day(2), day(0)).catch(log("Comments sync failed"));
+    await syncMessenger().catch(log("Messenger sync failed"));
+  });
   try {
     const results = await publishDuePosts();
     const finishedAt = new Date();
@@ -74,5 +77,6 @@ async function run(request: Request) {
   }
 }
 
+export const maxDuration = 60;
 export async function GET(request: Request) { return run(request); }
 export async function POST(request: Request) { return run(request); }
