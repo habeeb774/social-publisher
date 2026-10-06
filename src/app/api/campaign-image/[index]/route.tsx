@@ -28,7 +28,7 @@ function normalizeLayout(node: ReactNode): ReactNode {
   return cloneElement(el, { style }, ...kids);
 }
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 type Palette = { accent: string; accent2: string; glow: string };
 type SceneProps = Palette & { n: number; evening: boolean };
