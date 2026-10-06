@@ -26,7 +26,7 @@ export default async function Integrations() {
   const checkedAt = new Date();
   const [mcp, comments, runs] = await Promise.all([
     process.env.WINDSOR_API_KEY ? withTimeout(testWindsorMcp().catch(() => null)) : Promise.resolve(null),
-    process.env.WINDSOR_API_KEY ? withTimeout(commentsProvider.capabilities().catch(() => null)) : Promise.resolve(null),
+    withTimeout(commentsProvider.capabilities().catch(() => null)),
     getDb().select({ at: schedulerRuns.triggeredAt, status: schedulerRuns.status, error: schedulerRuns.errorMessage }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(10),
   ]);
   const graph = isGraphConfigured();
@@ -52,9 +52,9 @@ export default async function Integrations() {
         <div className="caps"><Cap on={Boolean(mcp?.facebookOrganicConnected)} label="Facebook Organic" /><Cap on={Boolean(mcp?.page)} label="الصفحة متاحة" /><Cap on={Boolean(mcp?.actions.includes("create_post"))} label="create_post" /><Cap on={Boolean(mcp?.actions.includes("create_photo_post"))} label="create_photo_post" /></div>
         {graph && <small>ملاحظة: موصل Windsor يرفض النشر الفعلي (Facebook #200 — بدون صلاحية pages_manage_posts)، لذلك يتم النشر عبر توكن الصفحة.</small>}</div>
         <Status state={mcp?.facebookOrganicConnected ? "ok" : process.env.WINDSOR_API_KEY ? "warn" : "off"} text={mcp?.facebookOrganicConnected ? "متصل" : process.env.WINDSOR_API_KEY ? "يحتاج تفويض" : "غير مُعد"} /></div>
-      <div className="integration"><span className="logo"><Icon name="inbox" /></span><div><h3>Facebook · التعليقات</h3><small>المزود: Windsor MCP · {comments?.reason ?? "غير متاح"}</small>
+      <div className="integration"><span className="logo"><Icon name="inbox" /></span><div><h3>Facebook · التعليقات</h3><small>المزود: {comments?.reply ? "Meta Graph API عبر OAuth" : comments?.connected ? "Facebook connector" : "غير متاح"} · {comments?.reason ?? "متصل"}</small>
         <div className="caps"><Cap on={Boolean(comments?.read)} label="قراءة التعليقات" /><Cap on={Boolean(comments?.repliesRead)} label="قراءة الردود" /><Cap on={Boolean(comments?.reply)} label="الرد" /><Cap on={Boolean(comments?.hide)} label="الإخفاء" /><Cap on={Boolean(comments?.author)} label="اسم الكاتب" /><Cap on={f.replies} label="FACEBOOK_COMMENT_REPLIES_ENABLED" /><Cap on={f.autoReplies} label="AUTO_COMMENT_REPLIES_ENABLED" /></div></div>
-        <Status state={comments?.read ? "warn" : "off"} text={comments?.read ? "قراءة فقط" : "غير متاح"} /></div>
+        <Status state={comments?.reply && f.replies ? "ok" : comments?.read ? "warn" : "off"} text={comments?.reply && f.replies ? (f.autoReplies&&f.automation ? "يدوي + تلقائي" : "رد يدوي") : comments?.read ? "قراءة فقط" : "غير متاح"} /></div>
       <div className="integration"><span className="logo"><Icon name="clock" /></span><div><h3>الجدولة</h3><small>المزود: cron-job.org ← /api/cron/publish (محمي بـ CRON_SECRET)</small>
         <div className="caps"><span className="cap">آخر تشغيل: {last ? riyadh(last.at, "time") : "لا يوجد"}</span><span className="cap">الفاصل: {interval ? `${Math.round(interval)} ث` : "—"}</span><span className="cap">التالي: {last && interval ? riyadh(new Date(last.at.getTime() + interval * 1000), "time") : "—"}</span>{lastError && <span className="cap off">آخر خطأ: {riyadh(lastError.at, "time")}</span>}</div></div>
         <Status state={ageMin < 10 ? "ok" : ageMin < 60 ? "warn" : "bad"} text={ageMin < 10 ? "يعمل" : "متوقف"} /></div>
