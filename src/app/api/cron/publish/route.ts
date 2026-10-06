@@ -9,6 +9,7 @@ import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph"
 import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
 import { syncComments } from "@/services/comments/store";
+import { maybeSendWeeklyReport } from "@/services/weekly-report";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -23,6 +24,7 @@ async function runHealthChecks() {
     if (gapMinutes > GAP_ALERT_MINUTES) await sendAlert("scheduler_gap", "توقف عامل النشر ثم عاد", `لم يعمل عامل النشر لمدة ${gapMinutes} دقيقة. المنشورات المستحقة خلال التوقف تُنشر الآن. تحقق من مهمة cron-job.org إذا تكرر هذا.`, 1);
     // Token inspection is a network call; once an hour is enough.
     if (firstRunOfHour()) await purgeExpiredTrash();
+    await maybeSendWeeklyReport().catch((error) => console.error("Weekly report failed", { error: error instanceof Error ? error.message : String(error) }));
     if (isGraphConfigured() && firstRunOfHour()) {
       // Each page's saved token is checked; pages without one use the global token.
       const pages = await getDb().select({ name: facebookPages.name, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)));

@@ -62,7 +62,7 @@ async function postResend(key: string, to: string, subject: string, text: string
   return { response, from };
 }
 
-async function sendEmail(subject: string, text: string) {
+export async function sendEmail(subject: string, text: string) {
   const key = process.env.RESEND_API_KEY?.trim();
   const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
   if (!key || !to) return false;
