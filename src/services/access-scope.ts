@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { facebookPages } from "@/db/schema";
-import type { CurrentUser } from "./rbac";
+import { facebookPages, posts } from "@/db/schema";
+import { NextRequest, NextResponse } from "next/server";
+import { currentUser, type CurrentUser } from "./rbac";
 import { listMetaAccounts } from "./meta-accounts";
 import { getSetting, setSetting } from "./settings-store";
 
@@ -68,4 +69,21 @@ export async function canAccessPage(user: CurrentUser, pageId: string) {
 export async function filterPageIdsForUser(user: CurrentUser, pageIds: string[]) {
   const allowed = await allowedPageIds(user);
   return allowed === null ? pageIds : pageIds.filter((id) => allowed.has(id));
+}
+
+
+export async function denyPageOutsideScope(request: NextRequest, pageId: string) {
+  const user = await currentUser(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (await canAccessPage(user, pageId)) return null;
+  return NextResponse.json({ error: "ليست لديك صلاحية لهذه الصفحة", code: "PAGE_SCOPE_FORBIDDEN" }, { status: 403 });
+}
+
+export async function denyPostOutsideScope(request: NextRequest, postId: string) {
+  const user = await currentUser(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const [row] = await getDb().select({ pageId: posts.pageId }).from(posts).where(eq(posts.id, postId)).limit(1);
+  if (!row) return NextResponse.json({ error: "المنشور غير موجود" }, { status: 404 });
+  if (await canAccessPage(user, row.pageId)) return null;
+  return NextResponse.json({ error: "ليست لديك صلاحية لهذا المنشور", code: "PAGE_SCOPE_FORBIDDEN" }, { status: 403 });
 }
