@@ -1,7 +1,6 @@
 import { callTool, contentJson, discoverWindsorPublishing } from "../windsor-mcp";
 import { isGraphConfigured, listPageCommentsGraph, replyToCommentGraph, setCommentHiddenGraph } from "../facebook-graph";
 import { hasStoredFacebookPageToken, storedPageToken } from "../page-tokens";
-import { metaWebhookConfigured } from "../meta-webhook";
 
 export type RemoteComment = { id:string; pageId:string; postId:string|null; parentId:string|null; message:string; createdTime:Date; hidden:boolean; authorId:string|null; authorName:string|null; authorAvatar:string|null; permalink:string|null };
 export type CommentsCapabilities = { connected:boolean; pageIds:string[]; read:boolean; repliesRead:boolean; reply:boolean; hide:boolean; unhide:boolean; delete:boolean; author:boolean; permalink:boolean; webhook:boolean; rateLimitKnown:boolean; reason:string|null; checkedAt:string };
@@ -23,7 +22,7 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
   async capabilities():Promise<CommentsCapabilities> {
     const checkedAt=new Date().toISOString();
     // The Graph page token (pages_read_engagement + pages_manage_engagement) covers read, authors and replies.
-    if(isGraphConfigured() || await hasStoredFacebookPageToken())return {connected:true,pageIds:[],read:true,repliesRead:true,reply:true,hide:true,unhide:true,delete:false,author:true,permalink:true,webhook:metaWebhookConfigured(),rateLimitKnown:true,reason:null,checkedAt};
+    if(isGraphConfigured() || await hasStoredFacebookPageToken())return {connected:true,pageIds:[],read:true,repliesRead:true,reply:true,hide:true,unhide:true,delete:false,author:true,permalink:true,webhook:Boolean(process.env.META_APP_SECRET?.trim()&&process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()&&process.env.APP_URL?.trim()),rateLimitKnown:true,reason:null,checkedAt};
     try {
       const discovery=await discoverWindsorPublishing();
       const connectors=unwrap(discovery.connectors) as Array<{id:string;accounts?:Array<{id:string}>}>;
