@@ -9,6 +9,9 @@ import { getSetting, setSetting } from "./settings-store";
 const TABLES: Array<{ name: string; query: ReturnType<typeof sql> }> = [
   { name: "posts", query: sql`select * from posts` },
   { name: "post_media", query: sql`select * from post_media` },
+  { name: "media_assets", query: sql`select id, name, url, storage_key, mime_type, size, source, deleted_at, created_at from media_assets` },
+  { name: "post_versions", query: sql`select * from post_versions` },
+  { name: "post_notes", query: sql`select * from post_notes` },
   { name: "campaigns", query: sql`select * from campaigns` },
   { name: "post_templates", query: sql`select * from post_templates` },
   { name: "post_recurrences", query: sql`select * from post_recurrences` },
@@ -19,6 +22,7 @@ const TABLES: Array<{ name: string; query: ReturnType<typeof sql> }> = [
   { name: "users", query: sql`select id, email, name, role, is_active, created_at from users` },
   { name: "quick_replies", query: sql`select * from quick_replies` },
   { name: "comment_rules", query: sql`select * from comment_rules` },
+  { name: "saved_filters", query: sql`select * from saved_filters` },
   { name: "settings", query: sql`select key, value, updated_at from settings where key not ilike '%token%' and key not ilike '%secret%' and key not ilike '%password%'` },
 ];
 
