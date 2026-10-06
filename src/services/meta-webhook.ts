@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activityLogs, facebookPages } from "@/db/schema";
 import { ingestComment } from "@/services/comments/store";
@@ -94,7 +94,11 @@ async function pageRow(pageRemoteId: string) {
     id: facebookPages.id,
     name: facebookPages.name,
     facebookPageId: facebookPages.facebookPageId,
-  }).from(facebookPages).where(eq(facebookPages.facebookPageId, pageRemoteId)).limit(1);
+  }).from(facebookPages).where(and(
+    eq(facebookPages.facebookPageId, pageRemoteId),
+    eq(facebookPages.platform, "facebook"),
+    eq(facebookPages.isActive, true),
+  )).limit(1);
   return page ?? null;
 }
 
@@ -102,14 +106,13 @@ async function markRemoved(pageRemoteId: string, commentId: string) {
   const page = await pageRow(pageRemoteId);
   if (!page) return "page_not_found" as const;
   const db = getDb();
-  const result = await db.execute(
-    // Keep the row for audit/history but remove it from reply queues.
-    // Drizzle's sql helper is avoided here because the comments table is managed by its dedicated migration.
-    // Parameterization remains handled by the Neon driver through the existing store for all writes except this narrow update.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (await import("drizzle-orm")).sql`update facebook_comments set is_hidden=true,status='hidden',needs_reply=false,last_synced_at=now(),updated_at=now() where page_id=${page.id}::uuid and facebook_comment_id=${commentId}`
-  );
-  return Number(result.rowCount ?? 0) > 0 ? "removed" as const : "not_found" as const;
+  const result = await db.execute(sql`
+    update facebook_comments
+    set is_hidden=true,status='hidden',needs_reply=false,last_synced_at=now(),updated_at=now()
+    where page_id=${page.id}::uuid and facebook_comment_id=${commentId}
+    returning facebook_comment_id
+  `);
+  return result.rows.length > 0 ? "removed" as const : "not_found" as const;
 }
 
 async function ingestFeedChange(pageRemoteId: string, entryTime: number | undefined, value: FeedValue) {
@@ -208,7 +211,11 @@ export async function setupMetaWebhook() {
     id: facebookPages.id,
     name: facebookPages.name,
     facebookPageId: facebookPages.facebookPageId,
-  }).from(facebookPages).where(eq(facebookPages.platform, "facebook"));
+  }).from(facebookPages).where(and(
+    eq(facebookPages.platform, "facebook"),
+    eq(facebookPages.isActive, true),
+    isNotNull(facebookPages.accessTokenEnc),
+  ));
 
   const status: Array<{ page: string; pageId: string; ok: boolean; error?: string }> = [];
   for (const page of pages) {
@@ -237,7 +244,7 @@ export async function metaWebhookHealth() {
     action: activityLogs.action,
     createdAt: activityLogs.createdAt,
     metadata: activityLogs.metadata,
-  }).from(activityLogs).where(eq(activityLogs.entityType, "meta_webhook")).orderBy((await import("drizzle-orm")).desc(activityLogs.createdAt)).limit(1);
+  }).from(activityLogs).where(eq(activityLogs.entityType, "meta_webhook")).orderBy(desc(activityLogs.createdAt)).limit(1);
   return {
     configured: metaWebhookConfigured(),
     callbackUrl: metaWebhookConfigured() ? metaWebhookCallbackUrl() : null,
@@ -245,4 +252,62 @@ export async function metaWebhookHealth() {
     lastAction: last?.action ?? null,
     lastMetadata: last?.metadata ?? null,
   };
+}
+
+
+export async function checkMetaWebhookSubscriptions() {
+  if (!metaWebhookConfigured()) return { healthy: false, configured: false, app: false, pages: [] as Array<{ page: string; pageId: string; ok: boolean; error?: string }> };
+  const appId = process.env.META_APP_ID!.trim();
+  const appSecret = process.env.META_APP_SECRET!.trim();
+  const appAccessToken = `${appId}|${appSecret}`;
+  const callbackUrl = metaWebhookCallbackUrl();
+
+  let app = false;
+  try {
+    const result = await graph(`/${appId}/subscriptions?access_token=${encodeURIComponent(appAccessToken)}`);
+    const subscriptions = Array.isArray(result.data) ? result.data as Array<{ object?: string; callback_url?: string; active?: boolean; fields?: Array<{ name?: string }> }> : [];
+    app = subscriptions.some((item) =>
+      item.object === "page" &&
+      item.callback_url === callbackUrl &&
+      item.active !== false &&
+      (item.fields ?? []).some((field) => field.name === "feed")
+    );
+  } catch {
+    app = false;
+  }
+
+  const pages = await getDb().select({
+    name: facebookPages.name,
+    facebookPageId: facebookPages.facebookPageId,
+  }).from(facebookPages).where(and(
+    eq(facebookPages.platform, "facebook"),
+    eq(facebookPages.isActive, true),
+    isNotNull(facebookPages.accessTokenEnc),
+  ));
+
+  const pageStatus: Array<{ page: string; pageId: string; ok: boolean; error?: string }> = [];
+  for (const page of pages) {
+    try {
+      const token = await storedPageToken(page.facebookPageId);
+      if (!token) {
+        pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: false, error: "PAGE_TOKEN_MISSING" });
+        continue;
+      }
+      const result = await graph(`/${encodeURIComponent(page.facebookPageId)}/subscribed_apps?access_token=${encodeURIComponent(token)}`);
+      const apps = Array.isArray(result.data) ? result.data as Array<{ id?: string; subscribed_fields?: string[] }> : [];
+      const subscribed = apps.some((item) => item.id === appId && (!item.subscribed_fields || item.subscribed_fields.includes("feed")));
+      pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: subscribed });
+    } catch (error) {
+      pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const healthy = app && pageStatus.length > 0 && pageStatus.every((page) => page.ok);
+  await audit(healthy ? "processed" : "failed", {
+    healthCheck: true,
+    app,
+    callbackUrl,
+    pages: pageStatus.map(({ page, pageId, ok, error }) => ({ page, pageId, ok, error })),
+  });
+  return { healthy, configured: true, app, pages: pageStatus };
 }
