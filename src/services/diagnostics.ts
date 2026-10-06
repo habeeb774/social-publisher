@@ -47,7 +47,7 @@ export async function runDiagnostics(deep: boolean): Promise<{ checks: Check[]; 
   try {
     const db = getDb();
     const sync = await db.execute(sql`select status, error_code, started_at from comments_sync_runs order by started_at desc limit 1`).then((r) => r.rows[0] as { status: string; error_code: string | null; started_at: string } | undefined).catch(() => null);
-    checks.push({ key: "comments", label: "مزامنة التعليقات", state: sync === null ? "off" : !sync ? "off" : ["success", "completed"].includes(sync.status) ? "healthy" : "warning", detail: sync === null ? "غير مُعدة" : !sync ? "لم تعمل بعد · المزامنة الدورية غير مجدولة" : `${sync.error_code ?? sync.status} · ${new Date(sync.started_at).toLocaleString("ar-SA", { timeZone: "Asia/Riyadh" })}` });
+    checks.push({ key: "comments", label: "مزامنة التعليقات", state: sync === null ? "off" : !sync ? "off" : ["success", "completed"].includes(sync.status) ? "healthy" : "warning", detail: sync === null ? "غير مُعدة" : !sync ? "لم تعمل بعد · تعمل تلقائيًا كل 10 دقائق" : `${sync.error_code ?? sync.status} · ${new Date(sync.started_at).toLocaleString("ar-SA", { timeZone: "Asia/Riyadh" })}` });
     const [n] = (await db.execute(sql`select count(*)::int as n from notifications where created_at > now() - interval '7 days'`)).rows as Array<{ n: number }>;
     checks.push({ key: "notifications", label: "الإشعارات", state: "healthy", detail: `${n?.n ?? 0} إشعار خلال 7 أيام · البريد ${process.env.RESEND_API_KEY ? "مفعّل" : "غير مُعد"}` });
   } catch { /* optional checks */ }

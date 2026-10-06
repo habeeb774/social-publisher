@@ -155,8 +155,12 @@ export async function syncComments(from:string,to:string){
   const db=database();const [run]=await db`INSERT INTO comments_sync_runs(status) VALUES('running') RETURNING id`;
   let imported=0;
   try{
-    const pages=await db`SELECT id,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook'`;
-    for(const page of pages){const rows=await commentsProvider.listPostComments(String(page.facebook_page_id),from,to);for(const remote of rows)if(await ingestComment(String(page.id),remote,String(page.facebook_page_id)))imported++;}
+    const pages=await db`SELECT id,name,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook'`;
+    // One page's failure (e.g. an expired token) must not block the others.
+    const errors:string[]=[];
+    for(const page of pages){try{const rows=await commentsProvider.listPostComments(String(page.facebook_page_id),from,to);for(const remote of rows)if(await ingestComment(String(page.id),remote,String(page.facebook_page_id)))imported++;}catch(error){errors.push(`${String(page.name??page.facebook_page_id)}: ${error instanceof Error?error.message:"COMMENTS_READ_FAILED"}`);}}
+    if(errors.length&&errors.length===pages.length)throw new Error(errors[0]);
+    if(errors.length){await db`UPDATE comments_sync_runs SET status='partial',imported=${imported},error_code=${errors.join(" | ").slice(0,300)},finished_at=now() WHERE id=${String(run.id)}::uuid`;return {imported,errors};}
     await db`UPDATE comments_sync_runs SET status='success',imported=${imported},finished_at=now() WHERE id=${String(run.id)}::uuid`;return {imported};
   }catch(error){const code=error instanceof Error?error.message:"COMMENTS_READ_FAILED";await db`UPDATE comments_sync_runs SET status='blocked',error_code=${code.slice(0,100)},finished_at=now() WHERE id=${String(run.id)}::uuid`;throw error;}
 }
