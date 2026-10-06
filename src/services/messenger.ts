@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { currentActor, logAudit } from "./audit";
 import { storedPageToken } from "./page-tokens";
 import { getSetting, setSetting } from "./settings-store";
+import { listMetaAccounts } from "./meta-accounts";
 
 // Messenger inbox through the Graph API (needs pages_messaging on the page token).
 // Replies are only allowed within Meta's 24-hour window after the customer's last message.
@@ -95,10 +96,31 @@ export async function messengerStatus() {
   return getSetting<{ checkedAt: string; pages: Record<string, string | null> } | null>("messenger_status", null);
 }
 
-export async function listConversations(pageId = "") {
-  const rows = await getDb().execute(sql`select c.id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name
-    from messenger_conversations c join facebook_pages p on p.id = c.page_id where (${pageId} = '' or c.page_id::text = ${pageId}) order by c.last_message_at desc nulls last limit 100`);
+export async function listConversations(pageId = "", accountId = "") {
+  const accounts = await listMetaAccounts();
+  const selected = accounts.find((account) => account.id === accountId);
+  const remoteCsv = selected?.pageIds.join(",") ?? "";
+  const rows = await getDb().execute(sql`select c.id, c.page_id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name, p.facebook_page_id
+    from messenger_conversations c join facebook_pages p on p.id = c.page_id
+    where (${pageId} = '' or c.page_id::text = ${pageId})
+      and (${accountId} = '' or p.facebook_page_id = any(string_to_array(${remoteCsv}, ',')))
+    order by c.last_message_at desc nulls last limit 100`);
   return rows.rows;
+}
+
+export async function messengerCatalog() {
+  const db = getDb();
+  const [pages, accounts] = await Promise.all([
+    db.execute(sql`select id,name,facebook_page_id from facebook_pages where is_active and platform='facebook' order by name`),
+    listMetaAccounts(),
+  ]);
+  return {
+    accounts: accounts.map((account) => ({ id: account.id, name: account.name, status: account.status })),
+    pages: (pages.rows as Array<{ id: string; name: string; facebook_page_id: string }>).map((page) => {
+      const account = accounts.find((item) => item.pageIds.includes(page.facebook_page_id));
+      return { id: page.id, name: page.name, accountId: account?.id ?? null, accountName: account?.name ?? null };
+    }),
+  };
 }
 
 export async function conversationDetail(id: string) {
