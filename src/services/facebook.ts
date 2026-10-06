@@ -1,6 +1,7 @@
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { publishWindsorPost, testWindsorMcp } from "./windsor-mcp";
 import { isGraphConfigured, publishGraphPost, publishInstagramGraph } from "./facebook-graph";
+import { storedInstagramToken, storedPageToken } from "./page-tokens";
 export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string; platform?: string };
 export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" | "facebook_graph" };
 export type FacebookCapabilities = { connected: boolean; readAccount: boolean; listPages: boolean; readPosts: boolean; publishText: boolean; publishImage: boolean };
@@ -25,11 +26,13 @@ export const facebookProvider = new FacebookMcpProvider();
 export async function publishToFacebook(input: FacebookPublishInput): Promise<FacebookResult> {
   // A page access token takes precedence: Windsor's Facebook connection lacks pages_manage_posts.
   if (input.platform === "instagram") {
-    if (!isGraphConfigured()) throw new Error("INSTAGRAM_AUTH_REQUIRED: يتطلب رمز Meta");
+    const saved = await storedInstagramToken(input.pageId);
+    if (!saved && !isGraphConfigured()) throw new Error("INSTAGRAM_AUTH_REQUIRED: يتطلب ربط Meta");
     return publishInstagramGraph({ igUserId: input.pageId, content: input.content, imageUrl: input.imageUrl }, !isPublishingEnabled());
   }
   if (input.platform && input.platform !== "facebook") throw new Error(`PLATFORM_UNSUPPORTED: ${input.platform}`);
-  if (isGraphConfigured()) return publishGraphPost(input, !isPublishingEnabled());
+  const saved = await storedPageToken(input.pageId);
+  if (saved || isGraphConfigured()) return publishGraphPost(input, !isPublishingEnabled());
   return facebookProvider.publish(input);
 }
 export async function testFacebookConnection() { return facebookProvider.getCapabilities(); }
