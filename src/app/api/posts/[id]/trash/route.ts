@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, guard, isUuid } from "@/services/api-guard";
 import { purgePosts, restoreFromTrash } from "@/services/trash";
+import { denyPostOutsideScope } from "@/services/access-scope";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await guard(request); if (denied) return denied;
   const { id } = await params;
   const parsed = z.object({ action: z.enum(["restore", "purge"]) }).safeParse(await request.json().catch(() => null));
   if (!isUuid(id) || !parsed.success) return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   try {
     if (parsed.data.action === "restore") return NextResponse.json(await restoreFromTrash(id));
     const purged = await purgePosts([id]);
