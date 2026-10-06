@@ -265,12 +265,12 @@ export async function checkMetaWebhookSubscriptions() {
   let app = false;
   try {
     const result = await graph(`/${appId}/subscriptions?access_token=${encodeURIComponent(appAccessToken)}`);
-    const subscriptions = Array.isArray(result.data) ? result.data as Array<{ object?: string; callback_url?: string; active?: boolean; fields?: Array<{ name?: string }> }> : [];
+    const subscriptions = Array.isArray(result.data) ? result.data as Array<{ object?: string; callback_url?: string; active?: boolean; fields?: Array<string | { name?: string }> }> : [];
     app = subscriptions.some((item) =>
       item.object === "page" &&
       item.callback_url === callbackUrl &&
       item.active !== false &&
-      (item.fields ?? []).some((field) => field.name === "feed")
+      (item.fields ?? []).some((field) => typeof field === "string" ? field === "feed" : field.name === "feed")
     );
   } catch {
     app = false;
