@@ -157,3 +157,10 @@ export async function publishInstagramGraph(input: { igUserId: string; content: 
   const permalink = link?.ok && typeof link.body.permalink === "string" ? link.body.permalink : undefined;
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
 }
+
+/** Hides or unhides a comment on the page (needs pages_manage_engagement). Hidden comments stay visible to their author and friends only. */
+export async function setCommentHiddenGraph(pageId: string, commentId: string, hidden: boolean) {
+  const token = await pageToken(pageId);
+  const result = await graph(`/${encodeURIComponent(commentId)}`, { method: "POST", body: new URLSearchParams({ is_hidden: String(hidden), access_token: token }) });
+  if (!result.ok) throw new Error(graphError(result.body));
+}

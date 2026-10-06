@@ -16,6 +16,7 @@ const mutation=z.discriminatedUnion("action",[
   z.object({action:z.literal("template"),id:z.uuid().optional(),input:templateSchema}),
   z.object({action:z.literal("rule"),id:z.uuid().optional(),input:ruleSchema}),
   z.object({action:z.literal("status"),ids:z.array(z.uuid()).min(1).max(50),value:z.enum(["new","unread","needs_reply","resolved","important","spam"])}),
+  z.object({action:z.enum(["hide","unhide"]),id:z.uuid()}),
   z.object({action:z.literal("note"),id:z.uuid(),value:z.string().trim().min(1).max(8000)}),
   z.object({action:z.literal("tag"),ids:z.array(z.uuid()).min(1).max(50),value:z.string().trim().min(1).max(80)}),
   z.object({action:z.literal("assign"),ids:z.array(z.uuid()).min(1).max(50),value:z.union([z.uuid(),z.literal("")])}),
@@ -53,6 +54,7 @@ export async function POST(request:NextRequest){
     if(body.action==="read_notifications")result=await readCommentNotifications(principal.id);
     else if(body.action==="save_view")result=await store.saveInboxView(principal.id,body.name,body.filter);
     else if(body.action==="delete_view")result=await store.deleteInboxView(principal.id,body.id);
+    else if(body.action==="hide"||body.action==="unhide")result=await store.setHidden(body.id,body.action==="hide");
     else if(body.action==="template")result=await store.saveQuickReply(body.input,body.id);
     else if(body.action==="rule")result=await store.saveCommentRule(body.input,body.id);
     else if(body.action==="draft")result=await store.draftReply(body.id,body.content,body.templateId);

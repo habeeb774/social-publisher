@@ -64,7 +64,6 @@ export async function saveQuickReply(input:{name:string;content:string;category:
 }
 export async function listCommentRules(){return database()`SELECT * FROM comment_rules ORDER BY priority,id LIMIT 200`;}
 export async function saveCommentRule(input:Omit<CommentRule,"id">,id?:string){
-  if(input.action==="hide")throw new Error("COMMENTS_HIDE_UNAVAILABLE");
   const db=database();if(input.templateId){const rows=await db`SELECT id FROM quick_replies WHERE id=${input.templateId}::uuid AND active`;if(!rows.length)throw new Error("TEMPLATE_UNAVAILABLE");}
   const [row]=id?await db`UPDATE comment_rules SET name=${input.name},active=${input.active},priority=${input.priority},config=${JSON.stringify(input)}::jsonb,updated_at=now() WHERE id=${id}::uuid RETURNING *`:await db`INSERT INTO comment_rules(name,active,priority,config,created_by) VALUES(${input.name},${input.active},${input.priority},${JSON.stringify(input)}::jsonb,${currentActor()}) RETURNING *`;
   if(!row)throw new Error("NOT_FOUND");await commentsAudit("comment.rule_saved",null,{ruleId:row.id});return row;
@@ -142,6 +141,9 @@ async function planAutomation(comment:Row){
       const [created]=await db`INSERT INTO comment_replies(comment_id,content,reply_type,status,rule_id,template_id,due_at,approved_by) VALUES(${String(comment.id)}::uuid,${String(template.content)},'automation',${auto?"approved":"pending_approval"},${match.rule.id}::uuid,${match.rule.templateId}::uuid,${match.dueAt.toISOString()},${auto?"automation":null}) ON CONFLICT DO NOTHING RETURNING id`;
       if(created&&auto)await sendReply(String(comment.id),String(created.id)).catch(()=>db`INSERT INTO notifications(type,title,message) VALUES('comment_reply_failed','تعذر إرسال رد تلقائي',${String(comment.message).slice(0,300)})`);
       else if(created)await db`INSERT INTO notifications(type,title,message) VALUES('comment_approval','رد بانتظار الموافقة',${String(comment.message).slice(0,300)})`;
+    }else if(match.action==="hide"){
+      try{await setHidden(String(comment.id),true);}
+      catch{await db`INSERT INTO notifications(type,title,message) VALUES('comment_hide_failed','تعذر إخفاء تعليق',${String(comment.message).slice(0,300)})`;}
     }else if(match.action==="important"){await internalAction(String(comment.id),"status","important");await db`INSERT INTO notifications(type,title,message) VALUES('comment_important','تعليق مهم',${String(comment.message).slice(0,300)})`;}
     else if(match.action==="follow_up")await internalAction(String(comment.id),"status","needs_reply");
     else if(match.action==="tag"&&match.rule.tag)await internalAction(String(comment.id),"tag",match.rule.tag);
@@ -161,4 +163,16 @@ export async function syncComments(from:string,to:string){
 export async function enforceCommentsRateLimit(key:string){
   const db=database();const [row]=await db`INSERT INTO comment_api_limits(key) VALUES(${key}) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN comment_api_limits.window_at<now()-interval '1 minute' THEN 1 ELSE comment_api_limits.count+1 END,window_at=CASE WHEN comment_api_limits.window_at<now()-interval '1 minute' THEN now() ELSE comment_api_limits.window_at END RETURNING count`;
   return Number(row.count)<=60;
+}
+
+/** Hides/unhides on Facebook first, then mirrors the state locally. */
+export async function setHidden(id:string,hidden:boolean){
+  const db=database();
+  const [row]=await db`SELECT c.facebook_comment_id,p.facebook_page_id FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE c.id=${id}::uuid`;
+  if(!row)throw new Error("COMMENT_NOT_FOUND");
+  if(hidden)await commentsProvider.hideComment(String(row.facebook_page_id),String(row.facebook_comment_id));
+  else await commentsProvider.unhideComment(String(row.facebook_page_id),String(row.facebook_comment_id));
+  await db`UPDATE facebook_comments SET is_hidden=${hidden},status=${hidden?"hidden":"new"},needs_reply=${!hidden},updated_at=now() WHERE id=${id}::uuid`;
+  await commentsAudit(hidden?"comment.hidden":"comment.unhidden",id,{});
+  return {ok:true};
 }
