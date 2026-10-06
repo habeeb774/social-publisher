@@ -17,7 +17,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
     editorData(),
   ]);
   if (!row) notFound();
-  const pages = data.pages.some((p) => p.id === row.page.id) ? data.pages : [{ id: row.page.id, name: row.page.name }, ...data.pages];
+  const pages = data.pages.some((p) => p.id === row.page.id) ? data.pages : [{ id: row.page.id, name: row.page.name, platform: row.page.platform, accountId: null, accountName: null }, ...data.pages];
   const p = row.post;
   return <PostEditor {...data} pages={pages} initial={{ id: p.id, pageId: p.pageId, content: p.content, scheduledAt: p.scheduledAt?.toISOString() || null, updatedAt: p.updatedAt.toISOString(), status: p.status, category: p.category, tags: p.tags, campaignId: p.campaignId, imageUrl: media[0]?.url ?? null }} />;
 }
