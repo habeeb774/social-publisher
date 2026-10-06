@@ -12,6 +12,7 @@ import { riyadh } from "../../ui/api";
 import { Icon } from "../../ui/icons";
 import { SettingsShell } from "../settings-shell";
 import { TestConnectionButton } from "./test-connection";
+import { MetaWebhookSetup } from "./meta-webhook-setup";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,7 @@ export default async function Integrations() {
       <div className="integration"><span className="logo"><Icon name="inbox" /></span><div><h3>Facebook · التعليقات</h3><small>المزود: {comments?.reply ? "Meta Graph API عبر OAuth" : comments?.connected ? "Facebook connector" : "غير متاح"} · {comments?.reason ?? "متصل"}</small>
         <div className="caps"><Cap on={Boolean(comments?.read)} label="قراءة التعليقات" /><Cap on={Boolean(comments?.repliesRead)} label="قراءة الردود" /><Cap on={Boolean(comments?.reply)} label="الرد" /><Cap on={Boolean(comments?.hide)} label="الإخفاء" /><Cap on={Boolean(comments?.author)} label="اسم الكاتب" /><Cap on={f.replies} label="FACEBOOK_COMMENT_REPLIES_ENABLED" /><Cap on={f.autoReplies} label="AUTO_COMMENT_REPLIES_ENABLED" /></div></div>
         <Status state={comments?.reply && f.replies ? "ok" : comments?.read ? "warn" : "off"} text={comments?.reply && f.replies ? (f.autoReplies&&f.automation ? "يدوي + تلقائي" : "رد يدوي") : comments?.read ? "قراءة فقط" : "غير متاح"} /></div>
+      <MetaWebhookSetup />
       <div className="integration"><span className="logo"><Icon name="clock" /></span><div><h3>الجدولة</h3><small>المزود: cron-job.org ← /api/cron/publish (محمي بـ CRON_SECRET)</small>
         <div className="caps"><span className="cap">آخر تشغيل: {last ? riyadh(last.at, "time") : "لا يوجد"}</span><span className="cap">الفاصل: {interval ? `${Math.round(interval)} ث` : "—"}</span><span className="cap">التالي: {last && interval ? riyadh(new Date(last.at.getTime() + interval * 1000), "time") : "—"}</span>{lastError && <span className="cap off">آخر خطأ: {riyadh(lastError.at, "time")}</span>}</div></div>
         <Status state={ageMin < 10 ? "ok" : ageMin < 60 ? "warn" : "bad"} text={ageMin < 10 ? "يعمل" : "متوقف"} /></div>
