@@ -15,6 +15,7 @@ import { TestConnectionButton } from "../settings/integrations/test-connection";
 import { LinkInstagramButton } from "./link-instagram";
 import { AddPageButton } from "./add-page";
 import { ConnectMetaButton } from "./connect-meta";
+import { MetaAccountActions } from "./meta-account-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "صفحات Facebook" };
@@ -75,6 +76,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
           </div>
           <div className="stack" style={{ gap: 6, justifyItems: "end" }}>
             <span className={`badge ${active ? "badge-success" : "badge-warning"}`}>{active ? "حساب Meta" : "إعادة ربط مطلوبة"}</span>
+            {canManage && <MetaAccountActions accountId={account.id} active={active} />}
             <a className="btn btn-ghost btn-sm" href={`https://www.facebook.com/${account.id}`} target="_blank" rel="noreferrer">
               <Icon name="facebook" width={14} />فتح الحساب
             </a>
