@@ -4,6 +4,7 @@ import { getSetting } from "@/services/settings-store";
 import { SettingsShell } from "../settings-shell";
 import { PrefsClient } from "./prefs-client";
 import { TestEmailButton } from "./test-email";
+import { StatusLink } from "./status-link";
 
 export const dynamic = "force-dynamic";
 export default async function NotificationSettings() {
@@ -12,5 +13,6 @@ export default async function NotificationSettings() {
   return <SettingsShell active="/settings/notifications" title="الإشعارات وسير العمل" description="اختر الأحداث التي تصلك وطريقة وصولها، وفعّل الموافقة قبل الجدولة.">
     <PrefsClient types={types} initial={prefs as Record<string, { inApp: boolean; email: boolean }>} emailConfigured={Boolean(process.env.RESEND_API_KEY)} approvalRequired={approval} />
     <TestEmailButton />
+    <StatusLink />
   </SettingsShell>;
 }
