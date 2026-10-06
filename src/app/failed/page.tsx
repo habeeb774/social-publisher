@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { posts, publicationAttempts } from "@/db/schema";
 import { classifyError } from "@/services/error-classes";
-import { pageCan } from "@/services/session-server";
+import { pageCan, pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { Card, MetricStrip, PageHeader } from "../ui/kit";
@@ -16,9 +17,14 @@ type Sync = { status: string; error_code: string | null; started_at: string };
 
 export default async function Failed() {
   const db = getDb();
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
+  const postScope = allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`;
+  const scoped = allowed !== null;
+  const allowedCsv = allowed === null ? "" : Array.from(allowed).join(",");
   const [rows, recovering, replies, syncs, canRetry] = await Promise.all([
     db.select({ id: posts.id, content: posts.content, lastError: posts.lastError, failedAt: posts.failedAt, attempts: sql<number>`count(${publicationAttempts.id})::int`, lastAttempt: sql<Date | null>`max(${publicationAttempts.startedAt})` })
-      .from(posts).leftJoin(publicationAttempts, eq(publicationAttempts.postId, posts.id)).where(and(eq(posts.status, "failed"), isNull(posts.deletedAt))).groupBy(posts.id).orderBy(desc(posts.failedAt)).limit(100),
+      .from(posts).leftJoin(publicationAttempts, eq(publicationAttempts.postId, posts.id)).where(and(eq(posts.status, "failed"), isNull(posts.deletedAt), postScope)).groupBy(posts.id).orderBy(desc(posts.failedAt)).limit(100),
     db.select({
       id: posts.id,
       content: posts.content,
@@ -29,10 +35,11 @@ export default async function Failed() {
       eq(posts.status, "scheduled"),
       isNull(posts.deletedAt),
       isNotNull(posts.lastError),
+      postScope,
       sql`exists (select 1 from publication_attempts pa where pa.post_id = ${posts.id} and pa.status = 'failed')`
     )).orderBy(asc(posts.scheduledAt)).limit(50),
-    db.execute(sql`select id, comment_id, content, coalesce(error_code, error_message) as error, updated_at from comment_replies where status = 'failed' order by updated_at desc limit 50`).then((r) => r.rows as Reply[]).catch(() => db.execute(sql`select id, comment_id, content, null as error, updated_at from comment_replies where status = 'failed' order by updated_at desc limit 50`).then((r) => r.rows as Reply[]).catch(() => [] as Reply[])),
-    db.execute(sql`select status, error_code, started_at from comments_sync_runs where status not in ('success','completed') order by started_at desc limit 20`).then((r) => r.rows as Sync[]).catch(() => [] as Sync[]),
+    db.execute(sql`select r.id, r.comment_id, r.content, coalesce(r.error_code, r.error_message) as error, r.updated_at from comment_replies r join facebook_comments c on c.id=r.comment_id where r.status = 'failed' and (${scoped}=false or c.page_id::text = any(string_to_array(${allowedCsv}, ','))) order by r.updated_at desc limit 50`).then((r) => r.rows as Reply[]).catch(() => [] as Reply[]),
+    allowed === null ? db.execute(sql`select status, error_code, started_at from comments_sync_runs where status not in ('success','completed') order by started_at desc limit 20`).then((r) => r.rows as Sync[]).catch(() => [] as Sync[]) : Promise.resolve([] as Sync[]),
     pageCan("content.publish"),
   ]);
   const classified = rows.map((r) => ({ ...r, kind: classifyError(r.lastError) }));
