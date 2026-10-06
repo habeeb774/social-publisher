@@ -4,12 +4,14 @@ import { getDb } from "@/db";
 import { facebookPages, notifications } from "@/db/schema";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
+import { setSetting } from "@/services/settings-store";
 import { encryptToken } from "@/services/page-tokens";
 import {
   exchangeMetaCode,
   managedMetaPages,
   metaGrantedPermissions,
   metaOAuthConfigured,
+  metaUserProfile,
   metaRedirectUri,
   verifyMetaState,
 } from "@/services/meta-oauth";
@@ -38,14 +40,23 @@ export async function GET(request: NextRequest) {
   try {
     const redirectUri = metaRedirectUri(request.nextUrl.origin);
     const userToken = await exchangeMetaCode(code, redirectUri);
-    const [pages, permissions] = await Promise.all([
+    const [pages, permissions, profile] = await Promise.all([
       managedMetaPages(userToken),
       metaGrantedPermissions(userToken).catch(() => [] as string[]),
+      metaUserProfile(userToken).catch(() => null),
     ]);
 
     if (!pages.length) return back(request, { meta: "no-pages" });
 
     const db = getDb();
+    if (profile) {
+      await setSetting("meta_connected_profile", {
+        id: profile.id,
+        name: profile.name,
+        pictureUrl: profile.pictureUrl ?? null,
+        connectedAt: new Date().toISOString(),
+      });
+    }
     let connectedPages = 0;
     let connectedInstagram = 0;
 
@@ -112,10 +123,11 @@ export async function GET(request: NextRequest) {
     await logAudit("meta.oauth_connected", "integration", null, {
       pages: connectedPages,
       instagram: connectedInstagram,
-      permissions: permissions.filter((p) => p.startsWith("pages_") || p.startsWith("instagram_")),
+      profile: profile ? { id: profile.id, name: profile.name } : null,
+      permissions: permissions.filter((p) => p === "public_profile" || p.startsWith("pages_") || p.startsWith("instagram_")),
     });
 
-    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram });
+    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0 });
   } catch (error) {
     console.error("Meta OAuth callback failed", { error: error instanceof Error ? error.message : String(error) });
     return back(request, { meta: "failed" });
