@@ -40,12 +40,39 @@ export async function syncMessenger() {
         const latest = messages[0];
         const lastCustomer = messages.find((m) => m.from?.id !== page.facebook_page_id);
         const latestFromCustomer = Boolean(latest && latest.from?.id !== page.facebook_page_id);
-        const [row] = (await db.execute(sql`insert into messenger_conversations(page_id, facebook_conversation_id, participant_id, participant_name, last_message, last_message_at, last_customer_message_at, unread)
-          values (${page.id}::uuid, ${conv.id}, ${customer?.id ?? null}, ${customer?.name ?? null}, ${latest?.message ?? ""}, ${latest?.created_time ?? conv.updated_time}, ${lastCustomer?.created_time ?? null}, ${latestFromCustomer})
-          on conflict (facebook_conversation_id) do update set participant_name = excluded.participant_name, last_message = excluded.last_message,
-            unread = case when excluded.last_message_at > coalesce(messenger_conversations.last_message_at, to_timestamp(0)) then ${latestFromCustomer} else messenger_conversations.unread end,
-            last_message_at = excluded.last_message_at, last_customer_message_at = coalesce(excluded.last_customer_message_at, messenger_conversations.last_customer_message_at), updated_at = now()
-          returning id`)).rows as Array<{ id: string }>;
+        let row: { id: string } | undefined;
+        const [exact] = (await db.execute(sql`select id from messenger_conversations where facebook_conversation_id=${conv.id} limit 1`)).rows as Array<{ id: string }>;
+        if (exact) {
+          row = exact;
+          await db.execute(sql`update messenger_conversations set
+            participant_id=coalesce(${customer?.id ?? null}, participant_id),
+            participant_name=coalesce(${customer?.name ?? null}, participant_name),
+            last_message=${latest?.message ?? ""},
+            unread=case when ${latest?.created_time ?? conv.updated_time}::timestamptz > coalesce(last_message_at, to_timestamp(0)) then ${latestFromCustomer} else unread end,
+            last_message_at=${latest?.created_time ?? conv.updated_time},
+            last_customer_message_at=coalesce(${lastCustomer?.created_time ?? null}::timestamptz, last_customer_message_at),
+            updated_at=now()
+            where id=${exact.id}::uuid`);
+        } else {
+          const [byParticipant] = customer?.id ? (await db.execute(sql`select id from messenger_conversations where page_id=${page.id}::uuid and participant_id=${customer.id} order by updated_at desc limit 1`)).rows as Array<{ id: string }> : [];
+          if (byParticipant) {
+            row = byParticipant;
+            await db.execute(sql`update messenger_conversations set
+              facebook_conversation_id=${conv.id},
+              participant_name=coalesce(${customer?.name ?? null}, participant_name),
+              last_message=${latest?.message ?? ""},
+              unread=case when ${latest?.created_time ?? conv.updated_time}::timestamptz > coalesce(last_message_at, to_timestamp(0)) then ${latestFromCustomer} else unread end,
+              last_message_at=${latest?.created_time ?? conv.updated_time},
+              last_customer_message_at=coalesce(${lastCustomer?.created_time ?? null}::timestamptz, last_customer_message_at),
+              updated_at=now()
+              where id=${byParticipant.id}::uuid`);
+          } else {
+            [row] = (await db.execute(sql`insert into messenger_conversations(page_id, facebook_conversation_id, participant_id, participant_name, last_message, last_message_at, last_customer_message_at, unread)
+              values (${page.id}::uuid, ${conv.id}, ${customer?.id ?? null}, ${customer?.name ?? null}, ${latest?.message ?? ""}, ${latest?.created_time ?? conv.updated_time}, ${lastCustomer?.created_time ?? null}, ${latestFromCustomer})
+              returning id`)).rows as Array<{ id: string }>;
+          }
+        }
+        if (!row) continue;
         for (const m of messages) {
           const fromPage = m.from?.id === page.facebook_page_id;
           const res = await db.execute(sql`insert into messenger_messages(conversation_id, facebook_message_id, from_id, from_name, message, is_from_page, created_time)
@@ -99,4 +126,61 @@ export async function replyMessage(id: string, text: string) {
   await db.execute(sql`update messenger_conversations set last_message = ${text}, last_message_at = now(), unread = false, updated_at = now() where id = ${id}::uuid`);
   await logAudit("messenger.reply_sent", "messenger_conversation", id, { messageId });
   return { ok: true, messageId };
+}
+
+
+export type MessengerWebhookMessage = {
+  senderId: string;
+  recipientId: string;
+  timestamp: number;
+  mid: string;
+  text?: string;
+  isEcho?: boolean;
+};
+
+/** Ingests a real-time Messenger webhook event into the same inbox used by polling sync. */
+export async function ingestMessengerWebhook(pageRemoteId: string, event: MessengerWebhookMessage) {
+  const db = getDb();
+  const [page] = (await db.execute(sql`select id,name,facebook_page_id from facebook_pages where platform='facebook' and is_active and facebook_page_id=${pageRemoteId} limit 1`)).rows as Array<{ id: string; name: string; facebook_page_id: string }>;
+  if (!page) return { status: "ignored" as const, reason: "PAGE_NOT_CONNECTED" };
+
+  const fromPage = Boolean(event.isEcho || event.senderId === pageRemoteId);
+  const participantId = fromPage ? event.recipientId : event.senderId;
+  if (!participantId || participantId === pageRemoteId) return { status: "ignored" as const, reason: "PARTICIPANT_MISSING" };
+
+  let [conversation] = (await db.execute(sql`select id,facebook_conversation_id from messenger_conversations where page_id=${page.id}::uuid and participant_id=${participantId} order by updated_at desc limit 1`)).rows as Array<{ id: string; facebook_conversation_id: string }>;
+  if (!conversation) {
+    [conversation] = (await db.execute(sql`insert into messenger_conversations(
+      page_id,facebook_conversation_id,participant_id,last_message,last_message_at,last_customer_message_at,unread
+    ) values (
+      ${page.id}::uuid,${`webhook:${pageRemoteId}:${participantId}`},${participantId},${event.text ?? ""},to_timestamp(${event.timestamp}/1000.0),
+      ${fromPage ? null : new Date(event.timestamp).toISOString()}::timestamptz,${!fromPage}
+    ) returning id,facebook_conversation_id`)).rows as Array<{ id: string; facebook_conversation_id: string }>;
+  } else {
+    await db.execute(sql`update messenger_conversations set
+      last_message=${event.text ?? ""},
+      last_message_at=to_timestamp(${event.timestamp}/1000.0),
+      last_customer_message_at=case when ${fromPage} then last_customer_message_at else to_timestamp(${event.timestamp}/1000.0) end,
+      unread=case when ${fromPage} then unread else true end,
+      updated_at=now()
+      where id=${conversation.id}::uuid`);
+  }
+
+  const inserted = await db.execute(sql`insert into messenger_messages(
+    conversation_id,facebook_message_id,from_id,message,is_from_page,created_time
+  ) values (
+    ${conversation.id}::uuid,${event.mid},${event.senderId},${event.text ?? ""},${fromPage},to_timestamp(${event.timestamp}/1000.0)
+  ) on conflict (facebook_message_id) do nothing returning id`);
+
+  if (inserted.rows.length && !fromPage) {
+    await db.execute(sql`insert into notifications(type,title,message) values(
+      'message_new','رسالة ماسنجر جديدة',${(event.text ?? "(مرفق)").slice(0,300)}
+    )`);
+  }
+  await setSetting("messenger_status", {
+    checkedAt: new Date().toISOString(),
+    pages: { [page.name]: null },
+    source: "webhook",
+  });
+  return { status: "processed" as const, inserted: inserted.rows.length > 0, conversationId: conversation.id };
 }
