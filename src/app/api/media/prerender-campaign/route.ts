@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
+import { GET as renderCampaignImage } from "../../campaign-image/[index]/route";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
   for (const row of rows) {
     const index = row.url.split("/api/campaign-image/")[1]?.split(/[?#]/)[0];
     try {
-      const res = await fetch(`${request.nextUrl.origin}/api/campaign-image/${index}`, { signal: AbortSignal.timeout(60000) });
+      const res = await renderCampaignImage(request, { params: Promise.resolve({ index: String(index) }) });
       if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) throw new Error(`HTTP ${res.status}`);
       const blob = await put(`campaigns/ai-automation-90d/static-${index}.png`, Buffer.from(await res.arrayBuffer()), { access: "public", contentType: "image/png", addRandomSuffix: true });
       await db.execute(sql`update post_media set url = ${blob.url} where url = ${row.url}`);
