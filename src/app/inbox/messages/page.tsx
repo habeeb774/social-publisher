@@ -1,0 +1,15 @@
+import { pageCan } from "@/services/session-server";
+import { AppShell } from "../../ui/app-shell";
+import { PageHeader } from "../../ui/kit";
+import { MessagesClient } from "./messages-client";
+
+export const dynamic = "force-dynamic";
+export const metadata = { title: "رسائل ماسنجر" };
+
+export default async function Messages() {
+  const canReply = await pageCan("inbox.reply");
+  return <AppShell title="رسائل ماسنجر">
+    <PageHeader title="رسائل ماسنجر" description="رسائل صفحاتك الخاصة في مكان واحد. الرد متاح خلال 24 ساعة من آخر رسالة للعميل." />
+    <MessagesClient canReply={canReply} />
+  </AppShell>;
+}

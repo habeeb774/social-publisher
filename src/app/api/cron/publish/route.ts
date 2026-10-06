@@ -10,6 +10,7 @@ import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
 import { syncComments } from "@/services/comments/store";
 import { maybeSendWeeklyReport } from "@/services/weekly-report";
+import { syncMessenger } from "@/services/messenger";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -59,6 +60,7 @@ async function run(request: Request) {
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
     await syncComments(day(2), day(0)).catch((error) => console.error("Comments sync failed", { error: error instanceof Error ? error.message : String(error) }));
   }
+  if (isGraphConfigured()) await syncMessenger().catch((error) => console.error("Messenger sync failed", { error: error instanceof Error ? error.message : String(error) }));
   try {
     const results = await publishDuePosts();
     const finishedAt = new Date();

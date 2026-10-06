@@ -23,7 +23,7 @@ export const NAV: NavGroup[] = [
     { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },
   ] },
   { key: "engage", title: "صندوق الوارد", links: [
-    { icon: "inbox", label: "صندوق الوارد", href: "/inbox", badge: "inbox" }, { icon: "reply", label: "الردود الجاهزة", href: "/templates/replies" },
+    { icon: "inbox", label: "صندوق الوارد", href: "/inbox", badge: "inbox" }, { icon: "inbox", label: "الرسائل", href: "/inbox/messages" }, { icon: "reply", label: "الردود الجاهزة", href: "/templates/replies" },
     { icon: "automation", label: "الأتمتة", href: "/automations/comments" },
   ] },
   { key: "insights", title: "التحليلات", links: [
