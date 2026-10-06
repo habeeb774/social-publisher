@@ -14,12 +14,13 @@ import { AiAssist } from "./ai-assist";
 
 export type EditorPost = { id: string; pageId: string; content: string; scheduledAt: string | null; updatedAt: string; status: string; category?: string | null; tags?: string[]; campaignId?: string | null; imageUrl?: string | null };
 type Option = { id: string; name: string };
+type PageOption = Option & { accountId: string | null; accountName: string | null; platform: string };
 type Check = { key: string; label: string; ok: boolean; critical: boolean; detail?: string };
 type Intent = "draft" | "queue" | "scheduled" | "now";
 const AUTOSAVE_MS = 6000;
 
 export default function PostEditor({ initial, pages, publishingEnabled, campaigns = [], media = [], hashtags = [], templates = [], approvalRequired = false, aiEnabled = false, uploadEnabled = false, prefill }: {
-  initial?: EditorPost; pages: Option[]; publishingEnabled: boolean; campaigns?: Option[]; media?: Array<{ id: string; name: string; url: string }>; hashtags?: Array<{ tag: string; uses: number }>;
+  initial?: EditorPost; pages: PageOption[]; publishingEnabled: boolean; campaigns?: Option[]; media?: Array<{ id: string; name: string; url: string }>; hashtags?: Array<{ tag: string; uses: number }>;
   templates?: Array<{ id: string; name: string; content: string }>; approvalRequired?: boolean; aiEnabled?: boolean; uploadEnabled?: boolean; prefill?: { content?: string; imageUrl?: string; category?: string; tags?: string[] };
 }) {
   const router = useRouter();
@@ -28,7 +29,10 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const initialLocal = isoToRiyadhInput(initial?.scheduledAt || null);
   const [date, setDate] = useState(initialLocal.slice(0, 10));
   const [time, setTime] = useState(initialLocal.slice(11, 16) || "20:00");
-  const [pageId, setPageId] = useState(initial?.pageId || pages[0]?.id || "");
+  const initialPageId = initial?.pageId || pages[0]?.id || "";
+  const initialAccountId = pages.find((p) => p.id === initialPageId)?.accountId ?? pages.find((p) => p.accountId)?.accountId ?? "";
+  const [accountId, setAccountId] = useState(initialAccountId);
+  const [pageId, setPageId] = useState(initialPageId);
   const [category, setCategory] = useState(initial?.category ?? prefill?.category ?? "");
   const [tags, setTags] = useState((initial?.tags ?? prefill?.tags ?? []).join(" "));
   const [campaignId, setCampaignId] = useState(initial?.campaignId ?? "");
@@ -47,6 +51,11 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const editable = !post || ["draft", "scheduled", "pending_approval", "approved"].includes(post.status);
   const isDraft = !post || post.status === "draft";
   const page = pages.find((p) => p.id === pageId);
+  const accountOptions = Array.from(new Map(
+    pages.filter((p) => p.accountId && p.accountName).map((p) => [p.accountId!, { id: p.accountId!, name: p.accountName! }])
+  ).values());
+  const showAccountSelect = accountOptions.length > 1;
+  const visiblePages = showAccountSelect && accountId ? pages.filter((p) => p.accountId === accountId) : pages;
 
   // Auto-grow the editor with its content.
   useLayoutEffect(() => { const el = textarea.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.max(220, el.scrollHeight + 2)}px`; }, [body]);
@@ -127,9 +136,31 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
     <div className="composer">
       <div className="composer-main">
         <fieldset disabled={disabled} className="stack" style={{ gap: 12 }}>
-          <section className="card composer-section"><header><h2>الصفحة</h2></header>
-            <select aria-label="الصفحة" value={pageId} onChange={(e) => setPageId(e.target.value)} disabled={Boolean(post)}>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            {!pages.length && <small className="danger">لا توجد صفحة متصلة. <Link href="/pages">اربط صفحة</Link></small>}
+          <section className="card composer-section"><header><h2>الحساب والصفحة</h2></header>
+            {showAccountSelect && <div className="field-row">
+              <label>حساب Meta
+                <select aria-label="حساب Meta" value={accountId} disabled={Boolean(post)} onChange={(e) => {
+                  const next = e.target.value;
+                  setAccountId(next);
+                  const first = pages.find((p) => p.accountId === next);
+                  if (first) setPageId(first.id);
+                }}>
+                  {accountOptions.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </select>
+              </label>
+              <label>الصفحة / القناة
+                <select aria-label="الصفحة" value={pageId} onChange={(e) => {
+                  setPageId(e.target.value);
+                  const selected = pages.find((p) => p.id === e.target.value);
+                  if (selected?.accountId) setAccountId(selected.accountId);
+                }} disabled={Boolean(post)}>
+                  {visiblePages.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.platform === "instagram" ? "Instagram" : "Facebook"}</option>)}
+                </select>
+              </label>
+            </div>}
+            {!showAccountSelect && <select aria-label="الصفحة" value={pageId} onChange={(e) => setPageId(e.target.value)} disabled={Boolean(post)}>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}{p.accountName ? ` · ${p.accountName}` : ""}</option>)}</select>}
+            {page?.accountName && <small>حساب Meta: <b>{page.accountName}</b> · {page.platform === "instagram" ? "Instagram" : "Facebook"}</small>}
+            {!pages.length && <small className="danger">لا توجد صفحة متصلة. <Link href="/pages">أضف حساب Meta أو اربط صفحة</Link></small>}
           </section>
 
           <section className="card composer-section"><header><h2>المحتوى</h2>{templates.length > 0 && <select aria-label="إدراج قالب" value="" onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) setBody(body.trim() ? `${body}\n\n${t.content}` : t.content); }} style={{ width: "auto" }}><option value="">إدراج قالب…</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>}</header>
