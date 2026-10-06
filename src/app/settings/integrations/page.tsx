@@ -4,6 +4,7 @@ import { schedulerRuns } from "@/db/schema";
 import { commentsProvider } from "@/services/comments/provider";
 import { flags } from "@/services/comments/rules";
 import { isGraphConfigured } from "@/services/facebook-graph";
+import { metaOAuthConfigured } from "@/services/meta-oauth";
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { storageProvider } from "@/services/storage";
 import { testWindsorMcp } from "@/services/windsor-mcp";
@@ -11,6 +12,7 @@ import { riyadh } from "../../ui/api";
 import { Icon } from "../../ui/icons";
 import { SettingsShell } from "../settings-shell";
 import { TestConnectionButton } from "./test-connection";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "التكاملات" };
@@ -28,6 +30,7 @@ export default async function Integrations() {
     getDb().select({ at: schedulerRuns.triggeredAt, status: schedulerRuns.status, error: schedulerRuns.errorMessage }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(10),
   ]);
   const graph = isGraphConfigured();
+  const oauth = metaOAuthConfigured();
   const live = isPublishingEnabled();
   const last = runs[0];
   const gaps = runs.slice(0, -1).map((r, i) => (r.at.getTime() - runs[i + 1].at.getTime()) / 1000).filter((g) => g > 0);
@@ -37,7 +40,11 @@ export default async function Integrations() {
   const f = flags();
 
   return <SettingsShell active="/settings/integrations" title="التكاملات" description={`الحالة الفعلية لكل تكامل · آخر فحص ${riyadh(checkedAt, "time")}`} actions={<TestConnectionButton />}>
+    <div className="banner success">وضع صفر تكلفة مفعّل: لا توجد ترقية أو خدمة مدفوعة تلقائيًا. أي ميزة مستقبلية يجب أن تستخدم Free Tier أو تُوقف بدون رسوم.</div>
     <section className="card card-flush">
+      <div className="integration"><span className="logo"><Icon name="facebook" /></span><div><h3>Meta OAuth · Facebook + Instagram</h3><small>{oauth ? "جاهز للربط التلقائي عبر تطبيق Meta." : "الميزة مدمجة وجاهزة، وينقصها فقط META_APP_ID و META_APP_SECRET من تطبيق Meta المجاني."}</small>
+        <div className="caps"><Cap on={oauth} label="OAuth" /><Cap on={oauth} label="استيراد الصفحات" /><Cap on={oauth} label="ربط Instagram" /><Cap on={true} label="بدون اشتراك مدفوع" /></div></div>
+        <div className="stack" style={{ gap: 6, justifyItems: "end" }}><Status state={oauth ? "ok" : "warn"} text={oauth ? "جاهز" : "ينقص إعداد Meta"} /><Link className="btn btn-ghost btn-sm" href="/pages">مركز الاتصال</Link></div></div>
       <div className="integration"><span className="logo"><Icon name="facebook" /></span><div><h3>Facebook · النشر</h3><small>المزود النشط: {graph ? "Meta Graph API (توكن الصفحة)" : mcp?.actions.includes("create_post") ? "Windsor MCP" : "غير متاح"}{graph && " · Windsor متاح كمزود احتياطي للقراءة"}</small>
         <div className="caps"><Cap on={graph || Boolean(mcp?.actions.includes("create_post"))} label="نشر نص" /><Cap on={graph || Boolean(mcp?.actions.includes("create_photo_post"))} label="نشر صورة" /><Cap on={graph} label="أداء المنشورات" /><Cap on={!live ? true : null} label={live ? "النشر الحقيقي مفعّل" : "وضع الاختبار"} /></div></div>
         <Status state={graph || mcp?.actions.includes("create_post") ? "ok" : "bad"} text={graph || mcp?.actions.includes("create_post") ? "متصل" : "يحتاج ربط"} /></div>
