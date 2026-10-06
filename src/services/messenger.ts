@@ -25,9 +25,10 @@ async function graph(path: string, token: string, init?: RequestInit) {
 }
 
 /** Pulls recent conversations for every active Facebook page. Errors are recorded per page and never thrown. */
-export async function syncMessenger() {
+export async function syncMessenger(allowedLocalPageIds: string[] | null = null) {
   const db = getDb();
-  const pages = (await db.execute(sql`select id, name, facebook_page_id from facebook_pages where is_active and platform='facebook'`)).rows as Array<{ id: string; name: string; facebook_page_id: string }>;
+  const allPages = (await db.execute(sql`select id, name, facebook_page_id from facebook_pages where is_active and platform='facebook'`)).rows as Array<{ id: string; name: string; facebook_page_id: string }>;
+  const pages = allowedLocalPageIds === null ? allPages : allPages.filter((page) => allowedLocalPageIds.includes(page.id));
   const status: Record<string, string | null> = {};
   let imported = 0;
   for (const page of pages) {
@@ -125,7 +126,7 @@ export async function messengerCatalog() {
 
 export async function conversationDetail(id: string) {
   const db = getDb();
-  const [conv] = (await db.execute(sql`select c.id, c.participant_name, c.last_customer_message_at, p.name as page_name from messenger_conversations c join facebook_pages p on p.id = c.page_id where c.id = ${id}::uuid`)).rows as Row[];
+  const [conv] = (await db.execute(sql`select c.id, c.page_id, c.participant_name, c.last_customer_message_at, p.name as page_name from messenger_conversations c join facebook_pages p on p.id = c.page_id where c.id = ${id}::uuid`)).rows as Row[];
   if (!conv) throw new Error("CONVERSATION_NOT_FOUND");
   const messages = (await db.execute(sql`select id, from_name, message, is_from_page, created_time, sent_by from messenger_messages where conversation_id = ${id}::uuid order by created_time`)).rows;
   await db.execute(sql`update messenger_conversations set unread = false where id = ${id}::uuid`);
