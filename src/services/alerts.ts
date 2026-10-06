@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, ilike, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
 
@@ -87,4 +87,24 @@ ${new Date().toISOString()}`);
     const body = await response.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
     return response.ok ? { ok: true, to, from, id: body.id ?? null } : { ok: false, to, from, error: `Resend ${response.status}: ${body.message ?? body.name ?? "rejected"}` };
   } catch (error) { return { ok: false, to, error: error instanceof Error ? error.message : "network error" }; }
+}
+
+
+/**
+ * Clears active in-app alerts after the underlying issue is verified healthy.
+ * Historical notifications remain visible; only the unread/action-needed state is cleared.
+ */
+export async function resolveAlerts(types: AlertType[], titleContains?: string) {
+  if (!types.length) return 0;
+  try {
+    const db = getDb();
+    const where = titleContains
+      ? and(eq(notifications.isRead, false), inArray(notifications.type, types), ilike(notifications.title, `%${titleContains}%`))
+      : and(eq(notifications.isRead, false), inArray(notifications.type, types));
+    const rows = await db.update(notifications).set({ isRead: true }).where(where).returning({ id: notifications.id });
+    return rows.length;
+  } catch (error) {
+    console.error("Alert resolution failed", { types, error: error instanceof Error ? error.message : String(error) });
+    return 0;
+  }
 }
