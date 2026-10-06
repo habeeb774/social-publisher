@@ -3,6 +3,7 @@ import { classify, evaluateRules, flags, type CommentRule } from "./rules";
 import { commentsProvider, type RemoteComment } from "./provider";
 import { commentsActor as currentActor } from "./actor";
 import { filterParams,decodeCommentCursor,encodeCommentCursor,inboxFilterSchema,type InboxFilter } from "./filters";
+import { listMetaAccounts } from "../meta-accounts";
 const database=()=>{if(!process.env.DATABASE_URL)throw new Error("DATABASE_UNAVAILABLE");return neon(process.env.DATABASE_URL);};
 type Row=Record<string,unknown>;
 export async function commentsAudit(action:string,id:string|null,metadata:Row={}){
@@ -10,10 +11,15 @@ export async function commentsAudit(action:string,id:string|null,metadata:Row={}
 }
 export async function inbox(query:URLSearchParams){
   const db=database();const f=filterParams(query),cursor=decodeCommentCursor(query.get("cursor"));
+  const requestedAccount=(query.get("account")??"").trim();
+  const accounts=await listMetaAccounts();
+  const selectedAccount=accounts.find(account=>account.id===requestedAccount);
+  const accountRemoteCsv=selectedAccount?.pageIds.join(",")??"";
   const items=await db`SELECT c.*,p.name AS page_name,to_char(c.created_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE
   NOT c.is_from_page AND
   (${f.q}='' OR c.message ILIKE ${`%${f.q}%`} OR c.author_name ILIKE ${`%${f.q}%`} OR c.post_id=${f.q} OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name ILIKE ${`%${f.q}%`}))
   AND (${f.status}='all' OR c.status=${f.status} OR (${f.status}='needs_reply' AND c.needs_reply)) AND (${f.page}='' OR c.page_id::text=${f.page})
+  AND (${requestedAccount}='' OR p.facebook_page_id = ANY(string_to_array(${accountRemoteCsv}, ',')))
   AND (${f.post}='' OR c.post_id=${f.post}) AND (${f.from}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date>=NULLIF(${f.from},'')::date) AND (${f.to}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date<=NULLIF(${f.to},'')::date)
   AND (${f.assigned}='' OR c.assigned_to::text=${f.assigned} OR (${f.assigned}='unassigned' AND c.assigned_to IS NULL)) AND (${f.sentiment}='' OR c.sentiment=${f.sentiment})
   AND (${f.tag}='' OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name=${f.tag}))
@@ -36,7 +42,22 @@ export async function commentDetail(id:string){
   const [authorTotal]=comment.author_id?await db`SELECT count(*)::int AS count FROM facebook_comments WHERE author_id=${comment.author_id} AND page_id=${comment.page_id}::uuid`:[{count:0}];
   return {comment,thread,replies,notes,tags,users,post:related[0]??null,history,authorTotal:comment.author_id?authorTotal.count:null};
 }
-export async function inboxCatalog(owner:string){const db=database();const [pages,users,tags,views,campaigns]=await Promise.all([db`SELECT id,name FROM facebook_pages WHERE is_active AND platform='facebook' ORDER BY name`,db`SELECT id,name,email FROM users ORDER BY name LIMIT 100`,db`SELECT id,name FROM comment_tags ORDER BY name LIMIT 200`,db`SELECT id,name,query FROM saved_filters WHERE scope=${`comments:${owner}`} ORDER BY created_at DESC LIMIT 50`,db`SELECT id,name FROM campaigns ORDER BY name LIMIT 200`]);return {pages,users,tags,campaigns,views:views.map(v=>({...v,filter:inboxFilterSchema.parse(JSON.parse(String(v.query)))}))};}
+export async function inboxCatalog(owner:string){
+  const db=database();
+  const [pages,users,tags,views,campaigns,accounts]=await Promise.all([
+    db`SELECT id,name,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook' ORDER BY name`,
+    db`SELECT id,name,email FROM users ORDER BY name LIMIT 100`,
+    db`SELECT id,name FROM comment_tags ORDER BY name LIMIT 200`,
+    db`SELECT id,name,query FROM saved_filters WHERE scope=${`comments:${owner}`} ORDER BY created_at DESC LIMIT 50`,
+    db`SELECT id,name FROM campaigns ORDER BY name LIMIT 200`,
+    listMetaAccounts(),
+  ]);
+  const mappedPages=pages.map(page=>{
+    const account=accounts.find(item=>item.pageIds.includes(String(page.facebook_page_id)));
+    return {...page,account_id:account?.id??null,account_name:account?.name??null};
+  });
+  return {pages:mappedPages,accounts:accounts.map(account=>({id:account.id,name:account.name,status:account.status})),users,tags,campaigns,views:views.map(v=>({...v,filter:inboxFilterSchema.parse(JSON.parse(String(v.query)))}))};
+}
 export async function saveInboxView(owner:string,name:string,filter:InboxFilter){const [view]=await database()`INSERT INTO saved_filters(name,scope,query) VALUES(${name},${`comments:${owner}`},${JSON.stringify(filter)}) RETURNING id`;return view;}
 export async function deleteInboxView(owner:string,id:string){await database()`DELETE FROM saved_filters WHERE id=${id}::uuid AND scope=${`comments:${owner}`}`;return {ok:true};}
 export async function commentsAdvancedAnalytics(){
