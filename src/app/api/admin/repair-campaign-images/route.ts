@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const db = neon(process.env.DATABASE_URL);
   const origin = "https://social-publisher-gamma.vercel.app";
 
-  const updatedPosts = await db\`
+  const updatedPosts = await db`
     WITH numbered AS (
       SELECT DISTINCT p.id,
         ((regexp_match(tag, '^plan-index-([0-9]+)$'))[1])::int AS idx
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         AND tag ~ '^plan-index-[0-9]+$'
     )
     UPDATE post_media pm
-    SET url = \${origin} || '/api/campaign-image/' || numbered.idx::text || '?v=3',
+    SET url = ${origin} || '/api/campaign-image/' || numbered.idx::text || '?v=3',
         storage_key = NULL,
         mime_type = 'image/png',
         size = NULL
@@ -33,11 +33,11 @@ export async function GET(request: NextRequest) {
     WHERE pm.post_id = numbered.id
       AND pm.type = 'image'
     RETURNING pm.post_id, pm.url
-  \`;
+  `;
 
-  const updatedAssets = await db\`
+  const updatedAssets = await db`
     UPDATE media_assets
-    SET url = \${origin} || '/api/campaign-image/' ||
+    SET url = ${origin} || '/api/campaign-image/' ||
       ((regexp_match(name, '^AI Automation ([0-9]+)[.]png$'))[1])::int::text || '?v=3',
       storage_key = NULL,
       mime_type = 'image/png',
@@ -45,9 +45,9 @@ export async function GET(request: NextRequest) {
     WHERE source = 'campaign-generator'
       AND name ~ '^AI Automation [0-9]+[.]png$'
     RETURNING id, name, url
-  \`;
+  `;
 
-  const [verification] = await db\`
+  const [verification] = await db`
     SELECT
       count(*)::int AS posts,
       count(*) FILTER (WHERE pm.url LIKE '%/api/campaign-image/%?v=3')::int AS v3_images
@@ -55,16 +55,16 @@ export async function GET(request: NextRequest) {
     JOIN campaigns c ON c.id = p.campaign_id
     LEFT JOIN post_media pm ON pm.post_id = p.id AND pm.type = 'image'
     WHERE c.name = 'AI Automation — 90 يوم'
-  \`;
+  `;
 
-  await db\`
+  await db`
     INSERT INTO activity_logs(action, entity_type, metadata)
     VALUES(
       'campaign.images_repaired',
       'campaign',
-      \${JSON.stringify({ version: 3, postMedia: updatedPosts.length, mediaAssets: updatedAssets.length })}::jsonb
+      ${JSON.stringify({ version: 3, postMedia: updatedPosts.length, mediaAssets: updatedAssets.length })}::jsonb
     )
-  \`;
+  `;
 
   return NextResponse.json({
     ok: true,
