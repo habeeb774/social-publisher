@@ -8,6 +8,7 @@ export const ALERT_TYPES = {
   scheduled: "تمت جدولة منشور",
   published: "تم نشر منشور",
   publish_failed: "فشل النشر",
+  publish_retry_scheduled: "إعادة محاولة تلقائية",
   approved: "تمت الموافقة",
   rejected: "تم رفض منشور",
   token_invalid: "Facebook يحتاج إعادة ربط",
