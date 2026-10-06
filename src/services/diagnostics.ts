@@ -56,11 +56,15 @@ export async function runDiagnostics(deep: boolean): Promise<{ checks: Check[]; 
           }
           const visible = await timed(() => checkGraphAccess(page.facebookPageId));
           const soon = token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400000;
+          const missingPublishScope = token.scopes.length > 0 && !token.scopes.includes("pages_manage_posts");
+          const missingReadScope = token.scopes.length > 0 && !token.scopes.includes("pages_read_engagement");
           checks.push({
             key: `facebook_${page.id}`,
             label: `Facebook · ${page.name}`,
-            state: soon ? "warning" : "healthy",
-            detail: `متصل عبر ${saved ? "OAuth" : "التوكن العام"} · ${visible.name} · ${token.expiresAt ? `ينتهي ${token.expiresAt.toISOString().slice(0, 10)}` : "لا يظهر تاريخ انتهاء"}`,
+            state: missingPublishScope ? "error" : soon || missingReadScope ? "warning" : "healthy",
+            detail: missingPublishScope
+              ? "التوكن صالح لكن صلاحية pages_manage_posts غير موجودة — أعد ربط Meta."
+              : `متصل عبر ${saved ? "OAuth" : "التوكن العام"} · ${visible.name} · ${token.expiresAt ? `ينتهي ${token.expiresAt.toISOString().slice(0, 10)}` : "لا يظهر تاريخ انتهاء"}${missingReadScope ? " · تنبيه: pages_read_engagement غير موجودة" : ""}`,
           });
         } catch (error) {
           checks.push({ key: `facebook_${page.id}`, label: `Facebook · ${page.name}`, state: "error", detail: error instanceof Error ? error.message : "تعذر التحقق" });
