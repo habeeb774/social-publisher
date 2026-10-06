@@ -67,8 +67,9 @@ export async function POST(request:NextRequest){
   const allowed=mainUser?await allowedPageIds(mainUser):null;
   if(allowed!==null){
     const action=parsed.data.action;
-    const ids:string[]=action==="status"||action==="tag"||action==="assign"?parsed.data.ids:
-      ["hide","unhide","note","draft","approve","send"].includes(action)?[parsed.data.id]:[];
+    let ids:string[]=[];
+    if(action==="status"||action==="tag"||action==="assign")ids=parsed.data.ids;
+    else if(action==="hide"||action==="unhide"||action==="note"||action==="draft"||action==="approve"||action==="send")ids=[parsed.data.id];
     for(const id of ids){
       const detail=await store.commentDetail(id);
       if(!allowed.has(String(detail.comment.page_id)))return NextResponse.json({error:"ليست لديك صلاحية لهذه الصفحة"},{status:403});
