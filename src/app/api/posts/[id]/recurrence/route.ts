@@ -6,6 +6,7 @@ import { postRecurrences, posts } from "@/db/schema";
 import { guard, isUuid } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { materializeRecurrences } from "@/services/recurrence";
+import { denyPostOutsideScope } from "@/services/access-scope";
 
 const body = z.object({ frequency: z.enum(["weekly", "monthly"]), interval: z.number().int().min(1).max(12).default(1), firstRunAt: z.coerce.date(), endsAt: z.coerce.date().nullable().optional(), maxOccurrences: z.number().int().min(1).max(260).nullable().optional() });
 
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const denied = await guard(request); if (denied) return denied;
   const { id } = await params;
   if (!isUuid(id)) return NextResponse.json([], { status: 404 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   return NextResponse.json(await getDb().select().from(postRecurrences).where(eq(postRecurrences.sourcePostId, id)));
 }
 
@@ -22,6 +24,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
   const parsed = body.safeParse(await request.json().catch(() => null));
   if (!isUuid(id) || !parsed.success) return NextResponse.json({ error: parsed.error?.issues[0]?.message ?? "بيانات غير صالحة" }, { status: 400 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   const d = parsed.data;
   if (d.firstRunAt.getTime() <= Date.now() + 60000) return NextResponse.json({ error: "أول موعد يجب أن يكون في المستقبل" }, { status: 422 });
   if (!d.endsAt && !d.maxOccurrences) return NextResponse.json({ error: "حدد تاريخ نهاية أو عدد مرات؛ التكرار بلا نهاية غير مسموح" }, { status: 422 });
@@ -40,6 +43,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { id } = await params;
   const ruleId = request.nextUrl.searchParams.get("rule");
   if (!isUuid(id) || !isUuid(ruleId)) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   await getDb().update(postRecurrences).set({ active: false, updatedAt: new Date() }).where(and(eq(postRecurrences.id, ruleId), eq(postRecurrences.sourcePostId, id)));
   await logAudit("recurrence.stopped", "post", id, { ruleId });
   return NextResponse.json({ ok: true });
