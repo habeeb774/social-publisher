@@ -15,11 +15,13 @@ export const ALERT_TYPES = {
   token_expiring: "توكن Facebook ينتهي قريبًا",
   scheduler_gap: "توقف عامل النشر",
   storage_error: "خطأ في التخزين",
+  comments_sync_failed: "تعذر مزامنة التعليقات",
+  messenger_sync_failed: "تعذر مزامنة Messenger",
 } as const;
 export type AlertType = keyof typeof ALERT_TYPES;
 export type AlertPrefs = Partial<Record<AlertType, { inApp: boolean; email: boolean }>>;
 /** Defaults: everything in-app; email only for problems that need action. */
-export const defaultPref = (type: AlertType) => ({ inApp: true, email: ["publish_failed", "token_invalid", "token_expiring", "scheduler_gap", "storage_error"].includes(type) });
+export const defaultPref = (type: AlertType) => ({ inApp: true, email: ["publish_failed", "token_invalid", "token_expiring", "scheduler_gap", "storage_error", "comments_sync_failed", "messenger_sync_failed"].includes(type) });
 
 /**
  * Records an in-app notification and, when RESEND_API_KEY is set, emails ALERT_EMAIL (or ADMIN_EMAIL).
