@@ -48,12 +48,12 @@ export default async function Failed() {
       { label: "صلاحيات / توكن", value: authCount, hint: "لا يُعاد تلقائيًا" },
       { label: "نتيجة غير مؤكدة", value: uncertainCount, hint: "تحقق من Facebook أولًا" },
     ]} />
-    {recovering.length > 0 && <Card title={`قيد الاستعادة تلقائيًا (${recovering.length})`} className="mb-16">
+    {recovering.length > 0 && <div style={{ marginBottom: 16 }}><Card title={`قيد الاستعادة تلقائيًا (${recovering.length})`}>
       <div className="list">{recovering.map((r) => <Link key={r.id} href={`/posts/${r.id}`} className="list-row">
         <span className="grow"><span className="clamp-2">{r.content}</span><small>{classifyError(r.lastError).label} · المحاولة القادمة تلقائيًا</small></span>
         <span className="stack" style={{ gap: 2, alignItems: "end" }}><strong>{riyadh(r.scheduledAt)}</strong><small>محاولات سابقة: {r.attempts}</small></span>
       </Link>)}</div>
-    </Card>}
+    </Card></div>}
     <section className="card card-flush" style={{ marginBottom: 16 }}><div className="card-header" style={{ padding: "16px 20px 8px" }}><h2>فشل نهائي</h2><small>{rows.length}</small></div>
       <FailedClient canRetry={canRetry} rows={classified.map((r) => ({ ...r, failedAt: r.failedAt?.toISOString() ?? null, lastAttempt: r.lastAttempt ? new Date(r.lastAttempt).toISOString() : null }))} />
     </section>
