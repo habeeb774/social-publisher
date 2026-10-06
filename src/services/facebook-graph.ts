@@ -78,10 +78,21 @@ export async function replyToCommentGraph(pageId: string, commentId: string, mes
 export async function inspectGraphToken(override?: string) {
   const token = override ?? process.env.META_PAGE_ACCESS_TOKEN!.trim();
   const result = await graph(`/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`);
-  const data = (result.body.data ?? {}) as { is_valid?: boolean; expires_at?: number; data_access_expires_at?: number; error?: { message?: string } };
-  if (!result.ok) return { valid: false, expiresAt: null, reason: graphError(result.body) };
+  const data = (result.body.data ?? {}) as {
+    is_valid?: boolean;
+    expires_at?: number;
+    data_access_expires_at?: number;
+    scopes?: string[];
+    granular_scopes?: Array<{ scope?: string }>;
+    error?: { message?: string };
+  };
+  if (!result.ok) return { valid: false, expiresAt: null, reason: graphError(result.body), scopes: [] as string[] };
   const expiry = data.expires_at ? new Date(data.expires_at * 1000) : null;
-  return { valid: Boolean(data.is_valid), expiresAt: expiry, reason: data.error?.message ?? null };
+  const scopes = Array.from(new Set([
+    ...(data.scopes ?? []),
+    ...(data.granular_scopes ?? []).map((item) => item.scope).filter((scope): scope is string => Boolean(scope)),
+  ]));
+  return { valid: Boolean(data.is_valid), expiresAt: expiry, reason: data.error?.message ?? null, scopes };
 }
 
 export type GraphComment = { id: string; postId: string; parentId: string | null; message: string; createdTime: string; hidden: boolean; authorId: string | null; authorName: string | null; permalink: string | null };
