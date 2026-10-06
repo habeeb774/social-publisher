@@ -5,6 +5,7 @@ const graphBase = () => `https://graph.facebook.com/${graphVersion()}`;
 const facebookBase = () => `https://www.facebook.com/${graphVersion()}`;
 
 export const META_OAUTH_SCOPES = [
+  "public_profile",
   "pages_show_list",
   "pages_read_engagement",
   "pages_manage_posts",
@@ -140,4 +141,28 @@ export async function metaGrantedPermissions(userToken: string) {
   url.searchParams.set("access_token", userToken);
   const result = await graphJson<{ data?: Array<{ permission: string; status: string }> }>(url.toString());
   return (result.data ?? []).filter((p) => p.status === "granted").map((p) => p.permission);
+}
+
+
+export type MetaUserProfile = {
+  id: string;
+  name: string;
+  pictureUrl?: string | null;
+};
+
+export async function metaUserProfile(userToken: string): Promise<MetaUserProfile> {
+  const url = new URL(`${graphBase()}/me`);
+  url.searchParams.set("fields", "id,name,picture.width(200).height(200)");
+  url.searchParams.set("access_token", userToken);
+  const result = await graphJson<{
+    id?: string;
+    name?: string;
+    picture?: { data?: { url?: string } };
+  }>(url.toString());
+  if (!result.id || !result.name) throw new Error("META_PROFILE_MISSING");
+  return {
+    id: result.id,
+    name: result.name,
+    pictureUrl: result.picture?.data?.url ?? null,
+  };
 }
