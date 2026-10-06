@@ -1,5 +1,6 @@
 import { callTool, contentJson, discoverWindsorPublishing } from "../windsor-mcp";
 import { isGraphConfigured, listPageCommentsGraph, replyToCommentGraph, setCommentHiddenGraph } from "../facebook-graph";
+import { hasStoredFacebookPageToken, storedPageToken } from "../page-tokens";
 
 export type RemoteComment = { id:string; pageId:string; postId:string|null; parentId:string|null; message:string; createdTime:Date; hidden:boolean; authorId:string|null; authorName:string|null; authorAvatar:string|null; permalink:string|null };
 export type CommentsCapabilities = { connected:boolean; pageIds:string[]; read:boolean; repliesRead:boolean; reply:boolean; hide:boolean; unhide:boolean; delete:boolean; author:boolean; permalink:boolean; webhook:boolean; rateLimitKnown:boolean; reason:string|null; checkedAt:string };
@@ -21,7 +22,7 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
   async capabilities():Promise<CommentsCapabilities> {
     const checkedAt=new Date().toISOString();
     // The Graph page token (pages_read_engagement + pages_manage_engagement) covers read, authors and replies.
-    if(isGraphConfigured())return {connected:true,pageIds:[],read:true,repliesRead:true,reply:true,hide:true,unhide:true,delete:false,author:true,permalink:true,webhook:false,rateLimitKnown:false,reason:null,checkedAt};
+    if(isGraphConfigured() || await hasStoredFacebookPageToken())return {connected:true,pageIds:[],read:true,repliesRead:true,reply:true,hide:true,unhide:true,delete:false,author:true,permalink:true,webhook:false,rateLimitKnown:false,reason:null,checkedAt};
     try {
       const discovery=await discoverWindsorPublishing();
       const connectors=unwrap(discovery.connectors) as Array<{id:string;accounts?:Array<{id:string}>}>;
@@ -36,7 +37,7 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
     } catch {return {connected:false,pageIds:[],read:false,repliesRead:false,reply:false,hide:false,unhide:false,delete:false,author:false,permalink:false,webhook:false,rateLimitKnown:false,reason:"COMMENTS_AUTH_REQUIRED",checkedAt};}
   }
   async listPostComments(pageId:string,from:string,to:string):Promise<RemoteComment[]> {
-    if(isGraphConfigured()){
+    if((await storedPageToken(pageId)) || isGraphConfigured()){
       const rows=await listPageCommentsGraph(pageId,new Date(`${from}T00:00:00Z`),new Date(`${to}T23:59:59Z`));
       return rows.map(c=>({id:c.id,pageId,postId:c.postId,parentId:c.parentId,message:c.message,createdTime:new Date(c.createdTime),hidden:c.hidden,authorId:c.authorId,authorName:c.authorName,authorAvatar:null,permalink:c.permalink}));
     }
@@ -54,9 +55,9 @@ export class WindsorFacebookCommentsProvider implements FacebookCommentsProvider
   }
   async getComment(pageId:string,id:string,from:string,to:string){return (await this.listPostComments(pageId,from,to)).find(c=>c.id===id)??null;}
   async getReplies(pageId:string,id:string,from:string,to:string){return (await this.listPostComments(pageId,from,to)).filter(c=>c.parentId===id);}
-  async replyToComment(pageId:string,commentId:string,content:string):Promise<{id:string}>{if(!isGraphConfigured())throw new Error("COMMENTS_REPLY_UNAVAILABLE");return replyToCommentGraph(pageId,commentId,content);}
-  async hideComment(pageId:string,commentId:string):Promise<void>{if(!isGraphConfigured())throw new Error("COMMENTS_HIDE_UNAVAILABLE");await setCommentHiddenGraph(pageId,commentId,true);}
-  async unhideComment(pageId:string,commentId:string):Promise<void>{if(!isGraphConfigured())throw new Error("COMMENTS_HIDE_UNAVAILABLE");await setCommentHiddenGraph(pageId,commentId,false);}
+  async replyToComment(pageId:string,commentId:string,content:string):Promise<{id:string}>{if(!(await storedPageToken(pageId))&&!isGraphConfigured())throw new Error("COMMENTS_REPLY_UNAVAILABLE");return replyToCommentGraph(pageId,commentId,content);}
+  async hideComment(pageId:string,commentId:string):Promise<void>{if(!(await storedPageToken(pageId))&&!isGraphConfigured())throw new Error("COMMENTS_HIDE_UNAVAILABLE");await setCommentHiddenGraph(pageId,commentId,true);}
+  async unhideComment(pageId:string,commentId:string):Promise<void>{if(!(await storedPageToken(pageId))&&!isGraphConfigured())throw new Error("COMMENTS_HIDE_UNAVAILABLE");await setCommentHiddenGraph(pageId,commentId,false);}
   async markHandled():Promise<void>{throw new Error("COMMENTS_INTERNAL_ACTION_ONLY");}
 }
 export const commentsProvider=new WindsorFacebookCommentsProvider();
