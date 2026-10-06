@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { and, asc, desc, eq, gte, ilike, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { campaigns, facebookPages, postMedia, posts } from "@/db/schema";
 import { POST_CATEGORIES } from "@/services/catalog";
 import { pageCan } from "@/services/session-server";
+import { listMetaAccounts } from "@/services/meta-accounts";
 import { AppShell } from "../ui/app-shell";
 import { STATUS_LABELS } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 40;
 const TABS = ["all", "draft", "pending_approval", "scheduled", "publishing", "published", "failed", "cancelled", "archived"] as const;
 const SORTS = { updated: "آخر تحديث", scheduled: "موعد النشر", created: "تاريخ الإنشاء" } as const;
-type Params = { status?: string; q?: string; page?: string; campaign?: string; category?: string; from?: string; to?: string; sort?: string; p?: string };
+type Params = { status?: string; q?: string; account?: string; page?: string; campaign?: string; category?: string; from?: string; to?: string; sort?: string; p?: string };
 const uuid = (v?: string) => v && /^[0-9a-f-]{36}$/i.test(v) ? v : "";
 const day = (v?: string) => v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
 
@@ -31,7 +32,17 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
   const sort = params.sort && params.sort in SORTS ? params.sort as keyof typeof SORTS : "updated";
   const p = Math.max(1, Number(params.p) || 1);
   const db = getDb();
+  const metaAccounts = await listMetaAccounts();
+  const requestedAccount = (params.account ?? "").trim().slice(0, 200);
+  const account = metaAccounts.find((item) => item.id === requestedAccount)?.id ?? "";
+  const accountRemoteIds = account
+    ? metaAccounts.find((item) => item.id === account)?.pageIds.concat(metaAccounts.find((item) => item.id === account)?.instagramIds ?? []) ?? []
+    : [];
+  const accountLocalPages = account && accountRemoteIds.length
+    ? await db.select({ id: facebookPages.id }).from(facebookPages).where(inArray(facebookPages.facebookPageId, accountRemoteIds))
+    : [];
   const filters: SQL[] = [isNull(posts.deletedAt)];
+  if (account) filters.push(accountLocalPages.length ? inArray(posts.pageId, accountLocalPages.map((item) => item.id)) : sql`false`);
   if (q) filters.push(sql`(${ilike(posts.content, `%${q.replace(/[%_\\]/g, "")}%`)} or ${posts.id}::text like ${`${q.replace(/[%_\\]/g, "")}%`})`);
   if (pageId) filters.push(eq(posts.pageId, pageId));
   if (campaignId) filters.push(eq(posts.campaignId, campaignId));
@@ -51,9 +62,9 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
   const hasMore = rows.length > PAGE_SIZE;
   const visible = rows.slice(0, PAGE_SIZE);
   const countOf = (s: string) => s === "all" ? counts.filter((c) => c.status !== "archived").reduce((a, c) => a + c.n, 0) : counts.find((c) => c.status === s)?.n ?? 0;
-  const keep = (extra: Record<string, string | number>) => `/posts?${new URLSearchParams(Object.entries({ status, q, page: pageId, campaign: campaignId, category, from, to, sort, ...extra }).filter(([k, v]) => v && !(k === "status" && v === "all") && !(k === "sort" && v === "updated") && !(k === "p" && String(v) === "1")).map(([k, v]) => [k, String(v)]))}`;
-  const filterQuery = new URLSearchParams(Object.entries({ status: status === "all" ? "" : status, page: pageId, campaign: campaignId, category }).filter(([, v]) => v)).toString();
-  const filtered = Boolean(q || pageId || campaignId || category || from || to);
+  const keep = (extra: Record<string, string | number>) => `/posts?${new URLSearchParams(Object.entries({ status, q, account, page: pageId, campaign: campaignId, category, from, to, sort, ...extra }).filter(([k, v]) => v && !(k === "status" && v === "all") && !(k === "sort" && v === "updated") && !(k === "p" && String(v) === "1")).map(([k, v]) => [k, String(v)]))}`;
+  const filterQuery = new URLSearchParams(Object.entries({ status: status === "all" ? "" : status, account, page: pageId, campaign: campaignId, category }).filter(([, v]) => v)).toString();
+  const filtered = Boolean(q || account || pageId || campaignId || category || from || to);
 
   return <AppShell title="المنشورات">
     <PageHeader title="المنشورات" description="إدارة وجدولة وتتبع جميع المنشورات." actions={<><Link className="btn btn-secondary" href="/import"><Icon name="import" width={16} />استيراد</Link>{canWrite && <Link className="btn btn-primary" href="/posts/new"><Icon name="plus" width={16} />منشور جديد</Link>}</>} />
@@ -61,7 +72,8 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
     <form className="toolbar" method="get" role="search">
       {status !== "all" && <input type="hidden" name="status" value={status} />}
       <input name="q" type="search" defaultValue={q} placeholder="ابحث في النص أو رقم المنشور…" aria-label="بحث" />
-      <FilterToggle active={[pageId, campaignId, category, from, to].filter(Boolean).length}>
+      <FilterToggle active={[account, pageId, campaignId, category, from, to].filter(Boolean).length}>
+      {metaAccounts.length > 1 && <select name="account" defaultValue={account} aria-label="حساب Meta"><option value="">كل حسابات Meta</option>{metaAccounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
       <select name="page" defaultValue={pageId} aria-label="الصفحة"><option value="">كل الصفحات</option>{pageList.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <select name="campaign" defaultValue={campaignId} aria-label="الحملة"><option value="">كل الحملات</option>{campaignList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select name="category" defaultValue={category} aria-label="التصنيف"><option value="">كل التصنيفات</option>{POST_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
