@@ -13,6 +13,7 @@ import { Icon } from "../../ui/icons";
 import { SettingsShell } from "../settings-shell";
 import { TestConnectionButton } from "./test-connection";
 import { MetaWebhookSetup } from "./meta-webhook-setup";
+import { messengerStatus } from "@/services/messenger";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +26,11 @@ const Status = ({ state, text }: { state: "ok" | "warn" | "bad" | "off"; text: s
 /** Each integration with provider, status, last check and real capabilities (discovered, never assumed). */
 export default async function Integrations() {
   const checkedAt = new Date();
-  const [mcp, comments, runs] = await Promise.all([
+  const [mcp, comments, runs, messenger] = await Promise.all([
     process.env.WINDSOR_API_KEY ? withTimeout(testWindsorMcp().catch(() => null)) : Promise.resolve(null),
     withTimeout(commentsProvider.capabilities().catch(() => null)),
     getDb().select({ at: schedulerRuns.triggeredAt, status: schedulerRuns.status, error: schedulerRuns.errorMessage }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(10),
+    messengerStatus().catch(() => null),
   ]);
   const graph = isGraphConfigured();
   const oauth = metaOAuthConfigured();
@@ -56,6 +58,9 @@ export default async function Integrations() {
       <div className="integration"><span className="logo"><Icon name="inbox" /></span><div><h3>Facebook · التعليقات</h3><small>المزود: {comments?.reply ? "Meta Graph API عبر OAuth" : comments?.connected ? "Facebook connector" : "غير متاح"} · {comments?.reason ?? "متصل"}</small>
         <div className="caps"><Cap on={Boolean(comments?.read)} label="قراءة التعليقات" /><Cap on={Boolean(comments?.repliesRead)} label="قراءة الردود" /><Cap on={Boolean(comments?.reply)} label="الرد" /><Cap on={Boolean(comments?.hide)} label="الإخفاء" /><Cap on={Boolean(comments?.author)} label="اسم الكاتب" /><Cap on={f.replies} label="FACEBOOK_COMMENT_REPLIES_ENABLED" /><Cap on={f.autoReplies} label="AUTO_COMMENT_REPLIES_ENABLED" /></div></div>
         <Status state={comments?.reply && f.replies ? "ok" : comments?.read ? "warn" : "off"} text={comments?.reply && f.replies ? (f.autoReplies&&f.automation ? "يدوي + تلقائي" : "رد يدوي") : comments?.read ? "قراءة فقط" : "غير متاح"} /></div>
+      <div className="integration"><span className="logo"><Icon name="inbox" /></span><div><h3>Facebook Messenger</h3><small>المزود: Meta Graph API عبر Page OAuth · يحتاج pages_messaging. استقبال فوري عبر Webhook مع مزامنة دورية احتياطية.</small>
+        <div className="caps"><Cap on={Boolean(messenger)} label="Inbox" /><Cap on={Boolean(messenger && Object.values(messenger.pages ?? {}).every((error) => !error))} label="قراءة الرسائل" /><Cap on={Boolean(messenger && Object.values(messenger.pages ?? {}).every((error) => !error))} label="الرد" /><Cap on={true} label="24 ساعة" /></div></div>
+        <Status state={!messenger ? "warn" : Object.values(messenger.pages ?? {}).some(Boolean) ? "bad" : "ok"} text={!messenger ? "يحتاج إعادة ربط" : Object.values(messenger.pages ?? {}).some(Boolean) ? "ينقص pages_messaging" : "متصل"} /></div>
       <MetaWebhookSetup />
       <div className="integration"><span className="logo"><Icon name="clock" /></span><div><h3>الجدولة</h3><small>المزود: cron-job.org ← /api/cron/publish (محمي بـ CRON_SECRET)</small>
         <div className="caps"><span className="cap">آخر تشغيل: {last ? riyadh(last.at, "time") : "لا يوجد"}</span><span className="cap">الفاصل: {interval ? `${Math.round(interval)} ث` : "—"}</span><span className="cap">التالي: {last && interval ? riyadh(new Date(last.at.getTime() + interval * 1000), "time") : "—"}</span>{lastError && <span className="cap off">آخر خطأ: {riyadh(lastError.at, "time")}</span>}</div></div>
