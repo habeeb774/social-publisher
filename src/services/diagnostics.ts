@@ -19,7 +19,7 @@ export async function runDiagnostics(deep: boolean): Promise<{ checks: Check[]; 
     checks.push({ key: "database", label: "قاعدة البيانات", state: "healthy", detail: "متصلة" });
     const [run] = await db.select({ at: schedulerRuns.triggeredAt, status: schedulerRuns.status }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(1);
     lastRunSeconds = run ? Math.round((Date.now() - run.at.getTime()) / 1000) : null;
-    const stale = lastRunSeconds === null || lastRunSeconds > 600;
+    const stale = lastRunSeconds === null || lastRunSeconds > 1500;
     checks.push({ key: "scheduler", label: "الجدولة", state: stale ? "error" : run.status === "success" ? "healthy" : "warning", detail: lastRunSeconds === null ? "لم يعمل بعد" : `آخر تشغيل قبل ${formatAgo(lastRunSeconds)}` });
     if (deep && isGraphConfigured()) {
       const [page] = await db.select().from(facebookPages).limit(1);

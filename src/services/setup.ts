@@ -26,7 +26,7 @@ export async function setupProgress() {
     { key: "account", label: "إعداد الحساب وقاعدة البيانات", done: dbOk && Boolean(process.env.ADMIN_EMAIL), href: "/status", help: "قاعدة البيانات تحفظ منشوراتك ومواعيدها." },
     { key: "facebook", label: "ربط Facebook", done: pageCount > 0 && (isGraphConfigured() || Boolean(process.env.WINDSOR_API_KEY)), href: "/pages", help: "يحتاج النظام صفحة متصلة وتوكن نشر حتى يستطيع النشر نيابة عنك." },
     { key: "storage", label: "تخزين الصور", done: storageProvider.configured(), optional: true, href: "/media", help: "اختياري: يسمح برفع الصور من جهازك. بدونه أضف الصور بروابط مباشرة." },
-    { key: "scheduler", label: "تشغيل الجدولة", done: Boolean(lastRun && Date.now() - lastRun.getTime() < 15 * 60000), href: "/status", help: "خدمة تستدعي عامل النشر كل دقيقة حتى تُنشر المنشورات في موعدها." },
+    { key: "scheduler", label: "تشغيل الجدولة", done: Boolean(lastRun && Date.now() - lastRun.getTime() < 25 * 60000), href: "/status", help: "خدمة تستدعي عامل النشر كل 10 دقائق حتى تُنشر المنشورات في موعدها." },
     { key: "first_post", label: "إنشاء أول منشور", done: postCount > 0, href: "/posts/new", help: "اكتب منشورًا واحفظه كمسودة أو جدوله." },
     { key: "safe_test", label: "اختبار النشر", done: testedOrPublished > 0, href: "/settings/integrations", help: "وضع الاختبار يجرب كل الخطوات دون نشر فعلي؛ أو انشر منشورًا حقيقيًا واحدًا." },
   ];

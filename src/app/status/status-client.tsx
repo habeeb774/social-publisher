@@ -5,7 +5,7 @@ import { api } from "../ui/api";
 type Check = { key: string; label: string; state: "healthy" | "warning" | "error" | "off"; detail: string };
 const LABEL = { healthy: "سليم", warning: "تنبيه", error: "مشكلة", off: "غير مُعد" };
 const HELP: Record<string, string> = {
-  scheduler: "عامل النشر هو ما يرسل المنشورات في موعدها. يشتغل كل دقيقة عبر cron-job.org.",
+  scheduler: "عامل النشر هو ما يرسل المنشورات في موعدها. يشتغل كل 10 دقائق عبر cron-job.org.",
   facebook: "التوكن هو مفتاح الدخول الذي يسمح للنظام بالنشر على صفحتك.",
   windsor: "Windsor MCP وسيط لقراءة بيانات فيسبوك. النشر نفسه يتم عبر التوكن مباشرة.",
   storage: "التخزين يحفظ الصور التي ترفعها من جهازك.",

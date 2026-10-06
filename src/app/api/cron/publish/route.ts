@@ -9,7 +9,10 @@ import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
 import { syncComments } from "@/services/comments/store";
 
-const GAP_ALERT_MINUTES = 10;
+// The worker runs every 10 minutes (lets the free database sleep between runs).
+const GAP_ALERT_MINUTES = 25;
+// Hourly jobs run on the first worker call of each hour.
+const firstRunOfHour = () => new Date().getUTCMinutes() < 10;
 
 /** Health checks that run alongside the worker; failures here never block publishing. */
 async function runHealthChecks() {
@@ -18,8 +21,8 @@ async function runHealthChecks() {
     const gapMinutes = previous ? Math.round((Date.now() - previous.triggeredAt.getTime()) / 60000) : 0;
     if (gapMinutes > GAP_ALERT_MINUTES) await sendAlert("scheduler_gap", "توقف عامل النشر ثم عاد", `لم يعمل عامل النشر لمدة ${gapMinutes} دقيقة. المنشورات المستحقة خلال التوقف تُنشر الآن. تحقق من مهمة cron-job.org إذا تكرر هذا.`, 1);
     // Token inspection is a network call; once an hour is enough.
-    if (new Date().getUTCMinutes() === 0) await purgeExpiredTrash();
-    if (isGraphConfigured() && new Date().getUTCMinutes() === 0) {
+    if (firstRunOfHour()) await purgeExpiredTrash();
+    if (isGraphConfigured() && firstRunOfHour()) {
       const token = await inspectGraphToken();
       if (!token.valid) await sendAlert("token_invalid", "توكن فيسبوك غير صالح", `النشر سيفشل حتى تولّد توكناً جديداً وتضعه في META_PAGE_ACCESS_TOKEN على Vercel.
 
@@ -43,8 +46,8 @@ async function run(request: Request) {
   await runHealthChecks();
   // Recurring rules create their upcoming instances before the due-post scan.
   await materializeRecurrences().catch((error) => console.error("Recurrence materialization failed", { error: error instanceof Error ? error.message : String(error) }));
-  // Pull new comments every 5 minutes (last 2 days); never blocks publishing.
-  if (isGraphConfigured() && startedAt.getUTCMinutes() % 5 === 0) {
+  // Pull new comments on every run (last 2 days); never blocks publishing.
+  if (isGraphConfigured()) {
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
     await syncComments(day(2), day(0)).catch((error) => console.error("Comments sync failed", { error: error instanceof Error ? error.message : String(error) }));
   }
