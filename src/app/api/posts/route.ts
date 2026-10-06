@@ -9,10 +9,12 @@ import { syncImage, toPostFields } from "@/services/post-save";
 import { logAudit } from "@/services/audit";
 import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
+import { allowedPageIds, denyPageOutsideScope } from "@/services/access-scope";
+import { currentUser } from "@/services/rbac";
 
 export async function GET(request:NextRequest) {
   {const denied=await guard(request);if(denied)return denied;}
-  try{return NextResponse.json(await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(Math.min(Number(request.nextUrl.searchParams.get("limit"))||50,200)).offset(Math.max(Number(request.nextUrl.searchParams.get("offset"))||0,0)));}
+  try{const rows=await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(Math.min(Number(request.nextUrl.searchParams.get("limit"))||50,200)).offset(Math.max(Number(request.nextUrl.searchParams.get("offset"))||0,0));const user=await currentUser(request);if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const allowed=await allowedPageIds(user);return NextResponse.json(allowed===null?rows:rows.filter(row=>allowed.has(row.pageId)));}
   catch{return NextResponse.json({error:"تعذر تحميل المنشورات"},{status:500});}
 }
 export async function POST(request:NextRequest) {
@@ -26,6 +28,7 @@ export async function POST(request:NextRequest) {
     const db=getDb();
     const [page]=await db.select({id:facebookPages.id}).from(facebookPages).where(and(eq(facebookPages.isActive,true),data.pageId==="habeb"?eq(facebookPages.facebookPageId,"1330947143441946"):eq(facebookPages.id,data.pageId))).limit(1);
     if(!page)return NextResponse.json({error:"الصفحة غير متاحة. تحقق من اتصال Facebook Organic."},{status:409});
+    {const scoped=await denyPageOutsideScope(request,page.id);if(scoped)return scoped;}
     // Server-side gate: critical checklist failures block scheduling regardless of the UI.
     if(data.status==="scheduled"){const check=await prePublishChecks({pageId:page.id,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:undefined});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
     const [post]=await db.insert(posts).values({pageId:page.id,...await toPostFields(data)}).returning();
