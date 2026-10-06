@@ -128,6 +128,7 @@ export async function GET(request: NextRequest) {
       permissions: permissions.filter((p) => p === "public_profile" || p.startsWith("pages_") || p.startsWith("instagram_")),
     });
 
+    const messengerGranted = permissions.includes("pages_messaging");
     let webhook = "pending";
     try {
       const setup = await setupMetaWebhook();
@@ -137,7 +138,7 @@ export async function GET(request: NextRequest) {
       console.error("Meta webhook auto-setup failed", { error: error instanceof Error ? error.message : String(error) });
     }
 
-    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, webhook });
+    return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, webhook, messenger: messengerGranted ? 1 : 0 });
   } catch (error) {
     console.error("Meta OAuth callback failed", { error: error instanceof Error ? error.message : String(error) });
     return back(request, { meta: "failed" });
