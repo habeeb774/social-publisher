@@ -29,6 +29,12 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
     catch (e) { setItems([]); toast(e instanceof Error ? e.message : "تعذر تحميل الرسائل", "error"); }
   }, []);
   useEffect(() => { const t = setTimeout(load, 0); return () => clearTimeout(t); }, [load]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [load]);
   const open = async (id: string) => { try { setDetail(await api<Detail>(`?id=${id}`)); setText(""); } catch (e) { toast(e instanceof Error ? e.message : "تعذر فتح المحادثة", "error"); } };
   const sync = async () => { setBusy(true); try { const r = await api<{ imported: number }>("", { action: "sync" }); toast(`اكتملت المزامنة (${r.imported} رسالة جديدة)`); await load(); } catch (e) { toast(e instanceof Error ? e.message : "تعذرت المزامنة", "error"); } finally { setBusy(false); } };
   const send = async () => {
@@ -39,11 +45,13 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
   const errors = Object.entries(status?.pages ?? {}).filter(([, e]) => e);
 
   return <>
-    {errors.length > 0 && <div className="alert alert-warning" role="note"><span><b>تعذر جلب رسائل بعض الصفحات.</b> {errors.map(([p, e]) => `${p}: ${String(e).includes("#10") || String(e).includes("#200") || String(e).includes("#230") ? "الرمز ينقصه إذن pages_messaging" : e}`).join(" · ")}</span></div>}
+    {errors.length > 0
+      ? <div className="alert alert-warning" role="note"><span><b>Messenger يحتاج إعادة ربط.</b> {errors.map(([p, e]) => `${p}: ${String(e).includes("#10") || String(e).includes("#200") || String(e).includes("#230") ? "ينقص إذن pages_messaging" : e}`).join(" · ")}</span></div>
+      : status && <div className="alert alert-success" role="note"><span><b>Messenger متصل.</b> استقبال الرسائل الفورية عبر Webhook والمزامنة الدورية الاحتياطية متاحان.</span></div>}
     <div className={`inbox ${detail ? "has-selection" : ""}`}>
       <section className="inbox-list" aria-label="المحادثات">
         <div className="search row"><strong style={{ flex: 1 }}>رسائل ماسنجر</strong><button className="btn btn-secondary btn-sm" disabled={busy} onClick={sync}>مزامنة</button></div>
-        <div className="inbox-items">{items === null ? <div style={{ padding: 16 }}><Skeleton lines={4} /></div> : !items.length ? <EmptyState icon="inbox" title="لا توجد رسائل" description="تُجلب الرسائل تلقائيًا كل 10 دقائق، أو اضغط مزامنة." /> :
+        <div className="inbox-items">{items === null ? <div style={{ padding: 16 }}><Skeleton lines={4} /></div> : !items.length ? <EmptyState icon="inbox" title="لا توجد رسائل" description="عند تفعيل pages_messaging تصل الرسائل عبر Meta Webhook مباشرة، وتبقى المزامنة الدورية احتياطية." /> :
           items.map((i) => <button key={i.id} className={`inbox-item ${detail?.conversation.id === i.id ? "active" : ""} ${i.unread ? "unread" : ""}`} onClick={() => open(i.id)}>
             <span className="avatar" style={{ width: 32, height: 32 }}>{(i.participant_name ?? "؟").slice(0, 1)}</span>
             <span className="row-between"><b>{i.participant_name ?? "متابع"}</b><small className="num">{time(i.last_message_at)}</small></span>
