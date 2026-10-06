@@ -1,4 +1,5 @@
 "use client";
+import { BestTimesHint } from "./best-times-hint";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -161,6 +162,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
 
           <section className="card composer-section"><header><h2>النشر</h2><small>توقيت الرياض (UTC+3)</small></header>
             <div className="field-row"><label>التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>الوقت<input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label></div>
+            <BestTimesHint onPick={setTime} />
             {approvalRequired && <small><Icon name="review" width={12} /> الجدولة تمر بالمراجعة أولًا قبل النشر.</small>}
             {checks && <ul className="checklist" aria-label="فحص ما قبل النشر">{checks.map((c) => <li key={c.key} className={c.ok ? "ok" : c.critical ? "bad" : "warn"}>{c.ok ? "✓" : c.critical ? "✕" : "!"} {c.label}{c.detail && <small> · {c.detail}</small>}</li>)}</ul>}
           </section>
