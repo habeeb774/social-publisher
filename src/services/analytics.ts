@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, posts, publicationAttempts } from "@/db/schema";
 import { engagementOf, getPostPerformance } from "./post-insights";
@@ -7,9 +7,9 @@ export const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "ا
 const hourLabel = (h: number) => new Intl.DateTimeFormat("ar-SA", { hour: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 1, h)));
 
 /** System analytics from aggregates only; no full-table fetches. */
-export async function systemAnalytics(campaignId?: string) {
+export async function systemAnalytics(campaignId?: string, allowed: Set<string> | null = null) {
   const db = getDb();
-  const scope = and(isNull(posts.deletedAt), campaignId ? eq(posts.campaignId, campaignId) : undefined);
+  const scope = and(isNull(posts.deletedAt), campaignId ? eq(posts.campaignId, campaignId) : undefined, allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`);
   const [totals] = await db.select({
     total: sql<number>`count(*)::int`,
     published: sql<number>`count(*) filter (where ${posts.status}='published')::int`,
@@ -52,8 +52,8 @@ export function insightsFrom(a: Awaited<ReturnType<typeof systemAnalytics>>) {
  * Best time from real engagement of recent published posts. Requires at least `minPosts` posts with
  * engagement data; otherwise returns null so no fabricated recommendation is shown.
  */
-export async function bestTimeFromEngagement(limit = 15, minPosts = 5) {
-  const rows = await getDb().select({ fbId: posts.facebookPostId, at: posts.publishedAt, pageFbId: facebookPages.facebookPageId }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(eq(posts.status, "published"), isNotNull(posts.facebookPostId), isNull(posts.deletedAt))).orderBy(desc(posts.publishedAt)).limit(limit);
+export async function bestTimeFromEngagement(limit = 15, minPosts = 5, allowed: Set<string> | null = null) {
+  const rows = await getDb().select({ fbId: posts.facebookPostId, at: posts.publishedAt, pageFbId: facebookPages.facebookPageId }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(eq(posts.status, "published"), isNotNull(posts.facebookPostId), isNull(posts.deletedAt), allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`)).orderBy(desc(posts.publishedAt)).limit(limit);
   const samples = (await Promise.all(rows.map(async (row) => ({ row, perf: await getPostPerformance(row.fbId!, row.pageFbId) })))).filter((s) => s.perf.available);
   if (samples.length < minPosts) return { recommendation: null, samples: samples.length, posts: samples };
   const buckets = new Map<string, { total: number; n: number }>();
