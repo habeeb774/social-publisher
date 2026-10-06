@@ -123,14 +123,31 @@ export async function addToQueue(id: string) {
   const db = getDb();
   const slots = await db.select({ weekday: queueSlots.weekday, time: queueSlots.time }).from(queueSlots);
   if (!slots.length) throw new Error("NO_SLOTS");
+
+  const [source] = await db.select().from(posts).where(and(eq(posts.id, id), inArray(posts.status, ["draft", "approved", "scheduled"]), isNull(posts.deletedAt))).limit(1);
+  if (!source) throw new Error("NOT_EDITABLE");
+
   const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${posts.queueOrder}), 0)` }).from(posts).where(eq(posts.inQueue, true));
   const status = await approvalRequired() ? "pending_approval" : "scheduled";
   const [row] = await db.update(posts).set({ inQueue: true, queueOrder: Number(max) + 1, status, updatedAt: new Date() }).where(and(eq(posts.id, id), inArray(posts.status, ["draft", "approved", "scheduled"]), isNull(posts.deletedAt))).returning();
   if (!row) throw new Error("NOT_EDITABLE");
+
   await recomputeQueue();
-  await logAudit("post.queued", "post", id);
   const [fresh] = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
-  return fresh ?? row;
+  if (!fresh?.scheduledAt) {
+    await db.update(posts).set({
+      inQueue: false,
+      queueOrder: null,
+      status: source.status,
+      scheduledAt: source.scheduledAt,
+      updatedAt: new Date(),
+    }).where(eq(posts.id, id));
+    await recomputeQueue();
+    throw new Error("QUEUE_NO_AVAILABLE_SLOT: لا يوجد وقت متاح ضمن قواعد النشر الحالية خلال 120 يومًا");
+  }
+
+  await logAudit("post.queued", "post", id, { scheduledAt: fresh.scheduledAt.toISOString() });
+  return fresh;
 }
 
 /** Reassigns queued posts, in queue order, to the next free slots. Only unclaimed rows are touched. */
@@ -152,6 +169,13 @@ export async function recomputeQueue(order?: string[]) {
     if (!times[i]) break;
     await db.update(posts).set({ queueOrder: i + 1, scheduledAt: times[i], updatedAt: new Date() }).where(and(eq(posts.id, post.id), inArray(posts.status, ["scheduled", "pending_approval"])));
     assigned.push({ id: post.id, scheduledAt: times[i] });
+  }
+
+  // Never leave stale publish times on queue items when rules/slots no longer provide coverage.
+  const assignedIds = new Set(assigned.map((item) => item.id));
+  for (const post of queued) {
+    if (assignedIds.has(post.id)) continue;
+    await db.update(posts).set({ scheduledAt: null, updatedAt: new Date() }).where(and(eq(posts.id, post.id), inArray(posts.status, ["scheduled", "pending_approval"])));
   }
   return assigned;
 }
