@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, publicationAttempts } from "@/db/schema";
 import { publishToFacebook, type FacebookResult } from "./facebook";
-import { sendAlert } from "./alerts";
+import { resolveAlerts, sendAlert } from "./alerts";
 import { classifyError } from "./error-classes";
 
 const MAX_AUTOMATIC_ATTEMPTS = 3;
