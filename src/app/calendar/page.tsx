@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { and, asc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { campaigns, facebookPages, posts } from "@/db/schema";
 import { POST_CATEGORIES } from "@/services/catalog";
 import { scheduleClusters } from "@/services/prepublish";
+import { pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { AppShell } from "../ui/app-shell";
 import { STATUS_LABELS, riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -25,6 +27,8 @@ const addDays = (date: string, n: number) => iso(new Date(Date.parse(`${date}T00
 export default async function Calendar({ searchParams }: { searchParams: Promise<{ view?: string; date?: string; month?: string; page?: string; status?: string; category?: string; campaign?: string }> }) {
   const params = await searchParams;
   const db = getDb();
+  const session = await pageSession();
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const today = String((await db.execute(sql`select to_char(now() at time zone 'Asia/Riyadh','YYYY-MM-DD') as today`)).rows[0].today);
   const view: View = params.view && params.view in VIEWS ? params.view as View : "month";
   const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : params.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(params.month) ? `${params.month}-01` : today;
@@ -43,12 +47,22 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
   const prev = view === "month" ? iso(new Date(Date.UTC(y, m - 2, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? -7 : -30);
   const next = view === "month" ? iso(new Date(Date.UTC(y, m, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? 7 : 30);
 
-  const [entries, pages, campaignList, clusters] = await Promise.all([
-    db.select({ id: posts.id, content: posts.content, status: posts.status, scheduledAt: posts.scheduledAt, page: facebookPages.name }).from(posts).leftJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(isNull(posts.deletedAt), gte(posts.scheduledAt, from), lt(posts.scheduledAt, to), pageFilter ? eq(posts.pageId, pageFilter) : undefined, campaignFilter ? eq(posts.campaignId, campaignFilter) : undefined, statusFilter ? eq(posts.status, statusFilter) : undefined, categoryFilter ? eq(posts.category, categoryFilter) : undefined)).orderBy(asc(posts.scheduledAt)).limit(600),
-    db.select({ id: facebookPages.id, name: facebookPages.name }).from(facebookPages),
+  const [entries, pages, campaignList, rawClusters] = await Promise.all([
+    db.select({ id: posts.id, content: posts.content, status: posts.status, scheduledAt: posts.scheduledAt, page: facebookPages.name }).from(posts).leftJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(
+      isNull(posts.deletedAt),
+      allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`,
+      gte(posts.scheduledAt, from), lt(posts.scheduledAt, to),
+      pageFilter ? eq(posts.pageId, pageFilter) : undefined,
+      campaignFilter ? eq(posts.campaignId, campaignFilter) : undefined,
+      statusFilter ? eq(posts.status, statusFilter) : undefined,
+      categoryFilter ? eq(posts.category, categoryFilter) : undefined
+    )).orderBy(asc(posts.scheduledAt)).limit(600),
+    db.select({ id: facebookPages.id, name: facebookPages.name }).from(facebookPages).where(allowed === null ? undefined : allowed.size ? inArray(facebookPages.id, Array.from(allowed)) : sql`false`),
     db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).limit(100),
     scheduleClusters(from, to),
   ]);
+  const visibleIds = new Set(entries.map((entry) => entry.id));
+  const clusters = allowed === null ? rawClusters : rawClusters.filter((cluster) => visibleIds.has(cluster.id));
   const conflictIds = new Set(clusters.map((c) => c.id));
   const localDate = (d: Date) => iso(new Date(d.getTime() + 3 * 3600000));
   const itemsOn = (date: string) => entries.filter((e) => localDate(e.scheduledAt!) === date).map((e) => ({ id: e.id, content: e.content, status: e.status, scheduledAt: e.scheduledAt!.toISOString(), conflict: conflictIds.has(e.id) }));
