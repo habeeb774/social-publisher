@@ -10,7 +10,7 @@ export function TestEmailButton() {
     try {
       const r = await fetch("/api/notifications/test", { method: "POST" });
       const d = await r.json().catch(() => ({}));
-      const msg = d.ok ? `أُرسلت رسالة تجريبية إلى ${d.to}. تحقق من البريد (وفي مجلد الرسائل غير المرغوبة).` : `لم تُرسل: ${d.error ?? "خطأ غير معروف"}`;
+      const msg = d.ok ? `أُرسلت رسالة تجريبية إلى ${d.to} من ${d.from}. تحقق من البريد (وفي مجلد الرسائل غير المرغوبة).` : `لم تُرسل: ${d.error ?? "خطأ غير معروف"}`;
       setResult(msg); toast(msg, d.ok ? undefined : "error");
     } finally { setBusy(false); }
   }

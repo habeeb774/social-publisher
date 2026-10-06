@@ -41,16 +41,32 @@ export async function sendAlert(type: AlertType, title: string, message: string,
   }
 }
 
+const FALLBACK_FROM = "Social Publisher <onboarding@resend.dev>";
+
+/** Posts to Resend from ALERT_FROM; if that domain is not verified yet, retries from Resend's shared address. */
+async function postResend(key: string, to: string, subject: string, text: string) {
+  const send = (from: string) => fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to: [to], subject: `[ناشر المحتوى] ${subject}`, text }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const preferred = process.env.ALERT_FROM?.trim();
+  let from = preferred || FALLBACK_FROM;
+  let response = await send(from);
+  if (!response.ok && preferred && (response.status === 403 || response.status === 422)) {
+    console.error("ALERT_FROM rejected by Resend; using fallback sender", { status: response.status });
+    from = FALLBACK_FROM;
+    response = await send(from);
+  }
+  return { response, from };
+}
+
 async function sendEmail(subject: string, text: string) {
   const key = process.env.RESEND_API_KEY?.trim();
   const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
   if (!key || !to) return false;
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: process.env.ALERT_FROM?.trim() || "Social Publisher <onboarding@resend.dev>", to: [to], subject: `[ناشر المحتوى] ${subject}`, text }),
-    signal: AbortSignal.timeout(10000),
-  });
+  const { response } = await postResend(key, to, subject, text);
   if (!response.ok) console.error("Resend rejected alert email", { status: response.status });
   return response.ok;
 }
@@ -61,18 +77,12 @@ export async function sendTestEmail() {
   const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
   if (!key) return { ok: false, to: to ?? null, error: "RESEND_API_KEY غير مضاف في Vercel" };
   if (!to) return { ok: false, to: null, error: "لا يوجد بريد مستلم (ALERT_EMAIL أو ADMIN_EMAIL)" };
-  const from = process.env.ALERT_FROM?.trim() || "Social Publisher <onboarding@resend.dev>";
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject: "[ناشر المحتوى] رسالة تجريبية", text: `هذه رسالة تجريبية من نظام النشر.
+    const { response, from } = await postResend(key, to, "رسالة تجريبية", `هذه رسالة تجريبية من نظام النشر.
 إذا وصلتك فتنبيهات البريد تعمل.
 
-${new Date().toISOString()}` }),
-      signal: AbortSignal.timeout(10000),
-    });
+${new Date().toISOString()}`);
     const body = await response.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
     return response.ok ? { ok: true, to, from, id: body.id ?? null } : { ok: false, to, from, error: `Resend ${response.status}: ${body.message ?? body.name ?? "rejected"}` };
-  } catch (error) { return { ok: false, to, from, error: error instanceof Error ? error.message : "network error" }; }
+  } catch (error) { return { ok: false, to, error: error instanceof Error ? error.message : "network error" }; }
 }
