@@ -3,7 +3,7 @@ import { publishDuePosts } from "@/services/publisher";
 import { getDb } from "@/db";
 import { facebookPages, schedulerRuns } from "@/db/schema";
 import { storedPageToken } from "@/services/page-tokens";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
@@ -20,7 +20,11 @@ const firstRunOfHour = () => new Date().getUTCMinutes() < 10;
 async function hasMetaAccess() {
   if (isGraphConfigured()) return true;
   const [page] = await getDb().select({ token: facebookPages.accessTokenEnc }).from(facebookPages)
-    .where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)))
+    .where(and(
+      eq(facebookPages.platform, "facebook"),
+      eq(facebookPages.isActive, true),
+      isNotNull(facebookPages.accessTokenEnc),
+    ))
     .limit(1);
   return Boolean(page?.token);
 }
@@ -48,9 +52,11 @@ async function runHealthChecks() {
         }
         const token = await inspectGraphToken(saved ?? undefined);
         const fix = "أعد ربط الحساب من الصفحات والحسابات ← ربط Facebook وInstagram.";
+        const missingPublishScope = token.scopes.length > 0 && !token.scopes.includes("pages_manage_posts");
         if (!token.valid) await sendAlert("token_invalid", `رمز صفحة ${page.name} غير صالح`, `النشر على هذه الصفحة سيفشل. ${fix}
 
 السبب: ${token.reason ?? "غير معروف"}`, 24);
+        else if (missingPublishScope) await sendAlert("token_invalid", `صلاحية النشر ناقصة لصفحة ${page.name}`, `التوكن صالح لكن pages_manage_posts غير موجودة. ${fix}`, 24);
         else if (token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400 * 1000) await sendAlert("token_expiring", `رمز صفحة ${page.name} ينتهي قريباً`, `ينتهي في ${token.expiresAt.toISOString().slice(0, 10)}. ${fix}`, 24);
       }
     }
