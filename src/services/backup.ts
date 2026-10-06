@@ -23,7 +23,7 @@ const TABLES: Array<{ name: string; query: ReturnType<typeof sql> }> = [
   { name: "quick_replies", query: sql`select * from quick_replies` },
   { name: "comment_rules", query: sql`select * from comment_rules` },
   { name: "saved_filters", query: sql`select * from saved_filters` },
-  { name: "settings", query: sql`select key, value, updated_at from settings where key not ilike '%token%' and key not ilike '%secret%' and key not ilike '%password%'` },
+  { name: "settings", query: sql`select key, value, updated_at from settings where key not ilike '%token%' and key not ilike '%secret%' and key not ilike '%password%' and key not ilike '%key%' and key not ilike '%auth%' and key not ilike '%credential%'` },
 ];
 
 export async function buildBackup() {
