@@ -4,6 +4,7 @@ import { errorResponse, guard, isUuid } from "@/services/api-guard";
 import { approvePost, rejectPost, submitForApproval } from "@/services/post-ops";
 import { sessionFrom } from "@/services/request-auth";
 import { can } from "@/services/rbac";
+import { denyPostOutsideScope } from "@/services/access-scope";
 
 const body = z.object({ action: z.enum(["submit", "approve", "reject", "changes"]), reason: z.string().max(1000).optional() });
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
   const parsed = body.safeParse(await request.json().catch(() => null));
   if (!isUuid(id) || !parsed.success) return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 });
+  { const scoped = await denyPostOutsideScope(request, id); if (scoped) return scoped; }
   try {
     const { action, reason } = parsed.data;
     // Submitting is an editor action; approving/rejecting requires the review permission.
