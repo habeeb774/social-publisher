@@ -38,7 +38,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY), oauthReady = metaOAuthConfigured();
   const metaState = typeof params.meta === "string" ? params.meta : null;
   const metaMessage = metaState === "connected"
-    ? `تم ربط Meta بنجاح · الملف الشخصي: ${params.profile === "1" ? "متصل" : "غير متاح"} · صفحات: ${typeof params.pages === "string" ? params.pages : "0"} · Instagram: ${typeof params.instagram === "string" ? params.instagram : "0"}`
+    ? `تم ربط Meta بنجاح · الملف الشخصي: ${params.profile === "1" ? "متصل" : "غير متاح"} · صفحات: ${typeof params.pages === "string" ? params.pages : "0"} · Instagram: ${typeof params.instagram === "string" ? params.instagram : "0"} · Messenger: ${params.messenger === "1" ? "مفعّل" : "يحتاج صلاحية pages_messaging"}`
     : metaState === "missing-config" ? "الربط التلقائي جاهز، ويحتاج فقط META_APP_ID و META_APP_SECRET في Vercel."
     : metaState === "no-pages" ? "تم تسجيل الدخول إلى Meta، لكن لم نجد صفحة تديرها بهذه الصلاحيات."
     : metaState === "cancelled" ? "أُلغي ربط Meta قبل إكمال التفويض."
