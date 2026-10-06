@@ -59,11 +59,17 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
           <div className="caps">
             <span className="cap on">✓ متصل</span>
             <span className="cap">إدارة الصفحات والحسابات المرتبطة</span>
-            <span className="cap off">— النشر للملف الشخصي غير مدعوم عبر Graph API</span>
+            <span className="cap off">— لا نشر آلي</span>
+            <span className="cap off">— لا قراءة تعليقات</span>
+            <span className="cap off">— لا رد يدوي أو تلقائي عبر API</span>
           </div>
+          <small>الملف الشخصي يظهر للهوية والربط فقط. إدارة التعليقات والردود داخل Social Publisher متاحة لصفحات Facebook المدعومة.</small>
         </div>
         <div className="stack" style={{ gap: 6, justifyItems: "end" }}>
-          <span className="badge badge-success">ملف شخصي</span>
+          <span className="badge badge-neutral">عرض فقط</span>
+          <a className="btn btn-ghost btn-sm" href={`https://www.facebook.com/${metaProfile.id}`} target="_blank" rel="noreferrer">
+            <Icon name="facebook" width={14} />فتح الملف الشخصي في Facebook
+          </a>
           {metaProfile.connectedAt && <small>آخر ربط: {riyadh(metaProfile.connectedAt)}</small>}
         </div>
       </div>
