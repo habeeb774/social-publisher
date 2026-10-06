@@ -12,8 +12,9 @@ export default function Security() {
       <div className="setting-row"><div><strong>الصلاحيات على الخادم</strong><small>كل واجهة API تتحقق من الدور قبل التنفيذ. تعديل الدور في الملف يبطله التوقيع.</small></div><Ok /></div>
       <div className="setting-row"><div><strong>كلمات المرور</strong><small>مشفرة بخوارزمية scrypt مع ملح عشوائي، ومقارنة بزمن ثابت.</small></div><Ok /></div>
       <div className="setting-row"><div><strong>حماية الطلبات</strong><small>عمليات الكتابة تُقبل من نفس الموقع فقط (Origin check)، والمدخلات تُتحقق بـ Zod.</small></div><Ok /></div>
-      <div className="setting-row"><div><strong>عامل النشر</strong><small>محمي بـ CRON_SECRET، مع Claim ذري يمنع النشر المزدوج.</small></div><Ok /></div>
-      <div className="setting-row"><div><strong>الأسرار</strong><small>التوكنات وكلمات المرور في متغيرات البيئة فقط، ولا تظهر في الواجهة أو التصدير.</small></div><Ok /></div>
+      <div className="setting-row"><div><strong>عامل النشر</strong><small>محمي بـ CRON_SECRET، مع Claim ذري يمنع النشر المزدوج وAuto Recovery محدود للأخطاء المؤقتة فقط.</small></div><Ok /></div>
+      <div className="setting-row"><div><strong>الأسرار والتوكنات</strong><small>أسرار التطبيق تبقى في متغيرات البيئة، بينما Page Access Tokens الناتجة من OAuth تُخزَّن مشفّرة في قاعدة البيانات ولا تظهر في الواجهة أو النسخ الاحتياطية أو التصدير.</small></div><Ok /></div>
+      <div className="setting-row"><div><strong>رؤوس الحماية</strong><small>حظر الإطارات، منع MIME sniffing، سياسة Referrer مقيدة، تعطيل صلاحيات الكاميرا والميكروفون والموقع والدفع، وCSP أساسي.</small></div><Ok /></div>
       <div className="setting-row"><div><strong>سجل العمليات</strong><small>كل إنشاء وتعديل وجدولة وموافقة ودخول يُسجَّل مع اسم المستخدم.</small></div><Link href="/logs">عرض السجل</Link></div>
     </div></section>
   </SettingsShell>;
