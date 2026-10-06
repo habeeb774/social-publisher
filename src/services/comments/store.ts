@@ -11,6 +11,7 @@ export async function commentsAudit(action:string,id:string|null,metadata:Row={}
 export async function inbox(query:URLSearchParams){
   const db=database();const f=filterParams(query),cursor=decodeCommentCursor(query.get("cursor"));
   const items=await db`SELECT c.*,p.name AS page_name,to_char(c.created_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE
+  NOT c.is_from_page AND
   (${f.q}='' OR c.message ILIKE ${`%${f.q}%`} OR c.author_name ILIKE ${`%${f.q}%`} OR c.post_id=${f.q} OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name ILIKE ${`%${f.q}%`}))
   AND (${f.status}='all' OR c.status=${f.status} OR (${f.status}='needs_reply' AND c.needs_reply)) AND (${f.page}='' OR c.page_id::text=${f.page})
   AND (${f.post}='' OR c.post_id=${f.post}) AND (${f.from}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date>=NULLIF(${f.from},'')::date) AND (${f.to}='' OR (c.created_time AT TIME ZONE 'Asia/Riyadh')::date<=NULLIF(${f.to},'')::date)
