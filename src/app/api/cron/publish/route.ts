@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { publishDuePosts } from "@/services/publisher";
 import { getDb } from "@/db";
-import { schedulerRuns } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { facebookPages, schedulerRuns } from "@/db/schema";
+import { storedPageToken } from "@/services/page-tokens";
+import { and, desc, eq } from "drizzle-orm";
 import { sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
@@ -23,11 +24,16 @@ async function runHealthChecks() {
     // Token inspection is a network call; once an hour is enough.
     if (firstRunOfHour()) await purgeExpiredTrash();
     if (isGraphConfigured() && firstRunOfHour()) {
-      const token = await inspectGraphToken();
-      if (!token.valid) await sendAlert("token_invalid", "توكن فيسبوك غير صالح", `النشر سيفشل حتى تولّد توكناً جديداً وتضعه في META_PAGE_ACCESS_TOKEN على Vercel.
+      // Each page's saved token is checked; pages without one use the global token.
+      const pages = await getDb().select({ name: facebookPages.name, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)));
+      for (const page of pages) {
+        const token = await inspectGraphToken((await storedPageToken(page.facebookPageId)) ?? undefined);
+        const fix = "حدّثه من الإعدادات ← صفحات Facebook ← إضافة صفحة (الصق رمز الصفحة الدائم).";
+        if (!token.valid) await sendAlert("token_invalid", `رمز صفحة ${page.name} غير صالح`, `النشر على هذه الصفحة سيفشل. ${fix}
 
 السبب: ${token.reason ?? "غير معروف"}`, 24);
-      else if (token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400 * 1000) await sendAlert("token_expiring", "توكن فيسبوك ينتهي قريباً", `ينتهي التوكن في ${token.expiresAt.toISOString().slice(0, 10)}. مدّده من أداة تصحيح رموز الوصول في Meta، ثم حدّث META_PAGE_ACCESS_TOKEN على Vercel.`, 24);
+        else if (token.expiresAt && token.expiresAt.getTime() - Date.now() < 7 * 86400 * 1000) await sendAlert("token_expiring", `رمز صفحة ${page.name} ينتهي قريباً`, `ينتهي في ${token.expiresAt.toISOString().slice(0, 10)}. ${fix}`, 24);
+      }
     }
   } catch (error) {
     console.error("Health checks failed", { error: error instanceof Error ? error.message : String(error) });

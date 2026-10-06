@@ -1,3 +1,4 @@
+import { storedPageToken } from "./page-tokens";
 // Facebook post performance via the Graph API. Fields are discovered, not assumed:
 // each candidate metric is requested on its own and only the ones Facebook returns are shown.
 import { isGraphConfigured } from "./facebook-graph";
@@ -20,6 +21,9 @@ async function getJson(url: string) {
 }
 
 async function pageToken(pageId: string) {
+  // A token saved for this page (added from the accounts screen) wins over the global one.
+  const stored = await storedPageToken(pageId);
+  if (stored) return stored;
   const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
   const lookup = await getJson(`${base()}/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`);
   return lookup.ok && typeof lookup.body.access_token === "string" ? lookup.body.access_token as string : token;

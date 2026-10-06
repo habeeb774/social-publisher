@@ -1,3 +1,4 @@
+import { storedPageToken } from "./page-tokens";
 // Direct Meta Graph API publishing with a token supplied through META_PAGE_ACCESS_TOKEN.
 // Graph error bodies mean Facebook rejected the write (nothing was posted); network failures
 // and missing IDs are reported as uncertain so the publisher never retries them blindly.
@@ -21,6 +22,9 @@ const graphError = (body: GraphError) => `FACEBOOK_GRAPH_ERROR: (#${body.error?.
 
 /** Accepts a page token directly, or a user token that can manage the page. */
 async function pageToken(pageId: string) {
+  // A token saved for this page (added from the accounts screen) wins over the global one.
+  const stored = await storedPageToken(pageId);
+  if (stored) return stored;
   const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
   const lookup = await graph(`/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`);
   return lookup.ok && typeof lookup.body.access_token === "string" ? lookup.body.access_token : token;
@@ -70,8 +74,8 @@ export async function replyToCommentGraph(pageId: string, commentId: string, mes
 }
 
 /** Reports token validity and expiry (expiresAt null = never expires). */
-export async function inspectGraphToken() {
-  const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
+export async function inspectGraphToken(override?: string) {
+  const token = override ?? process.env.META_PAGE_ACCESS_TOKEN!.trim();
   const result = await graph(`/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`);
   const data = (result.body.data ?? {}) as { is_valid?: boolean; expires_at?: number; data_access_expires_at?: number; error?: { message?: string } };
   if (!result.ok) return { valid: false, expiresAt: null, reason: graphError(result.body) };
