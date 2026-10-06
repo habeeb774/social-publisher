@@ -17,6 +17,14 @@ const GAP_ALERT_MINUTES = 25;
 // Hourly jobs run on the first worker call of each hour.
 const firstRunOfHour = () => new Date().getUTCMinutes() < 10;
 
+async function hasMetaAccess() {
+  if (isGraphConfigured()) return true;
+  const [page] = await getDb().select({ token: facebookPages.accessTokenEnc }).from(facebookPages)
+    .where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)))
+    .limit(1);
+  return Boolean(page?.token);
+}
+
 /** Health checks that run alongside the worker; failures here never block publishing. */
 async function runHealthChecks() {
   try {
@@ -26,12 +34,20 @@ async function runHealthChecks() {
     // Token inspection is a network call; once an hour is enough.
     if (firstRunOfHour()) await purgeExpiredTrash();
     await maybeSendWeeklyReport().catch((error) => console.error("Weekly report failed", { error: error instanceof Error ? error.message : String(error) }));
-    if (isGraphConfigured() && firstRunOfHour()) {
-      // Each page's saved token is checked; pages without one use the global token.
-      const pages = await getDb().select({ name: facebookPages.name, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)));
+    if (firstRunOfHour()) {
+      const pages = await getDb().select({
+        name: facebookPages.name,
+        facebookPageId: facebookPages.facebookPageId,
+        hasStoredToken: facebookPages.accessTokenEnc,
+      }).from(facebookPages).where(and(eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true)));
       for (const page of pages) {
-        const token = await inspectGraphToken((await storedPageToken(page.facebookPageId)) ?? undefined);
-        const fix = "حدّثه من الإعدادات ← صفحات Facebook ← إضافة صفحة (الصق رمز الصفحة الدائم).";
+        const saved = await storedPageToken(page.facebookPageId).catch(() => null);
+        if (!saved && !isGraphConfigured()) {
+          await sendAlert("token_invalid", `صفحة ${page.name} تحتاج إعادة ربط`, "لا يوجد توكن OAuth صالح محفوظ لهذه الصفحة. افتح الصفحات والحسابات واضغط «ربط Facebook وInstagram».", 24);
+          continue;
+        }
+        const token = await inspectGraphToken(saved ?? undefined);
+        const fix = "أعد ربط الحساب من الصفحات والحسابات ← ربط Facebook وInstagram.";
         if (!token.valid) await sendAlert("token_invalid", `رمز صفحة ${page.name} غير صالح`, `النشر على هذه الصفحة سيفشل. ${fix}
 
 السبب: ${token.reason ?? "غير معروف"}`, 24);
@@ -59,7 +75,7 @@ async function run(request: Request) {
   after(async () => {
     const log = (label: string) => (error: unknown) => console.error(label, { error: error instanceof Error ? error.message : String(error) });
     await gapCheck;
-    if (!isGraphConfigured()) return;
+    if (!(await hasMetaAccess())) return;
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
     await syncComments(day(2), day(0)).catch(log("Comments sync failed"));
     await syncMessenger().catch(log("Messenger sync failed"));
