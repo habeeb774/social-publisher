@@ -40,7 +40,7 @@ export default async function Posts({ searchParams }: { searchParams: Promise<Pa
   if (to) filters.push(lt(posts.scheduledAt, new Date(new Date(`${to}T00:00:00+03:00`).getTime() + 86400000)));
   const base = and(...filters);
   const where = and(base, status === "all" ? sql`${posts.status} <> 'archived'` : eq(posts.status, status));
-  const order = sort === "scheduled" ? [asc(sql`${posts.scheduledAt} nulls last`)] : sort === "created" ? [desc(posts.createdAt)] : [desc(posts.updatedAt)];
+  const order = sort === "scheduled" ? [sql`${posts.scheduledAt} asc nulls last`] : sort === "created" ? [desc(posts.createdAt)] : [desc(posts.updatedAt)];
   const [rows, counts, pageList, campaignList, canWrite] = await Promise.all([
     db.select({ post: posts, pageName: facebookPages.name, campaignName: campaigns.name, image: sql<string | null>`(select ${postMedia.url} from ${postMedia} where ${postMedia.postId} = ${posts.id} limit 1)` }).from(posts).leftJoin(facebookPages, eq(posts.pageId, facebookPages.id)).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(where).orderBy(...order).limit(PAGE_SIZE + 1).offset((p - 1) * PAGE_SIZE),
     db.select({ status: posts.status, n: sql<number>`count(*)::int` }).from(posts).where(base).groupBy(posts.status),
