@@ -5,7 +5,7 @@ import { facebookPages } from "@/db/schema";
 import { isGraphConfigured } from "@/services/facebook-graph";
 import { metaOAuthConfigured } from "@/services/meta-oauth";
 import { pageCan } from "@/services/session-server";
-import { getSetting } from "@/services/settings-store";
+import { listMetaAccounts } from "@/services/meta-accounts";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -23,7 +23,7 @@ export const metadata = { title: "صفحات Facebook" };
 export default async function Pages({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const db = getDb();
-  const [rows, canDiagnose, canManage, metaProfile] = await Promise.all([
+  const [rows, canDiagnose, canManage, metaAccounts] = await Promise.all([
     db.select({
       page: facebookPages,
       published: sql<number>`(select count(*)::int from posts p where p.page_id = ${facebookPages.id} and p.status = 'published')`,
@@ -33,7 +33,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     }).from(facebookPages).orderBy(asc(facebookPages.createdAt)),
     pageCan("system.diagnose"),
     pageCan("settings.manage"),
-    getSetting<{ id: string; name: string; pictureUrl?: string | null; connectedAt?: string } | null>("meta_connected_profile", null),
+    listMetaAccounts(),
   ]);
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY), oauthReady = metaOAuthConfigured();
   const metaState = typeof params.meta === "string" ? params.meta : null;
@@ -46,33 +46,42 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     : metaState === "failed" ? "تعذر إكمال ربط Meta. راجع إعدادات التطبيق والصلاحيات ثم أعد المحاولة."
     : null;
   return <AppShell title="صفحات Facebook">
-    <PageHeader title="الصفحات والحسابات" description="مركز اتصال Facebook وInstagram. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
+    <PageHeader title="الصفحات والحسابات" description="اربط أكثر من حساب Meta وأدر صفحات Facebook وInstagram لكل حساب. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
     {metaMessage && <div className={`banner ${metaState === "connected" ? "success" : metaState === "missing-config" ? "" : "warning"}`}>{metaMessage}</div>}
-    {metaProfile && <section className="card card-flush" style={{ marginBottom: 16 }}>
-      <div className="integration">
-        {metaProfile.pictureUrl
-          ? <img src={metaProfile.pictureUrl} alt="" width={48} height={48} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
-          : <span className="logo" style={{ background: "var(--surface-2)", fontWeight: 700 }}>{metaProfile.name.slice(0, 1)}</span>}
-        <div>
-          <h3>{metaProfile.name}</h3>
-          <small><code>{metaProfile.id}</code> · ملف Meta الشخصي · هوية الحساب الذي تم الربط منه</small>
-          <div className="caps">
-            <span className="cap on">✓ متصل</span>
-            <span className="cap">إدارة الصفحات والحسابات المرتبطة</span>
-            <span className="cap off">— لا نشر آلي</span>
-            <span className="cap off">— لا قراءة تعليقات</span>
-            <span className="cap off">— لا رد يدوي أو تلقائي عبر API</span>
+    {metaAccounts.length > 0 && <section className="card card-flush" style={{ marginBottom: 16 }}>
+      {metaAccounts.map((account) => {
+        const linkedPages = rows.filter(({ page }) =>
+          account.pageIds.includes(page.facebookPageId) || account.instagramIds.includes(page.facebookPageId)
+        );
+        const messenger = account.permissions.includes("pages_messaging");
+        const active = account.status === "active";
+        return <div key={account.id} className="integration">
+          {account.pictureUrl
+            ? <img src={account.pictureUrl} alt="" width={48} height={48} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
+            : <span className="logo" style={{ background: "var(--surface-2)", fontWeight: 700 }}>{account.name.slice(0, 1)}</span>}
+          <div>
+            <h3>{account.name}</h3>
+            <small><code>{account.id}</code> · حساب Meta متصل · هوية إدارة فقط</small>
+            <div className="caps">
+              <span className={`cap ${active ? "on" : "off"}`}>{active ? "✓" : "—"} {active ? "متصل" : account.status === "needs_reauth" ? "يحتاج إعادة ربط" : "غير متصل"}</span>
+              <span className="cap">{account.pageIds.length} صفحة Facebook</span>
+              <span className="cap">{account.instagramIds.length} Instagram</span>
+              <span className={`cap ${messenger ? "on" : "off"}`}>{messenger ? "✓" : "—"} Messenger</span>
+              <span className="cap off">— لا نشر للملف الشخصي</span>
+            </div>
+            <small>{linkedPages.length
+              ? `مرتبط حاليًا بـ ${linkedPages.length} قناة داخل النظام.`
+              : "أعد ربط هذا الحساب مرة واحدة لتحديث ربط صفحاته بالقائمة متعددة الحسابات."}</small>
           </div>
-          <small>الملف الشخصي يظهر للهوية والربط فقط. إدارة التعليقات والردود داخل Social Publisher متاحة لصفحات Facebook المدعومة.</small>
-        </div>
-        <div className="stack" style={{ gap: 6, justifyItems: "end" }}>
-          <span className="badge badge-neutral">عرض فقط</span>
-          <a className="btn btn-ghost btn-sm" href={`https://www.facebook.com/${metaProfile.id}`} target="_blank" rel="noreferrer">
-            <Icon name="facebook" width={14} />فتح الملف الشخصي في Facebook
-          </a>
-          {metaProfile.connectedAt && <small>آخر ربط: {riyadh(metaProfile.connectedAt)}</small>}
-        </div>
-      </div>
+          <div className="stack" style={{ gap: 6, justifyItems: "end" }}>
+            <span className={`badge ${active ? "badge-success" : "badge-warning"}`}>{active ? "حساب Meta" : "إعادة ربط مطلوبة"}</span>
+            <a className="btn btn-ghost btn-sm" href={`https://www.facebook.com/${account.id}`} target="_blank" rel="noreferrer">
+              <Icon name="facebook" width={14} />فتح الحساب
+            </a>
+            <small>آخر ربط: {riyadh(account.lastConnectedAt)}</small>
+          </div>
+        </div>;
+      })}
     </section>}
     <section className="card card-flush">{!rows.length ? <EmptyState icon="pages" title="لا توجد صفحات متصلة" description={oauthReady ? "اربط حساب Meta مرة واحدة ليتم استيراد صفحات Facebook وInstagram تلقائيًا." : "الربط اليدوي يعمل الآن. لتفعيل OAuth أضف META_APP_ID و META_APP_SECRET في Vercel."} action={<Link className="btn btn-secondary btn-sm" href="/settings/integrations">التكاملات</Link>} /> :
       rows.map(({ page, published, scheduled, lastPublish, lastFailure }) => {
