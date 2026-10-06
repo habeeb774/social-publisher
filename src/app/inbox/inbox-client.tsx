@@ -11,7 +11,7 @@ import { Skeleton } from "../ui/kit";
 type Comment = { id: string; message: string; author_name: string | null; page_name: string; post_id: string | null; created_time: string; status: string; sentiment: string; needs_reply: boolean; facebook_comment_id?: string };
 type Reply = { id: string; content: string; status: string; reply_type: string; created_at: string };
 type Detail = { comment: Comment; thread: Comment[]; replies: Reply[]; notes: Array<{ id: string; body: string; author: string; created_at?: string }>; tags: Array<{ id: string; name: string }>; post: { id: string; content: string; campaign_name: string | null } | null };
-type Caps = { connected: boolean; read: boolean; reply: boolean; hide?: boolean; reason: string | null; flags?: { replies: boolean } };
+type Caps = { connected: boolean; read: boolean; reply: boolean; hide?: boolean; reason: string | null; flags?: { replies: boolean; autoReplies?: boolean; automation?: boolean } };
 type Template = { id: string; name: string; content: string; active: boolean };
 const TABS: Array<[string, string]> = [["all", "الكل"], ["unread", "غير مقروء"], ["needs_reply", "بحاجة رد"], ["replied", "تم الرد"], ["important", "مهم"], ["spam", "مزعج"]];
 const SENTIMENT: Record<string, string> = { complaint: "مراجعة بشرية", price: "استفسار سعر", purchase: "رغبة شراء", question: "سؤال", positive: "إيجابي", neutral: "محايد" };
@@ -56,9 +56,32 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
   }
   const sync = () => { const now = new Date(); mutate({ action: "sync", from: new Date(now.getTime() - 2 * 86400000).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) }, "اكتملت المزامنة"); };
   const c = detail?.comment;
+  async function sendNow() {
+    if (!c || !draft.trim()) return;
+    if (!caps?.reply || !caps.flags?.replies) {
+      toast("الرد الحقيقي غير متاح حاليًا", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await call<Reply>("", { action: "draft", id: c.id, content: draft, templateId });
+      await call("", { action: "approve", id: c.id, replyId: created.id });
+      await call("", { action: "send", id: c.id, replyId: created.id });
+      toast("أُرسل الرد إلى Facebook");
+      setDraft("");
+      setTemplateId(null);
+      await loadList();
+      await open(c.id);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "تعذر إرسال الرد", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
 
   return <>
-    {caps && !caps.reply && <div className="alert alert-info" role="note"><Icon name="inbox" width={16} /><span><b>القراءة {caps.read ? "متاحة" : "غير متاحة"} · الرد على Facebook غير متاح</b> ({caps.reason ?? "COMMENTS_REPLY_UNAVAILABLE"}). يمكنك تنظيم التعليقات وكتابة مسودات الردود داخليًا؛ لا يُرسل أي شيء إلى Facebook.</span></div>}
+    {caps && <div className={`alert ${caps.reply && caps.flags?.replies ? "alert-success" : "alert-info"}`} role="note"><Icon name="inbox" width={16} /><span><b>القراءة {caps.read ? "متاحة" : "غير متاحة"} · الرد اليدوي {caps.reply && caps.flags?.replies ? "مفعّل" : "غير متاح"} · الرد التلقائي {caps.flags?.automation && caps.flags?.autoReplies && caps.flags?.replies ? "مفعّل" : "متوقف"}</b>{caps.reason ? ` (${caps.reason})` : ""}</span></div>}
     <div className={`inbox ${detail ? "has-selection" : ""}`}>
       <section className="inbox-list" aria-label="المحادثات">
         <nav className="tabs" role="tablist">{TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{l}</button>)}</nav>
@@ -84,7 +107,9 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
             <textarea aria-label="نص الرد" placeholder={caps?.reply ? "اكتب ردك…" : "اكتب ردك، ثم انسخه وافتح التعليق في Facebook…"} value={draft} onChange={(e) => setDraft(e.target.value)} />
             <div className="row-between"><small><Icon name="ideas" width={12} /> اقتراح ذكي: يتوفر عند تفعيل المساعد الذكي</small><div className="row">
               <button className="btn btn-secondary btn-sm" disabled={busy || !draft.trim()} onClick={() => mutate({ action: "draft", id: c.id, content: draft, templateId }, "حُفظت المسودة")}>حفظ كمسودة</button>
-              <button className="btn btn-primary btn-sm" disabled={!draft.trim() || !c.facebook_comment_id} title="ينسخ الرد ويفتح التعليق في Facebook لتلصقه وترسله بنفسك" onClick={() => { navigator.clipboard?.writeText(draft).then(() => toast("نُسخ الرد — الصقه في Facebook وأرسله"), () => toast("تعذر النسخ؛ انسخ النص يدويًا", "error")); window.open(`https://www.facebook.com/${c.facebook_comment_id}`, "_blank", "noopener"); mutate({ action: "draft", id: c.id, content: draft, templateId }, "حُفظ الرد في السجل"); }}><Icon name="send" width={14} />نسخ وفتح في Facebook</button></div></div>
+              {caps?.reply && caps.flags?.replies
+                ? <button className="btn btn-primary btn-sm" disabled={busy || !draft.trim()} onClick={sendNow}><Icon name="send" width={14} />إرسال إلى Facebook</button>
+                : <button className="btn btn-primary btn-sm" disabled={!draft.trim() || !c.facebook_comment_id} title="ينسخ الرد ويفتح التعليق في Facebook" onClick={() => { navigator.clipboard?.writeText(draft).then(() => toast("نُسخ الرد — الصقه في Facebook وأرسله"), () => toast("تعذر النسخ؛ انسخ النص يدويًا", "error")); window.open(`https://www.facebook.com/${c.facebook_comment_id}`, "_blank", "noopener"); mutate({ action: "draft", id: c.id, content: draft, templateId }, "حُفظ الرد في السجل"); }}><Icon name="send" width={14} />نسخ وفتح في Facebook</button>}</div></div>
             <form className="inline-field" onSubmit={(e) => { e.preventDefault(); if (note.trim()) { mutate({ action: "note", id: c.id, value: note }, "أُضيفت الملاحظة"); setNote(""); } }}><input aria-label="ملاحظة داخلية" placeholder="ملاحظة داخلية للفريق…" value={note} onChange={(e) => setNote(e.target.value)} /><button className="btn btn-ghost btn-sm" disabled={!note.trim()}>إضافة ملاحظة</button></form>
           </div>}
         </>}
