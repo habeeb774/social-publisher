@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, posts, schedulerRuns } from "@/db/schema";
 import { isGraphConfigured } from "./facebook-graph";
@@ -23,7 +23,7 @@ export async function nearbyScheduled(at: Date, excludeId?: string) {
 export async function prePublishChecks(input: { pageId: string; content: string; scheduledAt?: Date | null; imageUrl?: string | null; postId?: string }): Promise<{ items: CheckItem[]; blocking: boolean }> {
   const db = getDb();
   const items: CheckItem[] = [];
-  const [page] = await db.select({ isActive: facebookPages.isActive, name: facebookPages.name }).from(facebookPages).where(eq(facebookPages.id, input.pageId)).limit(1);
+  const [page] = await db.select({ isActive: facebookPages.isActive, name: facebookPages.name, accessTokenEnc: facebookPages.accessTokenEnc }).from(facebookPages).where(eq(facebookPages.id, input.pageId)).limit(1);
   items.push({ key: "page", label: "الصفحة متصلة", ok: Boolean(page?.isActive), critical: true, detail: page ? page.name : "الصفحة غير موجودة" });
   const text = input.content.trim();
   items.push({ key: "content", label: "النص صالح", ok: text.length > 0 && text.length <= 63206, critical: true, detail: text.length ? `${text.length} حرفًا` : "النص فارغ" });
@@ -33,8 +33,31 @@ export async function prePublishChecks(input: { pageId: string; content: string;
     const probe = await probeImageUrl(input.imageUrl);
     items.push({ key: "image", label: "الصورة متاحة", ok: probe.ok, critical: true, detail: probe.ok ? probe.mimeType : probe.reason });
   }
-  const connected = isGraphConfigured() || Boolean(process.env.WINDSOR_API_KEY);
-  items.push({ key: "facebook", label: "اتصال Facebook مُعد", ok: connected, critical: true, detail: isGraphConfigured() ? "توكن الصفحة" : connected ? "Windsor MCP" : "لا يوجد اتصال نشر" });
+  const connected = Boolean(page?.accessTokenEnc) || isGraphConfigured() || Boolean(process.env.WINDSOR_API_KEY);
+  items.push({ key: "facebook", label: "اتصال Facebook مُعد", ok: connected, critical: true, detail: page?.accessTokenEnc ? "توكن مشفّر خاص بالصفحة" : isGraphConfigured() ? "توكن Meta احتياطي" : connected ? "Windsor MCP" : "لا يوجد اتصال نشر" });
+  if (text) {
+    const normalized = text.replace(/\s+/g, " ").trim().toLocaleLowerCase("ar");
+    const duplicateRows = await db.select({ id: posts.id, status: posts.status, scheduledAt: posts.scheduledAt, publishedAt: posts.publishedAt })
+      .from(posts)
+      .where(and(
+        eq(posts.pageId, input.pageId),
+        inArray(posts.status, ["scheduled", "published"]),
+        isNull(posts.deletedAt),
+        input.postId ? ne(posts.id, input.postId) : undefined,
+        sql`lower(regexp_replace(trim(${posts.content}), '\\s+', ' ', 'g')) = ${normalized}`
+      ))
+      .orderBy(desc(posts.createdAt))
+      .limit(3);
+    items.push({
+      key: "duplicate",
+      label: "المحتوى غير مكرر",
+      ok: duplicateRows.length === 0,
+      critical: false,
+      detail: duplicateRows.length
+        ? `وُجد ${duplicateRows.length} منشور مطابق نصيًا على نفس الصفحة. راجع التكرار قبل النشر.`
+        : undefined,
+    });
+  }
   const [run] = await db.select({ at: schedulerRuns.triggeredAt }).from(schedulerRuns).orderBy(desc(schedulerRuns.triggeredAt)).limit(1);
   const healthy = Boolean(run && Date.now() - run.at.getTime() < 10 * 60000);
   items.push({ key: "scheduler", label: "عامل النشر يعمل", ok: healthy, critical: false, detail: healthy ? undefined : "لم يعمل خلال آخر 10 دقائق" });
