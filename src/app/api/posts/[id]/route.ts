@@ -10,6 +10,7 @@ import { snapshotPost } from "@/services/post-ops";
 import { logAudit } from "@/services/audit";
 import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
+import { denyPageOutsideScope, denyPostOutsideScope } from "@/services/access-scope";
 
 export async function PATCH(request:NextRequest,{params}:{params:Promise<{id:string}>}) {
   {const denied=await guard(request);if(denied)return denied;}
@@ -24,6 +25,8 @@ export async function PATCH(request:NextRequest,{params}:{params:Promise<{id:str
   const db=getDb();
   const [before]=await db.select().from(posts).where(and(eq(posts.id,id),isNull(posts.deletedAt))).limit(1);
   if(!before)return NextResponse.json({error:"المنشور غير موجود"},{status:404});
+  {const scoped=await denyPostOutsideScope(request,id);if(scoped)return scoped;}
+  {const scoped=await denyPageOutsideScope(request,data.pageId);if(scoped)return scoped;}
     // Server-side gate: critical checklist failures block scheduling regardless of the UI.
     if(data.status==="scheduled"){const check=await prePublishChecks({pageId:data.pageId,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:id});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
   // A concurrent worker claim or editor save invalidates this compare-and-update.
