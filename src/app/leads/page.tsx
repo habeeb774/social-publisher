@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LeadListTable } from './lead-list-table';
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { AppShell } from "../ui/app-shell";
@@ -49,10 +50,7 @@ export default async function Leads({ searchParams }:{ searchParams:Promise<{sta
     <form action="/leads" className="leads-filter"><input type="hidden" name="followup" value={followup}/><input name="q" defaultValue={q} maxLength={100} aria-label="البحث عن عميل" placeholder="بحث بالاسم أو معلومات الاتصال"/><input type="hidden" name="status" value={status}/><label>الإسناد<select name="ownership" defaultValue={ownership}><option value="all">كل العملاء</option><option value="mine">عملائي</option><option value="unassigned">غير المسندين</option></select></label><button className="btn btn-secondary" type="submit">بحث</button></form>
     <nav className="segmented leads-filter" aria-label="تصفية المتابعات">{[["all","كل المتابعات"],["due","مستحقة الآن"],["upcoming","قادمة"],["completed","مكتملة"]].map(([value,label])=><Link key={value} className={followup===value?"active":""} href={leadListHref(q,status,undefined,ownership,value)}>{label}</Link>)}</nav>
     <div className="segmented leads-filter">{[["","الكل"],...Object.entries(labels)].map(([v,l])=><Link key={v} className={status===v?"active":""} href={href(v)}>{l}</Link>)}</div>
-    {failed?<div className="alert alert-info" role="alert">تعذر تحميل العملاء المحتملين. <Link href={href(status,params.cursor)}>إعادة المحاولة</Link></div>:<section className="card card-flush"><div className="table-wrap"><table><thead><tr><th>العميل</th><th>المصدر</th><th>الصفحة</th><th>الحالة</th><th>آخر تحديث</th></tr></thead><tbody>
-      {rows.map((r)=><tr key={String(r.id)}><td><Link href={`/leads/${String(r.id)}`}><strong>{String(r.name)}</strong></Link>{Boolean(r.contact)&&<small className="block">{String(r.contact)}</small>}</td><td>{r.source==="messenger"?"Messenger":r.source==="manual"?"يدوي":String(r.source)}</td><td>{r.page_name?String(r.page_name):"—"}</td><td><span className="badge badge-info">{labels[String(r.status)]??String(r.status)}</span></td><td><small>{new Intl.DateTimeFormat("ar-SA",{dateStyle:"short",timeStyle:"short",timeZone:"Asia/Riyadh"}).format(new Date(String(r.updated_at)))}</small></td></tr>)}
-      {!rows.length&&<tr><td colSpan={5}><div className="empty-inline">لا يوجد عملاء محتملون بهذه الحالة بعد.</div></td></tr>}
-    </tbody></table></div></section>}
+    {failed?<div className="alert alert-info" role="alert">تعذر تحميل العملاء المحتملين. <Link href={href(status,params.cursor)}>إعادة المحاولة</Link></div>:<LeadListTable key={href(status,params.cursor)} editable={can(session.role,'leads.edit')} rows={rows.map(r=>({id:String(r.id),name:String(r.name),contact:r.contact?String(r.contact):null,source:String(r.source),status:String(r.status),pageName:r.page_name?String(r.page_name):null,updatedAt:new Date(String(r.updated_at)).toISOString(),version:String(r.cursor_time)}))}/>}
     {!failed&&<nav aria-label="صفحات العملاء">{cursor&&<Link className="btn btn-secondary" href={href()}>أول صفحة</Link>}{hasMore&&last&&<Link className="btn btn-secondary" href={href(status,encodeLeadCursor(String(last.cursor_time),String(last.id)))}>التالي</Link>}</nav>}
   </AppShell>;
 }
