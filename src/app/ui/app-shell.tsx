@@ -24,7 +24,7 @@ export const NAV: NavGroup[] = [
   ] },
   { key: "engage", title: "صندوق الوارد", links: [
     { icon: "inbox", label: "صندوق الوارد", href: "/inbox", badge: "inbox" }, { icon: "inbox", label: "الرسائل", href: "/inbox/messages" }, { icon: "reply", label: "الردود الجاهزة", href: "/templates/replies" },
-    { icon: "automation", label: "الأتمتة", href: "/automations/comments" },
+    { icon: "automation", label: "أتمتة التعليقات", href: "/automations/comments" }, { icon: "automation", label: "أتمتة Messenger", href: "/automations/messenger" },
   ] },
   { key: "insights", title: "التحليلات", links: [
     { icon: "analytics", label: "التحليلات", href: "/analytics" }, { icon: "performance", label: "أداء المحتوى", href: "/performance" },
