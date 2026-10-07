@@ -12,6 +12,7 @@ import { processDueAutomationReplies, syncComments } from "@/services/comments/s
 import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
+import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -102,6 +103,7 @@ async function run(request: Request) {
   after(async () => {
     const log = (label: string) => (error: unknown) => console.error(label, { error: error instanceof Error ? error.message : String(error) });
     await gapCheck;
+    await deliverLeadFollowups().catch(() => console.error("Lead follow-up dispatch failed", { code: "LEAD_FOLLOWUP_DISPATCH_FAILED" }));
     if (!(await hasMetaAccess())) return;
     const day = (offset: number) => new Date(startedAt.getTime() - offset * 86400000).toISOString().slice(0, 10);
     try {
