@@ -69,3 +69,41 @@
   :root { --t-fast: 0ms; --t: 0ms; }
   *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; scroll-behavior: auto !important; }
 }
+
+
+/* Glass UI refresh — inspired by the approved publisher reference */
+:root {
+  --glass: rgba(255,255,255,.62);
+  --glass-strong: rgba(255,255,255,.78);
+  --glass-border: rgba(255,255,255,.64);
+  --glass-highlight: rgba(255,255,255,.72);
+  --glass-shadow: 0 24px 70px rgba(31,42,68,.14), inset 0 1px 0 rgba(255,255,255,.72);
+  --glass-blur: 26px;
+  --r-panel: 20px;
+  --r-card: 20px;
+  --r-btn: 12px;
+  --r-input: 12px;
+}
+:root[data-theme="dark"] {
+  --primary: #7C8CFF;
+  --primary-hover: #9AA6FF;
+  --primary-soft: rgba(124,140,255,.14);
+  --primary-ring: rgba(124,140,255,.28);
+  --bg: #090b12;
+  --surface: rgba(20,23,34,.66);
+  --elevated: rgba(25,29,42,.84);
+  --subtle: rgba(255,255,255,.055);
+  --hover: rgba(255,255,255,.085);
+  --border: rgba(255,255,255,.105);
+  --border-strong: rgba(255,255,255,.17);
+  --heading: #F8F9FF;
+  --text: #D9DDEA;
+  --muted: #9DA5B8;
+  --faint: #70798E;
+  --glass: rgba(18,21,31,.58);
+  --glass-strong: rgba(22,26,38,.78);
+  --glass-border: rgba(255,255,255,.12);
+  --glass-highlight: rgba(255,255,255,.12);
+  --glass-shadow: 0 28px 80px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.10);
+  --glass-blur: 30px;
+}
