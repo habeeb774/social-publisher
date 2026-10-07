@@ -267,3 +267,21 @@
 .inbox-list .search { flex-wrap: nowrap; }
 .inbox-list .search input { flex: 1; width: auto; min-width: 0; }
 @media (max-width: 767px) { .composer-actions { bottom: calc(var(--bottom-nav-h) + 8px); padding: var(--s-2); } .composer-actions .btn { flex: 1 1 auto; } .composer-actions .spacer { display: none; } }
+
+/* Glass treatment for feature-specific surfaces */
+.composer-actions, .fb-preview, .detail-meta, .slot-day, .queue-list > li,
+.calendar-card, .media-tile, .comments-metrics, .comments-form,
+.comments-settings-grid > section, .comment-template, .comments-analytics > section {
+  background: var(--glass);
+  border-color: var(--glass-border);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--heading) 8%, transparent), inset 0 1px 0 var(--glass-highlight);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+.calendar-grid > b { background: color-mix(in srgb, var(--glass-strong) 84%, transparent); }
+.calendar-day.outside { background: color-mix(in srgb, var(--subtle) 75%, transparent); }
+.media-tile:hover, .queue-list > li:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--heading) 10%, transparent);
+}
+.login-form-side { background: var(--glass-strong); backdrop-filter: blur(26px); -webkit-backdrop-filter: blur(26px); }
