@@ -4,7 +4,8 @@ import { getDb } from "@/db";
 import { facebookPages } from "@/db/schema";
 import { isGraphConfigured } from "@/services/facebook-graph";
 import { metaOAuthConfigured } from "@/services/meta-oauth";
-import { pageCan } from "@/services/session-server";
+import { pageCan, pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
 import { listMetaAccounts } from "@/services/meta-accounts";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
@@ -24,7 +25,7 @@ export const metadata = { title: "صفحات Facebook" };
 export default async function Pages({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const db = getDb();
-  const [rows, canDiagnose, canManage, metaAccounts] = await Promise.all([
+  const [allRows, canDiagnose, canManage, metaAccounts, session] = await Promise.all([
     db.select({
       page: facebookPages,
       published: sql<number>`(select count(*)::int from posts p where p.page_id = ${facebookPages.id} and p.status = 'published')`,
@@ -35,7 +36,11 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     pageCan("system.diagnose"),
     pageCan("settings.manage"),
     listMetaAccounts(),
+    pageSession(),
   ]);
+  const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
+  const rows = allowed === null ? allRows : allRows.filter(({ page }) => allowed.has(page.id));
+  const visibleMetaAccounts = allowed === null ? metaAccounts : metaAccounts.filter((account) => rows.some(({ page }) => account.pageIds.includes(page.facebookPageId) || account.instagramIds.includes(page.facebookPageId)));
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY), oauthReady = metaOAuthConfigured();
   const metaState = typeof params.meta === "string" ? params.meta : null;
   const metaMessage = metaState === "connected"
@@ -49,8 +54,8 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
   return <AppShell title="صفحات Facebook">
     <PageHeader title="الصفحات والحسابات" description="اربط أكثر من حساب Meta وأدر صفحات Facebook وInstagram لكل حساب. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
     {metaMessage && <div className={`banner ${metaState === "connected" ? "success" : metaState === "missing-config" ? "" : "warning"}`}>{metaMessage}</div>}
-    {metaAccounts.length > 0 && <section className="card card-flush" style={{ marginBottom: 16 }}>
-      {metaAccounts.map((account) => {
+    {visibleMetaAccounts.length > 0 && <section className="card card-flush" style={{ marginBottom: 16 }}>
+      {visibleMetaAccounts.map((account) => {
         const linkedPages = rows.filter(({ page }) =>
           account.pageIds.includes(page.facebookPageId) || account.instagramIds.includes(page.facebookPageId)
         );
@@ -87,7 +92,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     </section>}
     <section className="card card-flush">{!rows.length ? <EmptyState icon="pages" title="لا توجد صفحات متصلة" description={oauthReady ? "اربط حساب Meta مرة واحدة ليتم استيراد صفحات Facebook وInstagram تلقائيًا." : "الربط اليدوي يعمل الآن. لتفعيل OAuth أضف META_APP_ID و META_APP_SECRET في Vercel."} action={<Link className="btn btn-secondary btn-sm" href="/settings/integrations">التكاملات</Link>} /> :
       rows.map(({ page, published, scheduled, lastPublish, lastFailure }) => {
-        const accountOwners = metaAccounts.filter((account) =>
+        const accountOwners = visibleMetaAccounts.filter((account) =>
           page.platform === "instagram" ? account.instagramIds.includes(page.facebookPageId) : account.pageIds.includes(page.facebookPageId)
         );
         const ownerLabel = accountOwners.length ? accountOwners.map((account) => account.name).join("، ") : null;
