@@ -105,28 +105,29 @@ export async function listConversations(pageId = "", accountId = "", q = "", sta
   const accounts = await listMetaAccounts();
   const selected = accounts.find((account) => account.id === accountId);
   const remoteCsv = selected?.pageIds.join(",") ?? "";
-  const rows = await getDb().execute(sql`select c.id, c.page_id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name, p.facebook_page_id,
-      coalesce((select case a.action when 'messenger.resolved' then 'resolved' when 'messenger.archived' then 'archived' when 'messenger.reopened' then 'open' else 'open' end
-        from activity_logs a where a.entity_type='messenger_conversation' and a.entity_id=c.id
-          and a.action in ('messenger.resolved','messenger.archived','messenger.reopened')
-        order by a.created_at desc limit 1),'open') as stored_state,
-      (select a.created_at from activity_logs a where a.entity_type='messenger_conversation' and a.entity_id=c.id
-          and a.action in ('messenger.resolved','messenger.archived','messenger.reopened')
-        order by a.created_at desc limit 1) as state_at
+  const rows = await getDb().execute(sql`with candidates as (
+    select c.id, c.page_id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name, p.facebook_page_id,
+      coalesce(case latest.action when 'messenger.resolved' then 'resolved' when 'messenger.archived' then 'archived' else 'open' end,'open') as stored_state,
+      latest.created_at as state_at,
+      case when c.unread and c.last_message_at > coalesce(latest.created_at,'epoch'::timestamptz) then 'open'
+        when latest.action='messenger.archived' then 'archived'
+        when latest.action='messenger.resolved' then 'resolved' else 'open' end as state
     from messenger_conversations c join facebook_pages p on p.id = c.page_id
+    left join lateral (
+      select a.action,a.created_at from activity_logs a
+      where a.entity_type='messenger_conversation' and a.entity_id=c.id
+        and a.action in ('messenger.resolved','messenger.archived','messenger.reopened')
+      order by a.created_at desc,a.id desc limit 1
+    ) latest on true
     where (${pageId} = '' or c.page_id::text = ${pageId})
       and ${messengerPageScope(allowed)}
       and (${accountId} = '' or p.facebook_page_id = any(string_to_array(${remoteCsv}, ',')))
       and (${q} = '' or coalesce(c.participant_name,'') ilike ${`%${q}%`} or coalesce(c.last_message,'') ilike ${`%${q}%`})
-    order by c.last_message_at desc nulls last limit 100`);
-  return rows.rows.map((row) => {
-    const record = row as Row;
-    const stateAt = record.state_at ? new Date(String(record.state_at)).getTime() : 0;
-    const lastAt = record.last_message_at ? new Date(String(record.last_message_at)).getTime() : 0;
-    const unread = Boolean(record.unread);
-    const effectiveState = unread && lastAt > stateAt ? "open" : String(record.stored_state ?? "open");
-    return { ...record, unread, state: effectiveState };
-  }).filter((row) => state === "all" ? true : state === "unread" ? row.unread : state === "archived" ? row.state === "archived" : row.state !== "archived");
+    ) select * from candidates
+    where case when ${state}='all' then true when ${state}='unread' then unread
+      when ${state}='archived' then state='archived' else state<>'archived' end
+    order by last_message_at desc nulls last,id desc limit 100`);
+  return rows.rows.map(row => ({ ...(row as Row), unread: Boolean(row.unread), state: String(row.state) }));
 }
 
 export async function setMessengerConversationState(id: string, state: "resolved" | "open" | "archived") {
