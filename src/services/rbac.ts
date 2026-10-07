@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   "settings.manage": ["admin"],
   "users.manage": ["admin"],
   "data.export": ["admin"],
+  "audit.read": ["admin"],
   "system.diagnose": ["admin", "editor"],
 } as const satisfies Record<string, readonly Role[]>;
 export type Permission = keyof typeof PERMISSIONS;

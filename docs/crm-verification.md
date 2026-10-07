@@ -12,6 +12,16 @@
 
 ## Manual creation flow
 
+## Scoped discovery security verification
+
+- Full isolated database suite: 125 passed, 0 failed, 0 skipped; the updated UUID comparison unit tests also passed after the schema correction.
+- Production build passed after that correction. Actual local HTTP checks passed for search, dashboard activity and system logs using a restricted editor account.
+- Search retained accessible posts, pages, linked media and campaigns, while excluding outside-page fixtures. Restricted accounts cannot search unscoped templates or system audit records.
+- Dashboard activity is filtered before pagination and includes only accessible post/lead entities for non-administrators. Missing entity IDs do not disclose orphan activity.
+- System logs require the current database administrator role. This does not establish complete workspace isolation across other routes or verify production browser interactions.
+
+## Manual creation flow
+
 `/leads` → `/leads/new` → `POST /api/leads` → scoped insert → `/leads/:id`.
 
 - `leads.create` is enforced by both the page and the API using current database roles.

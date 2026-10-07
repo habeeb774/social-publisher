@@ -7,6 +7,7 @@ import { isPublishingEnabled } from "@/services/publishing-mode";
 import { setupProgress } from "@/services/setup";
 import { pageSession } from "@/services/session-server";
 import { allowedPageIds } from "@/services/access-scope";
+import { can } from "@/services/rbac";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -23,7 +24,7 @@ export default async function Dashboard() {
   const session = await pageSession();
   const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const [data, analytics, goals, setup] = await Promise.all([
-    dashboardData(allowed),
+    dashboardData(allowed,can(session?.role,"audit.read")),
     allowed === null ? systemAnalytics() : Promise.resolve(null),
     allowed === null ? goalsWithProgress(currentMonth()) : Promise.resolve([]),
     setupProgress(),

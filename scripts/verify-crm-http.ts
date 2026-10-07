@@ -69,6 +69,33 @@ try {
   const completed = await db.execute(sql`select status,follow_up_completed_at is not null as completed,last_contact_at is not null as contacted from leads where id=${leadId}::uuid`);
   assert.deepEqual(completed.rows[0],{status:"qualified",completed:true,contacted:true});
   console.log("CRM HTTP QA: form/detail server rendering, edit conflicts, follow-up schedule/filter/completion passed.");
+  const tag=`visibility-${randomUUID()}`;
+  const hiddenPage=randomUUID(),hiddenLead=randomUUID();
+  await db.execute(sql`update facebook_pages set name=${`${tag} visible page`} where id=${pageId}::uuid`);
+  await db.execute(sql`insert into facebook_pages(id,name,facebook_page_id,is_active) values(${hiddenPage}::uuid,${`${tag} hidden page`},${`qa-${hiddenPage}`},true)`);
+  await db.execute(sql`insert into leads(id,page_id,name) values(${hiddenLead}::uuid,${hiddenPage}::uuid,${`${tag} hidden lead`})`);
+  for(const [target,visibility] of [[pageId,"visible"],[hiddenPage,"hidden"]]) {
+    const campaign=randomUUID(),post=randomUUID();const name=`${tag} ${visibility}`;
+    await db.execute(sql`insert into campaigns(id,name) values(${campaign}::uuid,${`${name} campaign`})`);
+    await db.execute(sql`insert into posts(id,page_id,content,status,campaign_id) values(${post}::uuid,${target}::uuid,${`${name} post`},'draft',${campaign}::uuid)`);
+    const url=`https://example.test/${post}.png`;
+    await db.execute(sql`insert into media_assets(name,url) values(${`${name} media`},${url})`);
+    await db.execute(sql`insert into post_media(post_id,type,url) values(${post}::uuid,'image',${url})`);
+    await db.execute(sql`insert into activity_logs(action,entity_type,entity_id,metadata) values('lead.updated','lead',${visibility==='visible'?leadId:hiddenLead},${JSON.stringify({actor:`${name} actor`})}::jsonb)`);
+  }
+  await db.execute(sql`insert into post_templates(name,content) values(${`${tag} unscoped template`},'QA only')`);
+  await db.execute(sql`insert into activity_logs(action,entity_type,entity_id,metadata) values(${`${tag}.global`},'user',null,${JSON.stringify({actor:`${tag} hidden global actor`})}::jsonb)`);
+  // Malformed historical IDs must fail closed rather than crash UUID casts.
+  await db.execute(sql`insert into activity_logs(action,entity_type,entity_id,metadata) values('post.updated','post',${randomUUID()}::uuid,'{}'::jsonb)`);
+  const search=await call(`/api/search?q=${encodeURIComponent(tag)}`);assert.equal(search.status,200);
+  const searchBody=await search.json() as {results:Array<{label:string;type:string}>};
+  for(const type of ["منشور","وسائط","صفحة","حملة"])assert.ok(searchBody.results.some(result=>result.type===type&&result.label.includes("visible")),`${type} accessible result must remain available`);
+  assert.equal(JSON.stringify(searchBody).includes("hidden"),false);
+  assert.equal(searchBody.results.some(result=>result.type==="سجل"||result.type==="قالب"),false);
+  const logs=await call("/logs");assert.equal(logs.status,200);assert.ok((await logs.text()).includes("ليست لديك صلاحية"));
+  const dashboard=await call("/dashboard");assert.equal(dashboard.status,200);const dashboardHtml=await dashboard.text();
+  assert.ok(dashboardHtml.includes(`${tag} visible actor`));assert.equal(dashboardHtml.includes(`${tag} hidden`),false);
+  console.log("CRM HTTP QA: scoped search retains accessible groups; outside-page data and system audit are absent from search/dashboard/logs.");
   await db.execute(sql`update users set role='viewer' where id=${editorId}::uuid`);
   assert.equal((await call("/api/leads",{...input,id:randomUUID()})).status,403);
   const viewerForm = await call("/leads/new");assert.equal(viewerForm.status,200);assert.ok((await viewerForm.text()).includes("ليست لديك صلاحية"));

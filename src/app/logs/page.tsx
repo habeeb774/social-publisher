@@ -5,6 +5,8 @@ import { auditLabel } from "@/services/audit-labels";
 import { AppShell } from "../ui/app-shell";
 import { EmptyState } from "../ui/empty-state";
 import { PageHeader } from "../ui/kit";
+import { pageSession } from "@/services/session-server";
+import { can } from "@/services/rbac";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "السجلات" };
@@ -19,6 +21,8 @@ const soon = () => new Date(Date.now() + 60000);
  * Each source is capped and filtered in SQL; pagination is by time ("before").
  */
 export default async function Logs({ searchParams }: { searchParams: Promise<{ type?: string; before?: string; q?: string }> }) {
+  const session=await pageSession();
+  if(!session||!can(session.role,"audit.read"))return <AppShell title="السجلات"><div className="alert alert-info">ليست لديك صلاحية لعرض سجلات النظام.</div></AppShell>;
   const params = await searchParams;
   const type: Filter = params.type && params.type in FILTERS ? params.type as Filter : "all";
   const before = params.before && !Number.isNaN(Date.parse(params.before)) ? new Date(params.before) : soon();
