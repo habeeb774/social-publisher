@@ -20,6 +20,8 @@ export const PERMISSIONS = {
   "content.review": ["admin", "reviewer"],
   "inbox.reply": ["admin", "editor"],
   "inbox.manage": ["admin", "editor"],
+  "leads.read": ["admin", "editor", "reviewer", "viewer"],
+  "leads.create": ["admin", "editor"],
   "automation.manage": ["admin"],
   "settings.manage": ["admin"],
   "users.manage": ["admin"],
