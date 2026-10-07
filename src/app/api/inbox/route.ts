@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   const source = ["all", "comments", "messenger"].includes(params.get("source") ?? "") ? params.get("source")! : "all";
   const account = (params.get("account") ?? "").trim().slice(0, 200);
   const page = (params.get("page") ?? "").trim().slice(0, 100);
-  const q = (params.get("q") ?? "").trim().slice(0, 100).toLowerCase();
+  const q = (params.get("q") ?? "").trim().slice(0, 100);
+  const messengerState = ["active","unread","archived","all"].includes(params.get("state") ?? "") ? params.get("state")! : "active";
 
   const commentParams = new URLSearchParams();
   commentParams.set("status", "all");
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   const [commentResult, messengerRows, catalog, allowed] = await Promise.all([
     source === "messenger" ? Promise.resolve({ items: [] as Row[] }) : comments.inbox(commentParams),
-    source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account) as Promise<Row[]>,
+    source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account, q, messengerState) as Promise<Row[]>,
     comments.inboxCatalog(user.id),
     allowedPageIds(user),
   ]);
@@ -49,7 +50,6 @@ export async function GET(request: NextRequest) {
 
   const messageItems = messengerRows
     .filter((item) => allowed === null || allowed.has(String(item.page_id)))
-    .filter((item) => !q || String(item.participant_name ?? "").toLowerCase().includes(q) || String(item.last_message ?? "").toLowerCase().includes(q))
     .map((item) => ({
       kind: "messenger" as const,
       id: String(item.id),
@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
       unread: Boolean(item.unread),
       needsReply: Boolean(item.unread),
       sentiment: "neutral",
+      state: String(item.state ?? "open"),
     }));
 
   const items = [...commentItems, ...messageItems]
