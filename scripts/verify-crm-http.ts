@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import { assertDisposableDatabase } from "../tests/database-safety";
 import { getDb } from "../src/db";
 import { createSessionToken, SESSION_COOKIE } from "../src/services/request-auth";
+import { leadAnalyticsQuery,leadAnalyticsRange,leadAnalyticsSummary,type LeadAnalyticsRow } from "../src/services/leads-analytics";
 
 // Real HTTP requests to the built application, using synthetic users and an isolated DB.
 // This is not a production-browser test and never runs Cron, publishing or Meta calls.
@@ -75,6 +76,14 @@ try {
   await db.execute(sql`update facebook_pages set name=${`${tag} visible page`} where id=${pageId}::uuid`);
   await db.execute(sql`insert into facebook_pages(id,name,facebook_page_id,is_active) values(${hiddenPage}::uuid,${`${tag} hidden page`},${`qa-${hiddenPage}`},true)`);
   await db.execute(sql`insert into leads(id,page_id,name) values(${hiddenLead}::uuid,${hiddenPage}::uuid,${`${tag} hidden lead`})`);
+  await db.execute(sql`update leads set status='won' where id=${hiddenLead}::uuid`);
+  const metrics=(await db.execute(leadAnalyticsQuery(leadAnalyticsRange({days:"7"}),new Set([pageId])))).rows as LeadAnalyticsRow[];
+  assert.deepEqual(leadAnalyticsSummary(metrics),{total:1,won:0,lost:0,conversion:0});
+  const emptyMetrics=(await db.execute(leadAnalyticsQuery(leadAnalyticsRange({days:"7"}),new Set()))).rows as LeadAnalyticsRow[];
+  assert.equal(leadAnalyticsSummary(emptyMetrics).conversion,null);
+  const analytics=await call("/leads/analytics?days=7");assert.equal(analytics.status,200);
+  assert.ok((await analytics.text()).includes("ملخص الفترة"));
+  const invalidAnalytics=await call("/leads/analytics?from=bad");assert.ok((await invalidAnalytics.text()).includes("الفترة غير صالحة"));
   for(const [target,visibility] of [[pageId,"visible"],[hiddenPage,"hidden"]]) {
     const campaign=randomUUID(),post=randomUUID();const name=`${tag} ${visibility}`;
     await db.execute(sql`insert into campaigns(id,name) values(${campaign}::uuid,${`${name} campaign`})`);
