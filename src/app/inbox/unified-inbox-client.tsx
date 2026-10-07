@@ -11,6 +11,8 @@ import { commentReplyFlow, savedCommentReply } from "./comment-reply-flow";
 import { refreshCurrentSelection } from "./selection-refresh";
 import { draftAfterOpening } from "./reply-draft";
 import { confirmCurrentSelection } from "./selection-confirmation";
+import { convertMessengerLead } from "./messages/lead-conversion";
+import Link from "next/link";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -41,7 +43,7 @@ type MessengerDetail = {
 };
 type Template = { id: string; name: string; content: string; active: boolean };
 
-export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveComments=false,initialSource='all',initialQuery='' }: { canReply: boolean;canManageInbox?:boolean;canApproveComments?:boolean;initialSource?:Source;initialQuery?:string }) {
+export function UnifiedInboxClient({ canReply,canCreateLead=false,canManageInbox=false,canApproveComments=false,initialSource='all',initialQuery='' }: { canReply: boolean;canCreateLead?:boolean;canManageInbox?:boolean;canApproveComments?:boolean;initialSource?:Source;initialQuery?:string }) {
   const [source, setSource] = useState<Source>(initialSource);
   const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
@@ -57,6 +59,7 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
   const [busy, setBusy] = useState(false);
   const [listError, setListError] = useState(false);
   const [detailError, setDetailError] = useState(false);
+  const [convertedLead, setConvertedLead] = useState<{ conversationId: string; id: string } | null>(null);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
   const replyAction = useRef(false);
@@ -237,6 +240,26 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
     }
   }
 
+  async function convertLead() {
+    if (!canCreateLead || !selected || selected.kind !== "messenger" || !messageDetail || busy || replyAction.current) return;
+    const target = selected;
+    const request = detailRequest.current;
+    replyAction.current = true;
+    setBusy(true);
+    try {
+      const id = await convertMessengerLead(target.id);
+      if (request === detailRequest.current) {
+        setConvertedLead({ conversationId: target.id, id });
+        toast("المحادثة مرتبطة بعميل محتمل. يمكنك فتح ملفه الآن.");
+      }
+    } catch {
+      toast("تعذر تأكيد التحويل. راجع قائمة العملاء المحتملين قبل المحاولة مجددًا.", "error");
+    } finally {
+      replyAction.current = false;
+      setBusy(false);
+    }
+  }
+
   const canSend = selected?.kind === "messenger"
     ? Boolean(messageDetail?.conversation.canReply)
     : Boolean(selected?.kind === "comment" && commentDetail);
@@ -295,6 +318,10 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
             <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateMessenger("state", "archived")}>أرشفة</button>
           </div>}
         </header>
+        {canCreateLead && selected.kind === "messenger" && <div className="row" style={{ padding: 12, flexWrap: "wrap" }}>
+          <button className="btn btn-secondary btn-sm" disabled={busy || !messageDetail} onClick={() => void convertLead()}>تحويل إلى عميل محتمل</button>
+          {convertedLead?.conversationId === selected.id && <Link className="btn btn-primary btn-sm" href={`/leads/${convertedLead.id}`}>فتح ملف العميل المحتمل</Link>}
+        </div>}
 
         <div className="inbox-messages">
           {detailError && <div role="alert"><p>تعذر تحميل المحادثة.</p><button className="btn btn-secondary btn-sm" onClick={() => void open(selected)}>إعادة المحاولة</button></div>}
