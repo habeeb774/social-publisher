@@ -6,4 +6,8 @@ Date filters support 7/30/90 calendar days and a custom inclusive range of at mo
 
 Three focused tests passed for calendar boundaries and invalid ranges, bound SQL scope and private-field exclusion, and conversion/no-data behavior. Production build and targeted ESLint passed. Isolated database/HTTP checks confirmed an outside-page won lead does not inflate scoped counts, empty scope yields no cohort, report server rendering succeeds, and invalid dates show an Arabic validation state.
 
-Browser/mobile layout, production account behavior, page/platform selectors, historical conversion trends, charts and report exports remain unverified or unfinished. This batch does not claim the entire Analytics or CRM scope complete.
+Page/platform selectors now intersect the existing authorization scope. Page choices are bounded to 200, with a literal name search for larger sets; period shortcuts and retry links preserve selected filters. Invalid platform/page identifiers are rejected before report queries.
+
+Five focused tests passed after adding filters. Updated isolated SQL/HTTP checks confirmed Facebook totals, exclusion under Instagram, zero rows for an inaccessible selected page, a safe permission state in the rendered report, and absence of hidden page names in choices. Build and targeted ESLint passed.
+
+Browser/mobile layout, production account behavior, historical conversion trends, charts and report exports remain unverified or unfinished. This batch does not claim the entire Analytics or CRM scope complete.

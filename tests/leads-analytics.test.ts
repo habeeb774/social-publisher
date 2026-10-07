@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { leadAnalyticsRange,leadAnalyticsQuery,leadAnalyticsSummary } from "../src/services/leads-analytics";
+import { leadAnalyticsRange,leadAnalyticsQuery,leadAnalyticsSummary,leadAnalyticsFilters,leadAnalyticsPagesQuery } from "../src/services/leads-analytics";
 test("analytics ranges use inclusive Riyadh calendar days and exclusive upper bounds",()=>{
   const range=leadAnalyticsRange({days:"7"},new Date("2026-10-06T22:00:00Z"));
   assert.deepEqual(range,{from:"2026-10-01",to:"2026-10-07",start:"2026-09-30T21:00:00.000Z",end:"2026-10-07T21:00:00.000Z"});
@@ -19,4 +19,16 @@ test("conversion is current won over the creation cohort, with no-data represent
   assert.equal(leadAnalyticsSummary([]).conversion,null);
   assert.deepEqual(leadAnalyticsSummary([{source:"manual",total:3,won:1,lost:1}]),{total:3,won:1,lost:1,conversion:33.3});
   assert.equal(leadAnalyticsSummary([{source:"messenger",total:2,won:0,lost:1}]).conversion,0);
+});
+test("analytics filter validation rejects arbitrary platforms and malformed page IDs",()=>{
+  assert.deepEqual(leadAnalyticsFilters.parse({}),{platform:'all',pageId:''});
+  for(const input of [{platform:'tiktok'},{pageId:'bad'},{pageId:"' or true --"}])assert.equal(leadAnalyticsFilters.safeParse(input).success,false);
+});
+test("page and platform filters intersect the authorization scope instead of replacing it",()=>{
+  const page="8a79eb88-d269-44de-bee6-243ca0391432",outside="a4b9cf87-1285-4569-9e7b-8e88cb27d43f";
+  const query=new PgDialect().sqlToQuery(leadAnalyticsQuery(leadAnalyticsRange({}),new Set([page]),{platform:'instagram',pageId:outside}));
+  assert.match(query.sql,/l.page_id in/);assert.match(query.sql,/l.page_id=/);assert.match(query.sql,/p.platform=/);
+  for(const value of [page,outside,'instagram'])assert.ok(query.params.includes(value));
+  const options=new PgDialect().sqlToQuery(leadAnalyticsPagesQuery(new Set([page]),'_%'));
+  assert.match(options.sql,/p.id in/);assert.match(options.sql,/limit 201/);assert.ok(options.params.includes('%\\_\\%%'));
 });

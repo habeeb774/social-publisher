@@ -81,8 +81,15 @@ try {
   assert.deepEqual(leadAnalyticsSummary(metrics),{total:1,won:0,lost:0,conversion:0});
   const emptyMetrics=(await db.execute(leadAnalyticsQuery(leadAnalyticsRange({days:"7"}),new Set()))).rows as LeadAnalyticsRow[];
   assert.equal(leadAnalyticsSummary(emptyMetrics).conversion,null);
+  const filteredMetrics=async(platform:'facebook'|'instagram',selected=pageId)=>(await db.execute(leadAnalyticsQuery(leadAnalyticsRange({days:'7'}),new Set([pageId]),{platform,pageId:selected}))).rows as LeadAnalyticsRow[];
+  assert.equal(leadAnalyticsSummary(await filteredMetrics('facebook')).total,1);
+  assert.equal(leadAnalyticsSummary(await filteredMetrics('instagram')).total,0);
+  assert.equal(leadAnalyticsSummary(await filteredMetrics('facebook',hiddenPage)).total,0);
+  const deniedReport=await call(`/leads/analytics?pageId=${hiddenPage}`);assert.equal(deniedReport.status,200);
+  const deniedHtml=await deniedReport.text();assert.ok(deniedHtml.includes('الصفحة غير متاحة'));assert.equal(deniedHtml.includes(`${tag} hidden`),false);
+  const instagramReport=await call('/leads/analytics?platform=instagram');assert.ok((await instagramReport.text()).includes('غير متاحة'));
   const analytics=await call("/leads/analytics?days=7");assert.equal(analytics.status,200);
-  assert.ok((await analytics.text()).includes("ملخص الفترة"));
+  const analyticsHtml=await analytics.text();assert.ok(analyticsHtml.includes("ملخص الفترة"));assert.ok(analyticsHtml.includes(`${tag} visible page`));assert.equal(analyticsHtml.includes(`${tag} hidden page`),false);
   const invalidAnalytics=await call("/leads/analytics?from=bad");assert.ok((await invalidAnalytics.text()).includes("الفترة غير صالحة"));
   for(const [target,visibility] of [[pageId,"visible"],[hiddenPage,"hidden"]]) {
     const campaign=randomUUID(),post=randomUUID();const name=`${tag} ${visibility}`;
