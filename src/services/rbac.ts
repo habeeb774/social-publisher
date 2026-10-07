@@ -23,6 +23,7 @@ export const PERMISSIONS = {
   "leads.read": ["admin", "editor", "reviewer", "viewer"],
   "leads.create": ["admin", "editor"],
   "leads.edit": ["admin", "editor"],
+  "leads.assign": ["admin", "editor"],
   "automation.manage": ["admin"],
   "settings.manage": ["admin"],
   "users.manage": ["admin"],
