@@ -285,3 +285,86 @@
   box-shadow: 0 18px 42px color-mix(in srgb, var(--heading) 10%, transparent);
 }
 .login-form-side { background: var(--glass-strong); backdrop-filter: blur(26px); -webkit-backdrop-filter: blur(26px); }
+
+/* ===== Full-system glass coverage ===== */
+.page-intro,
+.metrics > *,
+.metric,
+.table-wrap,
+.list,
+.filters,
+.toolbar,
+.tabs,
+.settings-shell,
+.settings-nav,
+.settings-panel,
+.campaign-card,
+.template-card,
+.goal-card,
+.report-card,
+.status-card,
+.health-card,
+.setup-card,
+.import-panel,
+.review-card,
+.inbox-list,
+.inbox-detail,
+.comments-capability,
+.comments-bulk,
+.post-preview,
+.editor-panel,
+.detail-panel,
+.recycle-panel,
+.onboarding-card {
+  border-color: var(--glass-border);
+}
+.table-wrap,
+.list,
+.filters,
+.settings-panel,
+.campaign-card,
+.template-card,
+.goal-card,
+.report-card,
+.status-card,
+.health-card,
+.setup-card,
+.import-panel,
+.review-card,
+.inbox-list,
+.inbox-detail,
+.comments-capability,
+.post-preview,
+.editor-panel,
+.detail-panel,
+.recycle-panel,
+.onboarding-card {
+  background: var(--glass);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--heading) 7%, transparent), inset 0 1px 0 var(--glass-highlight);
+  backdrop-filter: blur(18px) saturate(1.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+}
+.table-wrap, .list, .filters, .settings-panel, .campaign-card, .template-card,
+.goal-card, .report-card, .status-card, .health-card, .setup-card, .import-panel,
+.review-card, .inbox-list, .inbox-detail, .post-preview, .editor-panel, .detail-panel {
+  border-radius: var(--r-card);
+}
+.tabs, .section-tabs, .comments-links { border-color: var(--glass-border); }
+.list-row, .table-row, tbody tr { transition: background .18s var(--ease), transform .18s var(--ease); }
+.list-row:hover, tbody tr:hover { background: color-mix(in srgb, var(--hover) 76%, transparent); }
+.skeleton { background: color-mix(in srgb, var(--glass-strong) 76%, var(--subtle)); }
+.toast, .modal, [role="dialog"] {
+  border-color: var(--glass-border);
+  background: var(--glass-strong);
+  backdrop-filter: blur(26px) saturate(1.2);
+  -webkit-backdrop-filter: blur(26px) saturate(1.2);
+  box-shadow: var(--glass-shadow);
+}
+@media (max-width: 767px) {
+  .page-intro { gap: var(--s-3); }
+  .table-wrap, .list, .filters, .settings-panel, .campaign-card, .template-card,
+  .goal-card, .report-card, .status-card, .health-card, .setup-card, .import-panel,
+  .review-card, .inbox-list, .inbox-detail, .post-preview, .editor-panel, .detail-panel {
+    border-radius: 16px;
+  }
+}
