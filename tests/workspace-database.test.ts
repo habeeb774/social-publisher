@@ -7,6 +7,7 @@ import { assertDisposableDatabase } from "./database-safety";
 import { workspaceMembershipQuery, workspacePagesQuery } from "../src/services/workspace-access";
 import { NextRequest } from "next/server";
 import { authorizeWorkspace, createWorkspaceAccessHandler } from "../src/services/workspace-request";
+import { createWorkspacePostListHandler, workspacePostListQuery } from "../src/services/workspace-posts";
 
 const testUrl = process.env.TEST_DATABASE_URL;
 test("workspace foundation on explicitly disposable database", {skip:!testUrl && "TEST_DATABASE_URL not set"}, async t => {
@@ -45,6 +46,14 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
       assert.equal((await handler(request(),{params:Promise.resolve({id:b})})).status,403);
       assert.equal((await handler(request(adminToken),{params:Promise.resolve({id:a})})).status,403);
       assert.equal((await handler(request("forged"),{params:Promise.resolve({id:a})})).status,401);
+      const { GET:postList } = await import("../src/app/api/posts/route");
+      const postsRequest=(workspace:string|null)=>new NextRequest(`https://qa.example.test/api/posts${workspace?`?workspace=${workspace}`:''}`,{headers:{cookie:`sp_admin=${token}`}});
+      assert.equal((await postList(postsRequest(a))).status,200);
+      assert.equal((await postList(postsRequest(b))).status,403);
+      const previousFlag=process.env.WORKSPACE_ISOLATION_ENABLED;
+      process.env.WORKSPACE_ISOLATION_ENABLED="true";
+      try { assert.equal((await postList(postsRequest(null))).status,400); }
+      finally { if(previousFlag===undefined)delete process.env.WORKSPACE_ISOLATION_ENABLED;else process.env.WORKSPACE_ISOLATION_ENABLED=previousFlag; }
       assert.ok((await authorizeWorkspace(request(),a,dependencies,"messages.reply")).context);
       await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
       assert.equal((await authorizeWorkspace(request(),a,dependencies,"messages.reply")).response?.status,403);
@@ -61,6 +70,34 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
       assert.equal((await membership(user,workspace)).rows.length,0);
       assert.equal((await pages(user,workspace)).rows.length,0);
     }
+  });
+  await t.test("existing posts handler path scopes before pagination and rechecks membership in SQL", async () => {
+    const ownIds=Array.from({length:4},()=>randomUUID());
+    for(let i=0;i<ownIds.length;i++)await connection`INSERT INTO posts(id,page_id,content,status,created_at,last_error) VALUES(${ownIds[i]},${pageA},'QA own','draft',${i===0?'2026-10-07T01:00:00.000001Z':'2026-10-07T01:00:00.000002Z'}::timestamptz,'private provider details')`;
+    await connection`INSERT INTO posts(page_id,content,status,created_at) SELECT ${pageB}::uuid,'QA hidden','draft','2026-10-07T02:00:00Z'::timestamptz FROM generate_series(1,55)`;
+    await connection`INSERT INTO posts(page_id,content,status,deleted_at) VALUES(${pageA},'QA deleted','draft',now())`;
+    const dependencies={user:async()=>({id:member}),membership:async(userId:string,workspaceId:string)=>(await db.execute(workspaceMembershipQuery(userId,workspaceId))).rows};
+    const read=async(context:Parameters<typeof workspacePostListQuery>[0],page:Parameters<typeof workspacePostListQuery>[1])=>(await db.execute(workspacePostListQuery(context,page))).rows;
+    const handler=createWorkspacePostListHandler({...dependencies,read});
+    const request=(cursor:string|null=null)=>new NextRequest(`https://qa.example.test/api/posts?workspace=${a}&limit=2${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`);
+    const found:string[]=[];let cursor:string|null=null;
+    do {
+      const response=await handler(request(cursor),a);assert.equal(response.status,200);
+      const body=await response.json();
+      assert.ok(body.items.every((row:{pageId:string})=>row.pageId===pageA));
+      assert.ok(!JSON.stringify(body).includes('private provider details'));
+      found.push(...body.items.map((row:{id:string})=>row.id));cursor=body.nextCursor;
+      assert.ok(found.length<=4);
+    } while(cursor);
+    assert.equal(found.length,4);assert.equal(new Set(found).size,4);
+    assert.deepEqual(new Set(found),new Set(ownIds));
+    assert.equal((await handler(request(),b)).status,403);
+    const revoked=createWorkspacePostListHandler({...dependencies,read:async(context,page)=>{
+      await connection`UPDATE workspace_members SET is_active=false WHERE workspace_id=${a} AND user_id=${member}`;
+      return read(context,page);
+    }});
+    assert.deepEqual((await (await revoked(request(),a)).json()).items,[]);
+    await connection`UPDATE workspace_members SET is_active=true WHERE workspace_id=${a} AND user_id=${member}`;
   });
   await t.test("inactive user, membership, workspace or page immediately removes scope", async () => {
     await connection`UPDATE workspace_members SET is_active=false WHERE workspace_id=${a} AND user_id=${member}`;

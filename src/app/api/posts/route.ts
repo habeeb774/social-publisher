@@ -11,8 +11,20 @@ import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
 import { allowedPageIds, denyPageOutsideScope } from "@/services/access-scope";
 import { currentUser } from "@/services/rbac";
+import { workspaceMembershipQuery } from "@/services/workspace-access";
+import { createWorkspacePostListHandler, workspacePostListQuery } from "@/services/workspace-posts";
+
+const workspacePostList = createWorkspacePostListHandler({
+  user:currentUser,
+  membership:async(userId,workspaceId)=>(await getDb().execute(workspaceMembershipQuery(userId,workspaceId))).rows,
+  read:async(context,page)=>(await getDb().execute(workspacePostListQuery(context,page))).rows,
+});
 
 export async function GET(request:NextRequest) {
+  const workspaceId=request.nextUrl.searchParams.get("workspace");
+  // Cutover remains disabled until all other tenant-owned endpoints and UI are migrated.
+  // Once enabled, omitting a workspace cannot fall back to global data.
+  if(workspaceId!==null || process.env.WORKSPACE_ISOLATION_ENABLED==="true")return workspacePostList(request,workspaceId??"");
   {const denied=await guard(request);if(denied)return denied;}
   try{const rows=await getDb().select().from(posts).where(isNull(posts.deletedAt)).orderBy(desc(posts.createdAt)).limit(Math.min(Number(request.nextUrl.searchParams.get("limit"))||50,200)).offset(Math.max(Number(request.nextUrl.searchParams.get("offset"))||0,0));const user=await currentUser(request);if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const allowed=await allowedPageIds(user);return NextResponse.json(allowed===null?rows:rows.filter(row=>allowed.has(row.pageId)));}
   catch{return NextResponse.json({error:"تعذر تحميل المنشورات"},{status:500});}

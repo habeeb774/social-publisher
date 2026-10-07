@@ -61,3 +61,23 @@ checks inside writes. The real-database test also covers signed sessions, forged
 cookies, a global administrator without membership and role downgrades.
 Production still needs migration 0017 and explicit bootstrap membership before
 real workspace access is available. No multi-client UI is enabled by this endpoint.
+
+## Posts list transition
+
+The existing `GET /api/posts?workspace=<uuid>` now uses current workspace
+membership and returns `{items,nextCursor}`. The workspace path checks active
+membership again inside the posts query, joins exclusive page ownership before
+pagination, excludes deleted posts, and never returns raw provider failures.
+Page size is 1–100 (default 50); the shared cursor format preserves microseconds
+and the UUID ordering tie-breaker. Requests and responses are validated.
+
+Legacy unscoped requests retain their current behavior while migration remains
+incomplete. `WORKSPACE_ISOLATION_ENABLED=true` makes a workspace mandatory for
+this GET route and removes its legacy fallback. Do not enable the cutover flag
+until clients, POST/detail/write routes and all remaining activation gates are
+ready. The flag is not a system-wide isolation switch yet.
+
+Real-database tests exercise the existing GET route with signed sessions, missing
+workspace under cutover, unauthorized tenants, and SQL paging with newer foreign
+posts, equal timestamps, microseconds and membership revocation before the read.
+No browser rendering or production multi-customer readiness is implied.
