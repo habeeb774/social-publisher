@@ -10,4 +10,10 @@ Page/platform selectors now intersect the existing authorization scope. Page cho
 
 Five focused tests passed after adding filters. Updated isolated SQL/HTTP checks confirmed Facebook totals, exclusion under Instagram, zero rows for an inaccessible selected page, a safe permission state in the rendered report, and absence of hidden page names in choices. Build and targeted ESLint passed.
 
-Browser/mobile layout, production account behavior, historical conversion trends, charts and report exports remain unverified or unfinished. This batch does not claim the entire Analytics or CRM scope complete.
+## Aggregate CSV export
+
+`/api/leads/analytics/export` uses the existing server-side `data.export` guard (currently admin only), current-role authorization, and the same scoped aggregate SQL and Riyadh date/platform/page filters as the report. The download control is only shown to roles with that permission. An inaccessible selected page is rejected before metrics are queried. Arabic CSV contains totals and source counts, current cohort conversion and its definition; names, contact details and notes are never serialized. Empty cohorts export zero counts and explicitly unavailable conversion. Existing UTF-8 BOM, CSV escaping, formula protection and no-store response are reused. Successful generation records a safe export audit entry. No migration is needed.
+
+Eleven focused tests passed (five report tests and six export handler tests), covering authorization short-circuit, invalid input before database access, page-scope rejection, range/filter forwarding, private-field exclusion, empty cohort and safe retryable database errors. TypeScript, targeted ESLint and production build passed. Export-specific HTTP integration, browser download and production account checks are not yet verified.
+
+Browser/mobile layout, production account behavior, historical conversion trends, charts and PDF exports remain unverified or unfinished. This batch does not claim the entire Analytics or CRM scope complete.
