@@ -199,11 +199,12 @@ export async function processDueAutomationReplies(limit=20){
 }
 
 /** Manual reads only until a supported polling frequency/rate limit is confirmed. */
-export async function syncComments(from:string,to:string){
+export async function syncComments(from:string,to:string,allowedLocalPageIds:string[]|null=null){
   const db=database();const [run]=await db`INSERT INTO comments_sync_runs(status) VALUES('running') RETURNING id`;
   let imported=0;
   try{
-    const pages=await db`SELECT id,name,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook'`;
+    const allPages=await db`SELECT id,name,facebook_page_id FROM facebook_pages WHERE is_active AND platform='facebook'`;
+    const pages=allowedLocalPageIds===null?allPages:allPages.filter(page=>allowedLocalPageIds.includes(String(page.id)));
     // One page's failure (e.g. an expired token) must not block the others.
     const errors:string[]=[];
     for(const page of pages){try{const rows=await commentsProvider.listPostComments(String(page.facebook_page_id),from,to);for(const remote of rows)if(await ingestComment(String(page.id),remote,String(page.facebook_page_id)))imported++;}catch(error){errors.push(`${String(page.name??page.facebook_page_id)}: ${error instanceof Error?error.message:"COMMENTS_READ_FAILED"}`);}}
