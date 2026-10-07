@@ -1,0 +1,9 @@
+import { NextRequest,NextResponse } from "next/server";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { getDb } from "@/db";
+import { guard } from "@/services/api-guard";
+const schema=z.object({endpoint:z.url(),keys:z.object({p256dh:z.string().min(1),auth:z.string().min(1)})});
+export async function GET(request:NextRequest){const denied=await guard(request,false,"content.read");if(denied)return denied;return NextResponse.json({configured:Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),publicKey:process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY??null});}
+export async function POST(request:NextRequest){const denied=await guard(request,true,"content.read");if(denied)return denied;if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"Invalid origin"},{status:403});const p=schema.safeParse(await request.json().catch(()=>null));if(!p.success)return NextResponse.json({error:"اشتراك غير صالح"},{status:400});await getDb().execute(sql`insert into push_subscriptions(endpoint,p256dh,auth,user_agent) values(${p.data.endpoint},${p.data.keys.p256dh},${p.data.keys.auth},${request.headers.get("user-agent")??""}) on conflict(endpoint) do update set p256dh=excluded.p256dh,auth=excluded.auth,user_agent=excluded.user_agent,updated_at=now()`);return NextResponse.json({ok:true});}
+export async function DELETE(request:NextRequest){const denied=await guard(request,true,"content.read");if(denied)return denied;if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"Invalid origin"},{status:403});const b=await request.json().catch(()=>({}));if(typeof b.endpoint!=="string")return NextResponse.json({error:"endpoint مطلوب"},{status:400});await getDb().execute(sql`delete from push_subscriptions where endpoint=${b.endpoint}`);return NextResponse.json({ok:true});}
