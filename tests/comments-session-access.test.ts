@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {NextRequest} from 'next/server';
+import {sql} from 'drizzle-orm';
+import {assertDisposableDatabase} from './database-safety';
+
+test('comment principal honors current role and account revocation instead of stale signed roles',{skip:!process.env.TEST_DATABASE_URL},async()=>{
+  assertDisposableDatabase(process.env.TEST_DATABASE_URL,process.env.DISPOSABLE_TEST_DATABASE_HOST,process.env.DATABASE_URL);
+  process.env.DATABASE_URL=process.env.TEST_DATABASE_URL;
+  const previousSecret=process.env.AUTH_SECRET;process.env.AUTH_SECRET=randomUUID();
+  try{
+    const {getDb}=await import('../src/db');const db=getDb();
+    const {createSessionToken,SESSION_COOKIE}=await import('../src/services/request-auth');
+    const {commentsPrincipal,hashTeamPassword,loginCommentTeam}=await import('../src/services/comments/team');
+    const {teamToken,TEAM_COOKIE}=await import('../src/services/comments/team-token');
+    const {canComment}=await import('../src/services/comments/permissions');
+    const id=randomUUID(),email=`comment-session-${id}@example.invalid`;
+    await db.execute(sql`insert into users(id,email,name,role) values(${id}::uuid,${email},'Synthetic comments tester','editor')`);
+    const token=await createSessionToken({userId:id,role:'admin'});
+    const request=new NextRequest('http://localhost/api/comments',{headers:{cookie:`${SESSION_COOKIE}=${token}`}});
+    const editor=await commentsPrincipal(request);assert.equal(editor?.role,'editor');assert.equal(editor?.email,email);assert.equal(editor?.systemAdmin,false);
+    assert.equal(canComment(editor!.role,'rule'),false);assert.equal(canComment(editor!.role,'send'),true);
+    await db.execute(sql`update users set role='viewer' where id=${id}::uuid`);
+    const viewer=await commentsPrincipal(request);assert.equal(viewer?.role,'viewer');assert.equal(canComment(viewer!.role,'send'),false);
+    await db.execute(sql`update users set is_active=false where id=${id}::uuid`);
+    assert.equal(await commentsPrincipal(request),null);
+    const memberId=randomUUID(),memberEmail=`comment-team-${memberId}@example.invalid`,password=randomUUID();
+    await db.execute(sql`insert into users(id,email,role) values(${memberId}::uuid,${memberEmail},'editor')`);
+    await db.execute(sql`insert into comment_team_members(user_id,password_hash) values(${memberId}::uuid,${await hashTeamPassword(password)})`);
+    const memberToken=await teamToken(memberId,0);
+    const teamRequest=new NextRequest('http://localhost/api/comments',{headers:{cookie:`${TEAM_COOKIE}=${memberToken}`}});
+    assert.equal((await commentsPrincipal(teamRequest))?.id,memberId);
+    const mixed=new NextRequest('http://localhost/api/comments',{headers:{cookie:`${SESSION_COOKIE}=${token}; ${TEAM_COOKIE}=${memberToken}`}});
+    assert.equal(await commentsPrincipal(mixed),null,'revoked main session cannot fall back to another team identity');
+    await db.execute(sql`update users set is_active=false where id=${memberId}::uuid`);
+    assert.equal(await commentsPrincipal(teamRequest),null);
+    assert.equal(await loginCommentTeam(memberEmail,password),null,'inactive main account cannot sign in through comments');
+    const missing=await createSessionToken({userId:randomUUID(),role:'admin'});
+    assert.equal(await commentsPrincipal(new NextRequest('http://localhost/api/comments',{headers:{cookie:`${SESSION_COOKIE}=${missing}`}})),null);
+    const bootstrap=await createSessionToken({userId:'env-admin',role:'admin'});
+    const admin=await commentsPrincipal(new NextRequest('http://localhost/api/comments',{headers:{cookie:`${SESSION_COOKIE}=${bootstrap}`}}));
+    assert.equal(admin?.role,'admin');assert.equal(admin?.id,'system-admin');
+  }finally{if(previousSecret===undefined)delete process.env.AUTH_SECRET;else process.env.AUTH_SECRET=previousSecret;}
+});

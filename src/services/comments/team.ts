@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { neon } from "@neondatabase/serverless";
 import type { NextRequest } from "next/server";
 import { sessionFrom } from "../request-auth";
+import { currentUser } from "../rbac";
 import { TEAM_COOKIE,verifyTeamToken,teamToken } from "./team-token";
 import type { CommentRole } from "./permissions";
 const db=()=>{if(!process.env.DATABASE_URL)throw new Error("DATABASE_UNAVAILABLE");return neon(process.env.DATABASE_URL);};
@@ -12,12 +13,17 @@ export async function checkTeamPassword(password:string,stored:string){const [ty
 export async function commentsPrincipal(request:NextRequest){
   // Main-app sessions keep their RBAC role: only admins act as comments admin.
   const session=await sessionFrom(request);
-  if(session)return {id:session.userId==="env-admin"?"system-admin":session.userId,email:process.env.ADMIN_EMAIL??"admin",role:(session.role==="admin"?"admin":session.role==="editor"?"editor":"viewer") as CommentRole,systemAdmin:session.role==="admin"};
+  if(session){
+    const user=await currentUser(request);
+    // Do not fall back to a team cookie after a revoked main-app session.
+    if(!user)return null;
+    return {id:user.id==="env-admin"?"system-admin":user.id,email:user.email,role:(user.role==="admin"?"admin":user.role==="editor"?"editor":"viewer") as CommentRole,systemAdmin:user.role==="admin"};
+  }
   const token=await verifyTeamToken(request.cookies.get(TEAM_COOKIE)?.value);if(!token)return null;
-  const [member]=await db()`SELECT u.id,u.email,u.role FROM users u JOIN comment_team_members m ON m.user_id=u.id WHERE u.id=${token.id}::uuid AND m.active AND m.session_version=${token.version}`;
+  const [member]=await db()`SELECT u.id,u.email,u.role FROM users u JOIN comment_team_members m ON m.user_id=u.id WHERE u.id=${token.id}::uuid AND u.is_active AND m.active AND m.session_version=${token.version}`;
   return member&&["admin","editor","viewer"].includes(String(member.role))?{id:String(member.id),email:String(member.email),role:member.role as CommentRole,systemAdmin:false}:null;
 }
-export async function loginCommentTeam(email:string,password:string){const [member]=await db()`SELECT u.id,m.password_hash,m.session_version FROM users u JOIN comment_team_members m ON m.user_id=u.id WHERE lower(u.email)=${email.toLowerCase()} AND m.active`;const valid=await checkTeamPassword(password,member?String(member.password_hash):await hashTeamPassword("dummy-invalid-password"));if(!member||!valid)return null;return teamToken(String(member.id),Number(member.session_version));}
+export async function loginCommentTeam(email:string,password:string){const [member]=await db()`SELECT u.id,m.password_hash,m.session_version FROM users u JOIN comment_team_members m ON m.user_id=u.id WHERE lower(u.email)=${email.toLowerCase()} AND u.is_active AND m.active`;const valid=await checkTeamPassword(password,member?String(member.password_hash):await hashTeamPassword("dummy-invalid-password"));if(!member||!valid)return null;return teamToken(String(member.id),Number(member.session_version));}
 export async function listCommentTeam(){return db()`SELECT u.id,u.name,u.email,u.role,m.active FROM users u JOIN comment_team_members m ON m.user_id=u.id ORDER BY u.name`;
 }
 export async function createCommentTeam(input:{email:string;name:string;password:string;role:CommentRole}){
