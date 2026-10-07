@@ -16,11 +16,12 @@ export function encodeLeadCursor(time: string, id: string) {
 export function leadSearchPattern(value: string) {
   return `%${value.replace(/[\\%_]/g, character => `\\${character}`)}%`;
 }
-export function leadListHref(q: string, status: string, cursor?: string, ownership="all") {
+export function leadListHref(q: string, status: string, cursor?: string, ownership="all", followup="all") {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status && LEAD_STAGES.includes(status as typeof LEAD_STAGES[number])) params.set("status", status);
   if (cursor) params.set("cursor", cursor);
   if (ownership==="mine"||ownership==="unassigned") params.set("ownership",ownership);
+  if (["due","upcoming","completed"].includes(followup)) params.set("followup",followup);
   return `/leads${params.size ? `?${params}` : ""}`;
 }

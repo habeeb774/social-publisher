@@ -10,14 +10,16 @@ import { allowedPageIds } from "@/services/access-scope";
 import { leadPageScope } from "@/services/leads-access";
 import { decodeLeadCursor, encodeLeadCursor, leadListHref, leadSearchPattern } from "@/services/leads-filters";
 import { leadOwnership,leadOwnershipScope } from "@/services/leads-ownership";
+import { leadFollowupFilter,leadFollowupScope } from "@/services/leads-followup-filters";
 export const dynamic = "force-dynamic";
 const labels: Record<string,string> = LEAD_LABELS;
-export default async function Leads({ searchParams }:{ searchParams:Promise<{status?:string;q?:string;cursor?:string;ownership?:string}> }) {
+export default async function Leads({ searchParams }:{ searchParams:Promise<{status?:string;q?:string;cursor?:string;ownership?:string;followup?:string}> }) {
   const params=await searchParams;
   const status=params.status && Object.hasOwn(labels,params.status)?params.status:"";
   const q=(params.q??"").trim().slice(0,100);
   const ownership=leadOwnership(params.ownership);
-  const href=(stage=status,token?:string)=>leadListHref(q,stage,token,ownership);
+  const followup=leadFollowupFilter(params.followup);
+  const href=(stage=status,token?:string)=>leadListHref(q,stage,token,ownership,followup);
   let cursor:ReturnType<typeof decodeLeadCursor>=null;
   try {cursor=decodeLeadCursor(params.cursor);}catch{return <AppShell title="العملاء المحتملون"><div className="alert alert-info">رابط الصفحة غير صالح. <Link href={href()}>العودة إلى النتائج</Link></div></AppShell>;}
   const db=getDb();
@@ -32,6 +34,7 @@ export default async function Leads({ searchParams }:{ searchParams:Promise<{sta
     from leads l left join facebook_pages p on p.id=l.page_id
     where (${status}='' or l.status=${status}) and ${leadPageScope(allowed,"l.page_id")}
     and ${leadOwnershipScope(ownership,session.userId)}
+    and ${leadFollowupScope(followup)}
     and (${q}='' or l.name ilike ${leadSearchPattern(q)} or l.contact ilike ${leadSearchPattern(q)})
     and ${cursor?sql`(l.updated_at,l.id)<(${cursor.time}::timestamptz,${cursor.id}::uuid)`:sql`true`}
     order by l.updated_at desc,l.id desc limit 51`);
@@ -42,7 +45,8 @@ export default async function Leads({ searchParams }:{ searchParams:Promise<{sta
   const last=rows.at(-1);
   return <AppShell title="العملاء المحتملون">
     <PageHeader title="العملاء المحتملون" description="تابع الأشخاص المهتمين القادمين من Messenger والتفاعلات، وحوّل المحادثة إلى فرصة متابعة." actions={<><Link className="btn btn-secondary" href={`/leads/board?${new URLSearchParams({q,ownership})}`}>لوحة المراحل</Link><Link className="btn btn-secondary" href="/inbox/messages">Messenger</Link></>} />
-    <form action="/leads" className="leads-filter"><input name="q" defaultValue={q} maxLength={100} aria-label="البحث عن عميل" placeholder="بحث بالاسم أو معلومات الاتصال"/><input type="hidden" name="status" value={status}/><label>الإسناد<select name="ownership" defaultValue={ownership}><option value="all">كل العملاء</option><option value="mine">عملائي</option><option value="unassigned">غير المسندين</option></select></label><button className="btn btn-secondary" type="submit">بحث</button></form>
+    <form action="/leads" className="leads-filter"><input type="hidden" name="followup" value={followup}/><input name="q" defaultValue={q} maxLength={100} aria-label="البحث عن عميل" placeholder="بحث بالاسم أو معلومات الاتصال"/><input type="hidden" name="status" value={status}/><label>الإسناد<select name="ownership" defaultValue={ownership}><option value="all">كل العملاء</option><option value="mine">عملائي</option><option value="unassigned">غير المسندين</option></select></label><button className="btn btn-secondary" type="submit">بحث</button></form>
+    <nav className="segmented leads-filter" aria-label="تصفية المتابعات">{[["all","كل المتابعات"],["due","مستحقة الآن"],["upcoming","قادمة"],["completed","مكتملة"]].map(([value,label])=><Link key={value} className={followup===value?"active":""} href={leadListHref(q,status,undefined,ownership,value)}>{label}</Link>)}</nav>
     <div className="segmented leads-filter">{[["","الكل"],...Object.entries(labels)].map(([v,l])=><Link key={v} className={status===v?"active":""} href={href(v)}>{l}</Link>)}</div>
     {failed?<div className="alert alert-info" role="alert">تعذر تحميل العملاء المحتملين. <Link href={href(status,params.cursor)}>إعادة المحاولة</Link></div>:<section className="card card-flush"><div className="table-wrap"><table><thead><tr><th>العميل</th><th>المصدر</th><th>الصفحة</th><th>الحالة</th><th>آخر تحديث</th></tr></thead><tbody>
       {rows.map((r)=><tr key={String(r.id)}><td><Link href={`/leads/${String(r.id)}`}><strong>{String(r.name)}</strong></Link>{Boolean(r.contact)&&<small className="block">{String(r.contact)}</small>}</td><td>{r.source==="messenger"?"Messenger":String(r.source)}</td><td>{r.page_name?String(r.page_name):"—"}</td><td><span className="badge badge-info">{labels[String(r.status)]??String(r.status)}</span></td><td><small>{new Intl.DateTimeFormat("ar-SA",{dateStyle:"short",timeStyle:"short",timeZone:"Asia/Riyadh"}).format(new Date(String(r.updated_at)))}</small></td></tr>)}
