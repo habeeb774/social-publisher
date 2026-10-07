@@ -88,7 +88,7 @@ export async function POST(request:NextRequest){
     else if(body.action==="draft")result=await store.draftReply(body.id,body.content,body.templateId);
     else if(body.action==="approve")result=await store.approveReply(body.id,body.replyId);
     else if(body.action==="send")result=await store.sendReply(body.id,body.replyId);
-    else if(body.action==="sync")result=await store.syncComments(body.from,body.to);
+    else if(body.action==="sync")result=await store.syncComments(body.from,body.to,allowed===null?null:Array.from(allowed));
     else if(body.action==="note")result=await store.internalAction(body.id,"note",body.value);
     else if("ids" in body)result=await Promise.all(body.ids.map(id=>store.internalAction(id,body.action,body.value)));
     return NextResponse.json(result);
