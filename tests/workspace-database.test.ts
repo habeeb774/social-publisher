@@ -128,6 +128,8 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
       const {createSessionToken}=await import('../src/services/request-auth');
       const {PATCH}=await import('../src/app/api/posts/[id]/route');
       const {POST}=await import('../src/app/api/posts/route');
+      const {POST:reschedule}=await import('../src/app/api/posts/[id]/reschedule/route');
+      const {POST:publishNow}=await import('../src/app/api/posts/[id]/publish-now/route');
       const token=await createSessionToken({userId:member,role:'admin'});
       const [row]=await db.select({updatedAt:posts.updatedAt}).from(posts).where(eq(posts.id,own));
       const request=(pageId=pageA,extra:Record<string,unknown>={})=>new NextRequest(`https://qa.example.test/api/posts/${own}?workspace=${a}`,{method:'PATCH',headers:{origin:'https://qa.example.test',cookie:`sp_admin=${token}`,'content-type':'application/json'},body:JSON.stringify({pageId,content:'QA route edit',status:'draft',updatedAt:row.updatedAt.toISOString(),...extra})});
@@ -141,6 +143,20 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
       assert.equal((await PATCH(request(pageA,{campaignId:randomUUID()}),params())).status,422);
       assert.equal((await PATCH(request(),params())).status,200);
       assert.equal((await PATCH(request(),params())).status,409);
+      const mutationRequest=(id:string,action:string)=>new NextRequest(`https://qa.example.test/api/posts/${id}/${action}?workspace=${a}`,{method:'POST',headers:{origin:'https://qa.example.test',cookie:`sp_admin=${token}`,'content-type':'application/json'},body:JSON.stringify({scheduledAt:new Date(Date.now()+3600000).toISOString()})});
+      assert.equal((await reschedule(mutationRequest(own,'reschedule'),params())).status,403);
+      assert.equal((await publishNow(mutationRequest(own,'publish-now'),params())).status,403);
+      await connection`UPDATE workspace_members SET role='manager' WHERE workspace_id=${a} AND user_id=${member}`;
+      assert.equal((await reschedule(mutationRequest(foreign,'reschedule'),params(foreign))).status,409);
+      assert.equal((await publishNow(mutationRequest(foreign,'publish-now'),params(foreign))).status,409);
+      assert.equal((await reschedule(mutationRequest(own,'reschedule'),params())).status,200);
+      const {nearbyScheduled}=await import('../src/services/prepublish');
+      const time=new Date(Date.now()+7200000);
+      await connection`INSERT INTO posts(page_id,content,status,scheduled_at) VALUES(${pageA},'QA own conflict','scheduled',${time.toISOString()}::timestamptz),(${pageB},'QA foreign conflict','scheduled',${time.toISOString()}::timestamptz)`;
+      assert.equal(await nearbyScheduled(time,undefined,context),1);
+      await connection`UPDATE workspace_members SET is_active=false WHERE workspace_id=${a} AND user_id=${member}`;
+      assert.equal(await nearbyScheduled(time,undefined,context),0);
+      await connection`UPDATE workspace_members SET is_active=true WHERE workspace_id=${a} AND user_id=${member}`;
       await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
       assert.equal((await PATCH(request(),params())).status,403);
     } finally {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 import { decodeCommentCursor, encodeCommentCursor } from "./comments/filters";
 import { authorizeWorkspace, type WorkspaceContext, type WorkspaceRequestDependencies } from "./workspace-request";
-import { WORKSPACE_PERMISSIONS } from "./workspace-access";
+import { WORKSPACE_PERMISSIONS, WORKSPACE_ROLES, type WorkspacePermission } from "./workspace-access";
 import { posts } from "../db/schema";
 
 const createFieldsSchema=z.object({content:z.string().min(1).max(63206),status:z.enum(["draft","scheduled","pending_approval"]),scheduledAt:z.date().nullable(),timezone:z.literal("Asia/Riyadh"),category:z.string().max(100).nullable().optional(),tags:z.array(z.string().max(40)).max(20).optional(),campaignId:z.null().optional()});
@@ -29,15 +29,20 @@ export function workspacePostCreateQuery(context:WorkspaceContext,pageId:string,
 
 /** Correlated predicate for reads and writes; never authorize from the context's historical role. */
 export function workspacePostEditPredicate(context:WorkspaceContext, scheduling=false) {
+  return workspacePostPermissionPredicate(context,scheduling?["posts.edit","posts.publish"]:["posts.edit"]);
+}
+
+export function workspacePostPermissionPredicate(context:WorkspaceContext, permissions:readonly WorkspacePermission[]) {
   z.uuid().parse(context.userId); z.uuid().parse(context.workspaceId);
-  const roles=WORKSPACE_PERMISSIONS["posts.edit"].filter(role=>!scheduling || (WORKSPACE_PERMISSIONS["posts.publish"] as readonly string[]).includes(role));
+  if(!permissions.length)throw new Error("WORKSPACE_PERMISSION_REQUIRED");
+  const roles=WORKSPACE_ROLES.filter(role=>permissions.every(permission=>(WORKSPACE_PERMISSIONS[permission] as readonly string[]).includes(role)));
   return sql`EXISTS (SELECT 1 FROM workspace_pages wp
     JOIN workspaces w ON w.id=wp.workspace_id AND w.is_active=true
     JOIN facebook_pages fp ON fp.id=wp.page_id AND fp.is_active=true
     JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=${context.userId}::uuid AND m.is_active=true
     JOIN users u ON u.id=m.user_id AND u.is_active=true
     WHERE wp.page_id=${posts.pageId} AND wp.workspace_id=${context.workspaceId}::uuid
-    AND m.role IN (${sql.join(roles.map(role=>sql`${role}`),sql`,`)}))`;
+    AND ${roles.length?sql`m.role IN (${sql.join(roles.map(role=>sql`${role}`),sql`,`)})`:sql`false`})`;
 }
 
 const pageSchema = z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1024).nullable().default(null)});

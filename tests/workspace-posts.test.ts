@@ -2,10 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { encodeCommentCursor } from "../src/services/comments/filters";
-import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate, workspacePostCreateQuery } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate, workspacePostCreateQuery, workspacePostPermissionPredicate } from "../src/services/workspace-posts";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const workspace="58d38e8d-2f0f-4d60-bc11-5e9beddd994d", user="09a77e83-d77b-4cc7-86c9-4bac2e8aa122";
+test("publish predicates permit publishers without accidentally granting editor or support publishing",()=>{
+  const context={userId:user,workspaceId:workspace,role:"owner" as const};
+  const dialect=new PgDialect();
+  assert.deepEqual(dialect.sqlToQuery(workspacePostPermissionPredicate(context,["posts.publish"])).params.slice(2),["owner","admin","manager","publisher"]);
+  assert.deepEqual(dialect.sqlToQuery(workspacePostPermissionPredicate(context,["posts.edit","posts.publish"])).params.slice(2),["owner","admin","manager"]);
+  assert.throws(()=>workspacePostPermissionPredicate(context,[]));
+});
 test("workspace creates validate fields and require current author/publisher membership in INSERT", () => {
   const context={userId:user,workspaceId:workspace,role:"owner" as const};
   const fields={content:"private QA content",status:"draft" as const,scheduledAt:null,timezone:"Asia/Riyadh" as const,tags:["QA"]};

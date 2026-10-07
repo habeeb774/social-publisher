@@ -5,22 +5,24 @@ import { isGraphConfigured } from "./facebook-graph";
 import { probeImageUrl } from "./storage";
 import { getPublishingRules } from "./rules-store";
 import { violation } from "./publishing-rules";
+import type { WorkspaceContext } from "./workspace-request";
+import { workspacePostPermissionPredicate } from "./workspace-posts";
 
 export type CheckItem = { key: string; label: string; ok: boolean; critical: boolean; detail?: string };
 export const CONFLICT_WINDOW_MINUTES = 5;
 
 /** Posts already scheduled within ±5 minutes of `at` (excluding `excludeId`). A warning, never a block. */
-export async function nearbyScheduled(at: Date, excludeId?: string) {
+export async function nearbyScheduled(at: Date, excludeId?: string, workspace?:WorkspaceContext) {
   const windowMs = CONFLICT_WINDOW_MINUTES * 60000;
-  const rows = await getDb().select({ id: posts.id }).from(posts).where(and(eq(posts.status, "scheduled"), isNull(posts.deletedAt), gte(posts.scheduledAt, new Date(at.getTime() - windowMs)), lte(posts.scheduledAt, new Date(at.getTime() + windowMs)), excludeId ? ne(posts.id, excludeId) : undefined));
-  return rows.length;
+  const [row] = await getDb().select({total:sql<number>`count(*)::int`}).from(posts).where(and(eq(posts.status, "scheduled"), isNull(posts.deletedAt), gte(posts.scheduledAt, new Date(at.getTime() - windowMs)), lte(posts.scheduledAt, new Date(at.getTime() + windowMs)), excludeId ? ne(posts.id, excludeId) : undefined,workspace?workspacePostPermissionPredicate(workspace,["posts.read"]):undefined));
+  return row.total;
 }
 
 /**
  * Pre-scheduling checklist. Critical failures (page, content, time, image, publishing credentials)
  * must block scheduling; scheduler health and time conflicts are warnings.
  */
-export async function prePublishChecks(input: { pageId: string; content: string; scheduledAt?: Date | null; imageUrl?: string | null; postId?: string }): Promise<{ items: CheckItem[]; blocking: boolean }> {
+export async function prePublishChecks(input: { pageId: string; content: string; scheduledAt?: Date | null; imageUrl?: string | null; postId?: string; workspace?:WorkspaceContext }): Promise<{ items: CheckItem[]; blocking: boolean }> {
   const db = getDb();
   const items: CheckItem[] = [];
   const [page] = await db.select({ isActive: facebookPages.isActive, name: facebookPages.name, accessTokenEnc: facebookPages.accessTokenEnc }).from(facebookPages).where(eq(facebookPages.id, input.pageId)).limit(1);
@@ -43,6 +45,7 @@ export async function prePublishChecks(input: { pageId: string; content: string;
         eq(posts.pageId, input.pageId),
         inArray(posts.status, ["scheduled", "published"]),
         isNull(posts.deletedAt),
+        input.workspace?workspacePostPermissionPredicate(input.workspace,["posts.read"]):undefined,
         input.postId ? ne(posts.id, input.postId) : undefined,
         sql`lower(regexp_replace(trim(${posts.content}), '\\s+', ' ', 'g')) = ${normalized}`
       ))
@@ -65,7 +68,7 @@ export async function prePublishChecks(input: { pageId: string; content: string;
     const rules = await getPublishingRules();
     const reason = violation(input.scheduledAt!, rules);
     items.push({ key: "window", label: "ضمن أوقات النشر المسموحة", ok: !reason, critical: false, detail: reason ? `${reason}${rules.window.mode === "shift" ? " — سيُنقل تلقائيًا لأول وقت مسموح" : ""}` : undefined });
-    const nearby = await nearbyScheduled(input.scheduledAt!, input.postId);
+    const nearby = await nearbyScheduled(input.scheduledAt!, input.postId,input.workspace);
     items.push({ key: "conflict", label: "لا تعارض في الموعد", ok: nearby < 2, critical: false, detail: nearby ? `يوجد ${nearby} منشور مجدول خلال ${CONFLICT_WINDOW_MINUTES} دقائق من هذا الموعد` : undefined });
   }
   return { items, blocking: items.some((i) => i.critical && !i.ok) };

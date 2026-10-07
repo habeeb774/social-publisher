@@ -102,3 +102,12 @@ activation gate is complete. Real SQL and signed-session route tests cover own
 and foreign pages, role downgrades, inactive memberships and unauthorized
 scheduling. Media registration, alerts and settings are still legacy boundaries;
 this change does not enable multi-client onboarding or prove browser QA.
+
+Reschedule and publish-now transition routes now require workspace permissions
+and recheck active membership/page ownership in the final SQL update. Publishing
+is separate from editing: publish-now allows Publisher, while editing a schedule
+requires both edit and publish permissions. Both updates compare the previously
+read version so a concurrent save cannot be overwritten. Reschedule versions are
+recorded only after a successful write. Workspace-aware conflict counts and
+duplicate checks apply to these paths and scoped composer writes; global settings,
+scheduler operational health and remaining mutation routes are not migrated yet.

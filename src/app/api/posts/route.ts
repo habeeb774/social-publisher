@@ -55,7 +55,7 @@ export async function POST(request:NextRequest) {
     if(!page)return NextResponse.json({error:"الصفحة غير متاحة. تحقق من اتصال Facebook Organic."},{status:409});
     {const scoped=await denyPageOutsideScope(request,page.id);if(scoped)return scoped;}
     // Server-side gate: critical checklist failures block scheduling regardless of the UI.
-    if(data.status==="scheduled"){const check=await prePublishChecks({pageId:page.id,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:undefined});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
+    if(data.status==="scheduled"){const check=await prePublishChecks({pageId:page.id,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:undefined,workspace:workspaceContext});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
     const fields=await toPostFields(data);
     let post;
     if(workspaceContext) {
