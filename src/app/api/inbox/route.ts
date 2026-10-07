@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
   if (page) commentParams.set("page", page);
   if (q) commentParams.set("q", q);
 
-  const [commentResult, messengerRows, catalog, allowed] = await Promise.all([
+  const allowed=await allowedPageIds(user);
+  const [commentResult, messengerRows, catalog] = await Promise.all([
     source === "messenger" ? Promise.resolve({ items: [] as Row[] }) : comments.inbox(commentParams),
-    source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account, q, messengerState) as Promise<Row[]>,
+    source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account, q, messengerState,allowed) as Promise<Row[]>,
     comments.inboxCatalog(user.id),
-    allowedPageIds(user),
   ]);
 
   const commentItems = (commentResult.items as Row[]).filter((item) => allowed === null || allowed.has(String(item.page_id))).map((item) => ({

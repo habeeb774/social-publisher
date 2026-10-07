@@ -6,6 +6,7 @@ import { messengerPageToken } from "./messenger-connection";
 import { getSetting, setSetting } from "./settings-store";
 import { listMetaAccounts } from "./meta-accounts";
 import { planMessengerAutomation, recordMessengerAutomation } from "./messenger-automation";
+import { messengerConversationLookup,messengerPageScope } from './messenger-access';
 
 // Messenger inbox through the Graph API (needs pages_messaging on the page token).
 // Replies are only allowed within Meta's 24-hour window after the customer's last message.
@@ -100,7 +101,7 @@ export async function messengerStatus() {
   return getSetting<{ checkedAt: string; pages: Record<string, string | null> } | null>("messenger_status", null);
 }
 
-export async function listConversations(pageId = "", accountId = "", q = "", state = "active") {
+export async function listConversations(pageId = "", accountId = "", q = "", state = "active",allowed:ReadonlySet<string>|null=new Set()) {
   const accounts = await listMetaAccounts();
   const selected = accounts.find((account) => account.id === accountId);
   const remoteCsv = selected?.pageIds.join(",") ?? "";
@@ -114,6 +115,7 @@ export async function listConversations(pageId = "", accountId = "", q = "", sta
         order by a.created_at desc limit 1) as state_at
     from messenger_conversations c join facebook_pages p on p.id = c.page_id
     where (${pageId} = '' or c.page_id::text = ${pageId})
+      and ${messengerPageScope(allowed)}
       and (${accountId} = '' or p.facebook_page_id = any(string_to_array(${remoteCsv}, ',')))
       and (${q} = '' or coalesce(c.participant_name,'') ilike ${`%${q}%`} or coalesce(c.last_message,'') ilike ${`%${q}%`})
     order by c.last_message_at desc nulls last limit 100`);
@@ -159,12 +161,14 @@ export async function messengerCatalog() {
   };
 }
 
-export async function conversationDetail(id: string) {
+export async function conversationDetail(id: string,allowed:ReadonlySet<string>|null,options:{markRead?:boolean;includeMessages?:boolean}={}) {
   const db = getDb();
-  const [conv] = (await db.execute(sql`select c.id, c.page_id, c.participant_name, c.last_customer_message_at, p.name as page_name from messenger_conversations c join facebook_pages p on p.id = c.page_id where c.id = ${id}::uuid`)).rows as ConversationDetailRow[];
+  const [conv] = (await db.execute(messengerConversationLookup(id,allowed))).rows as ConversationDetailRow[];
   if (!conv) throw new Error("CONVERSATION_NOT_FOUND");
-  const messages = (await db.execute(sql`select id, from_name, message, is_from_page, created_time, sent_by from messenger_messages where conversation_id = ${id}::uuid order by created_time`)).rows;
-  await db.execute(sql`update messenger_conversations set unread = false where id = ${id}::uuid`);
+  const messages = options.includeMessages===false?[]:(await db.execute(sql`select m.id,m.from_name,m.message,m.is_from_page,m.created_time,m.sent_by
+    from messenger_messages m join messenger_conversations c on c.id=m.conversation_id
+    where c.id=${id}::uuid and ${messengerPageScope(allowed)} order by m.created_time`)).rows;
+  if(options.markRead!==false)await db.execute(sql`update messenger_conversations set unread=false where id=${id}::uuid and ${messengerPageScope(allowed,'page_id')}`);
   const last = conv.last_customer_message_at ? new Date(String(conv.last_customer_message_at)).getTime() : 0;
   return { conversation: { ...conv, canReply: Date.now() - last < WINDOW_MS }, messages };
 }

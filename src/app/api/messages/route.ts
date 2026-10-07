@@ -6,27 +6,34 @@ import { allowedPageIds } from "@/services/access-scope";
 import { conversationDetail, listConversations, messengerCatalog, messengerStatus, replyMessage, setMessengerConversationState, setMessengerUnread, syncMessenger } from "@/services/messenger";
 
 export const dynamic = "force-dynamic";
-const fail = (error: unknown) => NextResponse.json({ error: error instanceof Error ? error.message : "تعذر التنفيذ" }, { status: 400 });
+const fail = (error: unknown) => {
+  const message=error instanceof Error?error.message:'';
+  if(message==='CONVERSATION_NOT_FOUND')return NextResponse.json({error:'المحادثة غير موجودة أو غير متاحة لك.'},{status:404});
+  if(error instanceof z.ZodError)return NextResponse.json({error:'بيانات المحادثة غير صالحة.'},{status:400});
+  if(message.startsWith('MESSENGER_WINDOW_CLOSED'))return NextResponse.json({error:'مرّ أكثر من 24 ساعة على آخر رسالة من العميل؛ لا يمكن الرد الآن.'},{status:409});
+  if(message==='MESSENGER_NO_TOKEN')return NextResponse.json({error:'اتصال Messenger غير جاهز. أعد ربط الصفحة.'},{status:409});
+  console.error('Messenger request unavailable',{code:'MESSENGER_REQUEST_UNAVAILABLE'});
+  return NextResponse.json({error:'تعذر تنفيذ الطلب. حاول مجددًا.'},{status:503});
+};
 
 export async function GET(request: NextRequest) {
   const denied = await guard(request, false, "content.read");
   if (denied) return denied;
+  try {
   const user = await currentUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const allowed = await allowedPageIds(user);
   const params = request.nextUrl.searchParams;
-  try {
     const id = params.get("id");
     if (id) {
-      const detail = await conversationDetail(z.uuid().parse(id));
-      if (allowed !== null && !allowed.has(String(detail.conversation.page_id))) return NextResponse.json({ error: "ليست لديك صلاحية لهذه الصفحة" }, { status: 403 });
-      return NextResponse.json(detail);
+      const detail = await conversationDetail(z.uuid().parse(id),allowed);
+      return NextResponse.json(detail,{headers:{'Cache-Control':'private, no-store'}});
     }
-    const [allItems, status, catalog] = await Promise.all([listConversations(params.get("page") ?? "", params.get("account") ?? "", (params.get("q") ?? "").slice(0,100), params.get("state") ?? "active"), messengerStatus(), messengerCatalog()]);
+    const [allItems, status, catalog] = await Promise.all([listConversations(params.get("page") ?? "", params.get("account") ?? "", (params.get("q") ?? "").slice(0,100), params.get("state") ?? "active",allowed), allowed===null?messengerStatus():Promise.resolve(null), messengerCatalog()]);
     const items = allowed === null ? allItems : allItems.filter((item) => allowed.has(String((item as Record<string, unknown>).page_id)));
     const visiblePages = allowed === null ? catalog.pages : catalog.pages.filter((page) => allowed.has(page.id));
     const visibleAccounts = catalog.accounts.filter((account) => visiblePages.some((page) => page.accountId === account.id));
-    return NextResponse.json({ items, status, catalog: { accounts: visibleAccounts, pages: visiblePages } });
+    return NextResponse.json({ items, status, catalog: { accounts: visibleAccounts, pages: visiblePages } },{headers:{'Cache-Control':'private, no-store'}});
   } catch (error) { return fail(error); }
 }
 
@@ -48,8 +55,7 @@ export async function POST(request: NextRequest) {
     if (parsed.data.action === "sync") {
       return NextResponse.json(await syncMessenger(allowed === null ? null : Array.from(allowed)));
     }
-    const detail = await conversationDetail(parsed.data.id);
-    if (allowed !== null && !allowed.has(String(detail.conversation.page_id))) return NextResponse.json({ error: "ليست لديك صلاحية لهذه الصفحة" }, { status: 403 });
+    await conversationDetail(parsed.data.id,allowed,{markRead:false,includeMessages:false});
     if (parsed.data.action === "reply") return NextResponse.json(await replyMessage(parsed.data.id, parsed.data.text));
     if (parsed.data.action === "state") return NextResponse.json(await setMessengerConversationState(parsed.data.id, parsed.data.value));
     return NextResponse.json(await setMessengerUnread(parsed.data.id, parsed.data.value));
