@@ -43,11 +43,11 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
-  const [source, setSource] = useState<Source>("all");
+export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='' }: { canReply: boolean;initialSource?:Source;initialQuery?:string }) {
+  const [source, setSource] = useState<Source>(initialSource);
   const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [messengerState, setMessengerState] = useState("active");
   const [items, setItems] = useState<Item[] | null>(null);
   const [catalog, setCatalog] = useState<Catalog>({ accounts: [], pages: [] });
