@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { FeedbackHost } from "./feedback";
 import { afterRender, setRootData, writePref } from "./client-prefs";
+import { requestSearch } from "./search-request";
+const EMPTY_SEARCH_RESULTS:Result[]=[];
 
 type NavLink = { icon: string; label: string; href: string; badge?: "inbox" | "failed" | "reviews" };
 type NavGroup = { key: string; title: string; links: NavLink[] };
@@ -110,7 +112,13 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
   const [me, setMe] = useState<Me | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Result[]>([]);
+  const [searchState, setSearchState] = useState<{query:string;attempt:number;results:Result[];error:boolean}|null>(null);
+  const [searchAttempt,setSearchAttempt]=useState(0);
+  const currentQuery=query.trim();
+  const searchCurrent=searchState?.query===currentQuery&&searchState.attempt===searchAttempt;
+  const results=searchCurrent?searchState.results:EMPTY_SEARCH_RESULTS;
+  const searchLoading=palette&&currentQuery.length>=2&&!searchCurrent;
+  const searchError=searchCurrent&&searchState.error;
   const [active, setActiveIndex] = useState(0);
   const paletteRef = useRef<HTMLInputElement>(null);
 
@@ -123,7 +131,18 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d) { setMe(d.user); setCounts(d.counts ?? {}); } }).catch(() => {});
     return () => clearInterval(timer);
   }, [commentsOnly]);
-  useEffect(() => { if (query.trim().length < 2) return; const t = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((d) => setResults(d.results ?? [])).catch(() => {}), 220); return () => clearTimeout(t); }, [query]);
+  useEffect(() => {
+    if(!palette||currentQuery.length<2)return;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>{
+      requestSearch(currentQuery,controller.signal).then(results=>{
+        if(!controller.signal.aborted)setSearchState({query:currentQuery,attempt:searchAttempt,results,error:false});
+      }).catch(()=>{
+        if(!controller.signal.aborted)setSearchState({query:currentQuery,attempt:searchAttempt,results:[],error:true});
+      });
+    },220);
+    return ()=>{clearTimeout(timer);controller.abort();};
+  },[currentQuery,palette,searchAttempt]);
   const openPalette = useCallback(() => { setPalette(true); setQuery(""); setActiveIndex(0); setTimeout(() => paletteRef.current?.focus(), 0); }, []);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -194,8 +213,10 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
     {drawer && <><button className="drawer-backdrop" aria-label="إغلاق القائمة" onClick={() => setDrawer(false)} /><div className="drawer" role="dialog" aria-modal="true" aria-label="القائمة"><header><Brand /><button className="top-icon" aria-label="إغلاق" onClick={() => setDrawer(false)}><Icon name="close" /></button></header><SideNav pathname={pathname} counts={counts} onNavigate={() => setDrawer(false)} /><div className="side-bottom"><button className="btn btn-secondary block" onClick={cycleTheme}>المظهر: {themeLabel(theme)}</button><form method="post" action="/api/auth/logout"><button className="btn btn-ghost danger block" type="submit">تسجيل الخروج</button></form></div></div></>}
 
     {palette && <div className="palette-backdrop" onClick={() => setPalette(false)}><div className="palette" role="dialog" aria-modal="true" aria-label="لوحة الأوامر" onClick={(e) => e.stopPropagation()}>
+      {searchLoading&&<p role="status">جارٍ البحث…</p>}
+      {searchError&&<div role="alert">تعذر تحميل نتائج البحث. <button className="btn btn-secondary btn-sm" onClick={()=>setSearchAttempt(value=>value+1)}>إعادة المحاولة</button></div>}
       <input ref={paletteRef} role="combobox" aria-expanded="true" aria-controls="palette-list" aria-label="ابحث أو اكتب أمرًا" placeholder="ابحث في المنشورات والحملات والقوالب… أو اكتب أمرًا" value={query} onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }} onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setActiveIndex((a) => Math.min(a + 1, items.length - 1)); } else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIndex((a) => Math.max(a - 1, 0)); } else if (e.key === "Enter" && items[active]) go(items[active].href); }} />
-      <div className="palette-list" id="palette-list" role="listbox">{grouped.map(({ item, i, header }) => <div key={`${item.href}-${i}`} style={{ display: "contents" }}>{header && <div className="palette-group">{header}</div>}<button role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseEnter={() => setActiveIndex(i)} onClick={() => go(item.href)}><Icon name={item.icon} width={16} /><span>{item.label}</span>{item.hint && <small>{item.hint}</small>}</button></div>)}{!items.length && <p>لا توجد نتائج</p>}</div>
+      <div className="palette-list" id="palette-list" role="listbox" aria-busy={searchLoading}>{grouped.map(({ item, i, header }) => <div key={`${item.href}-${i}`} style={{ display: "contents" }}>{header && <div className="palette-group">{header}</div>}<button role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseEnter={() => setActiveIndex(i)} onClick={() => go(item.href)}><Icon name={item.icon} width={16} /><span>{item.label}</span>{item.hint && <small>{item.hint}</small>}</button></div>)}{!items.length&&!searchLoading&&!searchError && <p>لا توجد نتائج</p>}</div>
       <div className="palette-help"><span><kbd>↑</kbd><kbd>↓</kbd> تنقل</span><span><kbd>Enter</kbd> فتح</span><span><kbd>Esc</kbd> إغلاق</span><span><kbd>N</kbd> منشور جديد</span></div>
     </div></div>}
     <FeedbackHost />
