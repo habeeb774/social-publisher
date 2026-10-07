@@ -3,6 +3,7 @@ import { z } from "zod";
 import { guard } from "@/services/api-guard";
 import { currentUser } from "@/services/rbac";
 import { allowedPageIds } from "@/services/access-scope";
+import { safeMessengerSyncPages } from "@/services/messenger-sync-result";
 import { conversationDetail, listConversations, messengerCatalog, messengerStatus, replyMessage, setMessengerConversationState, setMessengerUnread, syncMessenger } from "@/services/messenger";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
     const items = allowed === null ? allItems : allItems.filter((item) => allowed.has(String((item as Record<string, unknown>).page_id)));
     const visiblePages = allowed === null ? catalog.pages : catalog.pages.filter((page) => allowed.has(page.id));
     const visibleAccounts = catalog.accounts.filter((account) => visiblePages.some((page) => page.accountId === account.id));
-    return NextResponse.json({ items, status, catalog: { accounts: visibleAccounts, pages: visiblePages } },{headers:{'Cache-Control':'private, no-store'}});
+    return NextResponse.json({ items, status: status ? { checkedAt: status.checkedAt, pages: safeMessengerSyncPages(status.pages) } : null, catalog: { accounts: visibleAccounts, pages: visiblePages } },{headers:{'Cache-Control':'private, no-store'}});
   } catch (error) { return fail(error); }
 }
 
@@ -53,7 +54,8 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const allowed = await allowedPageIds(user);
     if (parsed.data.action === "sync") {
-      return NextResponse.json(await syncMessenger(allowed === null ? null : Array.from(allowed)));
+      const result = await syncMessenger(allowed === null ? null : Array.from(allowed));
+      return NextResponse.json({ imported: result.imported, status: safeMessengerSyncPages(result.status) },{headers:{'Cache-Control':'private, no-store'}});
     }
     await conversationDetail(parsed.data.id,allowed,{markRead:false,includeMessages:false});
     if (parsed.data.action === "reply") return NextResponse.json(await replyMessage(parsed.data.id, parsed.data.text));

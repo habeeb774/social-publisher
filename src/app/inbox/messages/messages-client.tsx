@@ -6,6 +6,7 @@ import { Skeleton } from "../../ui/kit";
 import { inboxJson } from "../inbox-request";
 import Link from "next/link";
 import { convertMessengerLead } from "./lead-conversion";
+import { messengerSyncNotice } from "@/services/messenger-sync-result";
 
 type Conversation = { id: string; participant_name: string | null; last_message: string | null; last_message_at: string | null; unread: boolean; page_name: string; state?: string };
 type Message = { id: string; from_name: string | null; message: string; is_from_page: boolean; created_time: string; sent_by: string | null };
@@ -57,7 +58,17 @@ export function MessagesClient({ canReply, canManage = false, canCreateLead = fa
     catch { if (request === detailRequest.current) setDetailError(true); }
   };
   const close = () => { ++detailRequest.current; setSelectedId(null); setDetail(null); setDetailError(false); };
-  const sync = async () => { if (!canManage || busy) return; setBusy(true); try { const r = await api<{ imported: number }>("", { action: "sync" }); toast(`اكتملت المزامنة (${r.imported} رسالة جديدة)`); await load(); } catch (e) { toast(e instanceof Error ? e.message : "تعذرت المزامنة", "error"); } finally { setBusy(false); } };
+  const sync = async () => {
+    if (!canManage || busy) return;
+    setBusy(true);
+    try {
+      const result = await api<unknown>("", { action: "sync" });
+      const notice = messengerSyncNotice(result);
+      toast(notice.message, notice.type);
+      await load();
+    } catch { toast("تعذرت المزامنة. راجع حالة الاتصال وحاول مجددًا.", "error"); }
+    finally { setBusy(false); }
+  };
   const updateConversation = async (action: "state" | "unread", value: string | boolean) => {
     if (!detail || !canManage || busy) return;
     setBusy(true);
