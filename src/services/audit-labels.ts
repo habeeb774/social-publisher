@@ -1,4 +1,7 @@
 const LABELS: Record<string, string> = {
+  "lead.followup.schedule": "تحديد موعد متابعة العميل",
+  "lead.followup.complete": "إتمام متابعة العميل وتسجيل التواصل",
+  "lead.followup.cancel": "إلغاء موعد متابعة العميل",
   "lead.converted_from_messenger": "تحويل محادثة إلى عميل محتمل",
   "lead.updated": "تعديل بيانات العميل",
   "lead.assigned": "إسناد العميل لعضو الفريق",
