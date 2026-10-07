@@ -1,4 +1,5 @@
-import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, boolean, index, uniqueIndex, date } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, boolean, index, uniqueIndex, date, check, primaryKey } from "drizzle-orm/pg-core";
 export const postStatus = pgEnum("post_status", ["draft","scheduled","publishing","published","failed","cancelled","archived","pending_approval","approved"]);
 export const users = pgTable("users", { id: uuid("id").defaultRandom().primaryKey(), email: text("email").notNull().unique(), name: text("name"), role: text("role").notNull().default("viewer"), passwordHash: text("password_hash"), isActive: boolean("is_active").notNull().default(true), lastLoginAt: timestamp("last_login_at", {withTimezone:true}), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(), updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull() });
 export const facebookPages = pgTable("facebook_pages", { id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), facebookPageId: text("facebook_page_id").notNull(), platform: text("platform").notNull().default("facebook"), profileUrl: text("profile_url"), accessTokenEnc: text("access_token_enc"), mcpConnectionReference: text("mcp_connection_reference"), status: text("status").notNull().default("active"), isActive: boolean("is_active").notNull().default(true), lastConnectionCheck: timestamp("last_connection_check", {withTimezone:true}), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(), updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull() });
@@ -19,4 +20,27 @@ export const postNotes = pgTable("post_notes", { id: uuid("id").defaultRandom().
 export const postRecurrences = pgTable("post_recurrences", { id: uuid("id").defaultRandom().primaryKey(), sourcePostId: uuid("source_post_id").references(()=>posts.id).notNull(), frequency: text("frequency").notNull(), interval: integer("interval").notNull().default(1), nextRunAt: timestamp("next_run_at", {withTimezone:true}).notNull(), endsAt: timestamp("ends_at", {withTimezone:true}), maxOccurrences: integer("max_occurrences"), occurrences: integer("occurrences").notNull().default(0), active: boolean("active").notNull().default(true), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(), updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull() }, t=>({ dueIdx: index("post_recurrences_due_idx").on(t.active, t.nextRunAt) }));
 export const contentGoals = pgTable("content_goals", { id: uuid("id").defaultRandom().primaryKey(), month: text("month").notNull(), category: text("category"), target: integer("target").notNull(), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull() }, t=>({ monthIdx: index("content_goals_month_idx").on(t.month) }));
 export const savedFilters = pgTable("saved_filters", { id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), scope: text("scope").notNull(), query: text("query").notNull(), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull() });
+
+// Foundation only: do not expose multiple workspaces until all tenant-owned reads and writes are scoped.
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull(),
+}, t => [check("workspaces_name_check", sql`length(btrim(${t.name})) BETWEEN 1 AND 120`)]);
+export const workspaceMembers = pgTable("workspace_members", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, {onDelete:"restrict"}),
+  userId: uuid("user_id").notNull().references(() => users.id, {onDelete:"restrict"}),
+  role: text("role").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull(),
+}, t => [primaryKey({columns:[t.workspaceId,t.userId]}), index("workspace_members_user_idx").on(t.userId,t.workspaceId), check("workspace_members_role_check", sql`${t.role} IN ('owner','admin','manager','editor','publisher','support','viewer')`)]);
+export const workspacePages = pgTable("workspace_pages", {
+  pageId: uuid("page_id").primaryKey().references(() => facebookPages.id, {onDelete:"restrict"}),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, {onDelete:"restrict"}),
+  createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull(),
+}, t => [index("workspace_pages_workspace_idx").on(t.workspaceId,t.pageId)]);
 export const libraryItems = pgTable("library_items", { id: uuid("id").defaultRandom().primaryKey(), kind: text("kind").notNull(), title: text("title").notNull(), body: text("body").notNull().default(""), mediaUrl: text("media_url"), status: text("status").notNull().default("new"), tags: text("tags").array().notNull().default([]), convertedPostId: uuid("converted_post_id").references(()=>posts.id), createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(), updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull() }, t=>({ kindIdx: index("library_items_kind_idx").on(t.kind, t.status) }));
