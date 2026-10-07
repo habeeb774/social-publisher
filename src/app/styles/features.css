@@ -397,3 +397,14 @@
   .calendar-move-banner { position: sticky; top: 58px; z-index: 15; margin: 8px; }
   .calendar-move-banner > span:nth-child(2) { width: 100%; }
 }
+
+/* Light-theme contrast pass: glass remains translucent without washing out content. */
+:root:not([data-theme="dark"]) .card, :root:not([data-theme="dark"]) .panel-card, :root:not([data-theme="dark"]) .dashboard-panel,
+:root:not([data-theme="dark"]) .metric-card, :root:not([data-theme="dark"]) .settings-content,
+:root[data-theme="light"] .card, :root[data-theme="light"] .panel-card, :root[data-theme="light"] .dashboard-panel,
+:root[data-theme="light"] .metric-card, :root[data-theme="light"] .settings-content { color: var(--text); }
+:root:not([data-theme="dark"]) table, :root:not([data-theme="dark"]) .inbox, :root:not([data-theme="dark"]) .calendar-card,
+:root[data-theme="light"] table, :root[data-theme="light"] .inbox, :root[data-theme="light"] .calendar-card { color: var(--text); }
+:root:not([data-theme="dark"]) th, :root[data-theme="light"] th { color: var(--muted); font-weight: 600; }
+:root:not([data-theme="dark"]) td strong, :root:not([data-theme="dark"]) .metric-value, :root:not([data-theme="dark"]) .stat-value,
+:root[data-theme="light"] td strong, :root[data-theme="light"] .metric-value, :root[data-theme="light"] .stat-value { color: var(--heading); }
