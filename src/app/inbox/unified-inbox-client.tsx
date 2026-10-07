@@ -8,6 +8,7 @@ import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
 import { inboxJson as json } from "./inbox-request";
 import { commentReplyFlow, savedCommentReply } from "./comment-reply-flow";
+import { refreshCurrentSelection } from "./selection-refresh";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -38,7 +39,7 @@ type MessengerDetail = {
 };
 type Template = { id: string; name: string; content: string; active: boolean };
 
-export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSource='all',initialQuery='' }: { canReply: boolean;canApproveComments?:boolean;initialSource?:Source;initialQuery?:string }) {
+export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveComments=false,initialSource='all',initialQuery='' }: { canReply: boolean;canManageInbox?:boolean;canApproveComments?:boolean;initialSource?:Source;initialQuery?:string }) {
   const [source, setSource] = useState<Source>(initialSource);
   const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
@@ -123,6 +124,9 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
 
   async function send() {
     if (!selected || !text.trim() || !canReply || busy || replyAction.current) return;
+    if (selected.kind === "messenger" ? !messageDetail?.conversation.canReply : !commentDetail) return;
+    const target = selected;
+    const request = detailRequest.current;
     replyAction.current = true;
     setBusy(true);
     try {
@@ -141,8 +145,7 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
         });
         toast("أُرسل الرد على Messenger");
       }
-      setText("");
-      await open(selected);
+      await refreshCurrentSelection(request, () => detailRequest.current, () => open(target));
       await load();
     } catch (error) {
       toast(error instanceof Error ? error.message : "تعذر إرسال الرد", "error");
@@ -167,7 +170,7 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
     } catch {
       toast("تعذر تأكيد الإجراء. راجع حالة الرد قبل إعادة المحاولة.", "error");
     } finally {
-      if (request === detailRequest.current) await open(target);
+      await refreshCurrentSelection(request, () => detailRequest.current, () => open(target));
       await load();
       replyAction.current = false;
       setBusy(false);
@@ -175,32 +178,38 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
   }
 
   async function updateMessenger(action: "state" | "unread", value: string | boolean) {
-    if (!selected || selected.kind !== "messenger") return;
+    if (!selected || selected.kind !== "messenger" || !canManageInbox || busy || replyAction.current) return;
+    const target = selected;
+    const request = detailRequest.current;
+    replyAction.current = true;
     setBusy(true);
     try {
       await json("/api/messages", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, id: selected.id, value }),
+        body: JSON.stringify({ action, id: target.id, value }),
       });
       toast(action === "unread" ? (value ? "عُلّمت كغير مقروء" : "عُلّمت كمقروء") : value === "resolved" ? "تم حل المحادثة" : value === "archived" ? "أُرشفت المحادثة" : "أُعيد فتح المحادثة");
       await load();
+      if (request !== detailRequest.current) return;
       if (value === "archived") {
+        ++detailRequest.current;
         setSelected(null);
         setMessageDetail(null);
       } else {
-        const refreshed = items?.find((item) => item.kind === "messenger" && item.id === selected.id);
-        if (refreshed) setSelected({ ...refreshed, state: String(value === true || value === false ? refreshed.state ?? "open" : value) });
+        setSelected({ ...target, ...(action === "unread" ? { unread: Boolean(value) } : { state: String(value) }) });
       }
     } catch (error) {
       toast(error instanceof Error ? error.message : "تعذر تحديث المحادثة", "error");
     } finally {
+      replyAction.current = false;
       setBusy(false);
     }
   }
 
   async function resolveComment() {
-    if (!selected || selected.kind !== "comment") return;
+    if (!selected || selected.kind !== "comment" || !canApproveComments || busy || replyAction.current) return;
+    replyAction.current = true;
     setBusy(true);
     try {
       await json("/api/comments", {
@@ -213,6 +222,7 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
     } catch (error) {
       toast(error instanceof Error ? error.message : "تعذر تحديث التعليق", "error");
     } finally {
+      replyAction.current = false;
       setBusy(false);
     }
   }
@@ -225,7 +235,7 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
     <section className="inbox-list" aria-label="الوارد الموحد">
       <nav className="tabs" role="tablist">
         {([["all", "الكل"], ["comments", "التعليقات"], ["messenger", "Messenger"]] as Array<[Source, string]>).map(([key, label]) =>
-          <button key={key} role="tab" aria-selected={source === key} className={source === key ? "active" : ""} onClick={() => { setSource(key); setSelected(null); }}>{label}</button>
+          <button key={key} role="tab" aria-selected={source === key} className={source === key ? "active" : ""} onClick={() => { ++detailRequest.current; setSource(key); setSelected(null); setCommentDetail(null); setMessageDetail(null); setText(""); }}>{label}</button>
         )}
       </nav>
 
@@ -261,13 +271,13 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
       {!selected ? <EmptyState icon="inbox" title="اختر محادثة" description="التعليقات ورسائل Messenger تظهر هنا في مكان واحد." /> : <>
         <header>
           <div className="row">
-            <button className="btn btn-ghost btn-sm mobile-only" onClick={() => setSelected(null)}>رجوع</button>
+            <button className="btn btn-ghost btn-sm mobile-only" onClick={() => { ++detailRequest.current; setSelected(null); setCommentDetail(null); setMessageDetail(null); setText(""); }}>رجوع</button>
             <b style={{ color: "var(--heading)" }}>{selected.person}</b>
             <span className={`badge ${selected.kind === "messenger" ? "badge-success" : "badge-info"}`}>{selected.kind === "messenger" ? "Messenger" : "Facebook Comment"}</span>
             <small>{selected.pageName}</small>
           </div>
-          {selected.kind === "comment" && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={resolveComment}><Icon name="check" width={14} />تم الحل</button>}
-          {selected.kind === "messenger" && <div className="row">
+          {canApproveComments && selected.kind === "comment" && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={resolveComment}><Icon name="check" width={14} />تم الحل</button>}
+          {canManageInbox && selected.kind === "messenger" && <div className="row">
             {selected.state === "resolved"
               ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateMessenger("state", "open")}>إعادة فتح</button>
               : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateMessenger("state", "resolved")}><Icon name="check" width={14} />تم الحل</button>}
@@ -293,9 +303,9 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
         </div>
 
         {canReply && <div className="reply-composer">
-          {templates.length > 0 && <div className="chips">{templates.slice(0, 6).map((item) => <button key={item.id} type="button" className="chip" onClick={() => setText(item.content)}>{item.name}</button>)}</div>}
+          {templates.length > 0 && <div className="chips">{templates.slice(0, 6).map((item) => <button key={item.id} type="button" className="chip" disabled={busy || !canSend} onClick={() => setText(item.content)}>{item.name}</button>)}</div>}
           {selected.kind === "messenger" && messageDetail && !messageDetail.conversation.canReply && <small className="muted">انتهت نافذة الرد المسموحة؛ انتظر رسالة جديدة من العميل.</small>}
-          <textarea aria-label="نص الرد" placeholder="اكتب الرد…" value={text} disabled={!canSend} onChange={(e) => setText(e.target.value)} />
+          <textarea aria-label="نص الرد" placeholder="اكتب الرد…" value={text} disabled={busy || !canSend} onChange={(e) => setText(e.target.value)} />
           <div className="row-between"><small>{selected.kind === "messenger" ? "الرد عبر Messenger" : canApproveComments ? "الرد على تعليق Facebook" : "مسودة تحتاج اعتماد المسؤول"}</small><button className="btn btn-primary btn-sm" disabled={busy || !text.trim() || !canSend} onClick={send}><Icon name="send" width={14} />{selected.kind === "comment" && !canApproveComments ? "حفظ مسودة" : "إرسال"}</button></div>
         </div>}
       </>}
