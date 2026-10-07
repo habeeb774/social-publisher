@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { currentActor, logAudit } from "./audit";
 import { storedPageToken } from "./page-tokens";
+import { messengerPageToken } from "./messenger-connection";
 import { getSetting, setSetting } from "./settings-store";
 import { listMetaAccounts } from "./meta-accounts";
 import { planMessengerAutomation, recordMessengerAutomation } from "./messenger-automation";
@@ -16,7 +17,7 @@ type GraphConv = { id: string; updated_time: string; participants?: { data: Arra
 const WINDOW_MS = 24 * 3600000;
 
 async function tokenFor(facebookPageId: string) {
-  return (await storedPageToken(facebookPageId)) ?? process.env.META_PAGE_ACCESS_TOKEN?.trim() ?? null;
+  return (await messengerPageToken(facebookPageId)) ?? (await storedPageToken(facebookPageId)) ?? process.env.META_PAGE_ACCESS_TOKEN?.trim() ?? null;
 }
 async function graph(path: string, token: string, init?: RequestInit) {
   const sep = path.includes("?") ? "&" : "?";

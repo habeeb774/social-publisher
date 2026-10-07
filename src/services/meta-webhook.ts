@@ -5,6 +5,7 @@ import { activityLogs, facebookPages } from "@/db/schema";
 import { ingestComment } from "@/services/comments/store";
 import type { RemoteComment } from "@/services/comments/provider";
 import { storedPageToken } from "@/services/page-tokens";
+import { messengerPageToken } from "@/services/messenger-connection";
 import { ingestMessengerWebhook } from "@/services/messenger";
 
 const version = () => process.env.META_GRAPH_VERSION?.trim() || "v23.0";
@@ -233,7 +234,7 @@ async function graph(path: string, init?: RequestInit) {
   return body;
 }
 
-export async function setupMetaWebhook() {
+export async function setupMetaWebhookApp() {
   const appId = process.env.META_APP_ID?.trim();
   const appSecret = process.env.META_APP_SECRET?.trim();
   const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim();
@@ -252,6 +253,11 @@ export async function setupMetaWebhook() {
       access_token: appAccessToken,
     }),
   });
+  return callbackUrl;
+}
+
+export async function setupMetaWebhook() {
+  const callbackUrl = await setupMetaWebhookApp();
 
   const pages = await getDb().select({
     id: facebookPages.id,
@@ -266,7 +272,7 @@ export async function setupMetaWebhook() {
   const status: Array<{ page: string; pageId: string; ok: boolean; error?: string }> = [];
   for (const page of pages) {
     try {
-      const token = await storedPageToken(page.facebookPageId);
+      const token = (await messengerPageToken(page.facebookPageId)) ?? (await storedPageToken(page.facebookPageId));
       if (!token) {
         status.push({ page: page.name, pageId: page.facebookPageId, ok: false, error: "PAGE_TOKEN_MISSING" });
         continue;
@@ -336,7 +342,7 @@ export async function checkMetaWebhookSubscriptions() {
   const pageStatus: Array<{ page: string; pageId: string; ok: boolean; error?: string }> = [];
   for (const page of pages) {
     try {
-      const token = await storedPageToken(page.facebookPageId);
+      const token = (await messengerPageToken(page.facebookPageId)) ?? (await storedPageToken(page.facebookPageId));
       if (!token) {
         pageStatus.push({ page: page.name, pageId: page.facebookPageId, ok: false, error: "PAGE_TOKEN_MISSING" });
         continue;

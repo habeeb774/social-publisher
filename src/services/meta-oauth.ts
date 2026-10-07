@@ -30,7 +30,7 @@ export function metaRedirectUri(origin?: string) {
   return `${base}/api/meta/oauth/callback`;
 }
 
-type StatePayload = { ts: number; nonce: string; returnTo: string };
+type StatePayload = { ts: number; nonce: string; returnTo: string; purpose?: "messenger" };
 
 function stateKey() {
   const secret = process.env.AUTH_SECRET?.trim();
@@ -42,10 +42,11 @@ function sign(encoded: string) {
   return createHmac("sha256", stateKey()).update(encoded).digest("base64url");
 }
 
-export function createMetaState(returnTo = "/pages") {
+export function createMetaState(returnTo = "/pages", purpose?: "messenger") {
   const payload: StatePayload = {
     ts: Date.now(),
     nonce: crypto.randomUUID(),
+    purpose,
     returnTo: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/pages",
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -69,7 +70,7 @@ export function verifyMetaState(value: string) {
   }
 }
 
-export function metaAuthorizationUrl(redirectUri: string, state: string) {
+export function metaAuthorizationUrl(redirectUri: string, state: string, purpose?: "messenger") {
   const appId = process.env.META_APP_ID?.trim();
   if (!appId) throw new Error("META_APP_ID_MISSING");
   const url = new URL(`${facebookBase()}/dialog/oauth`);
@@ -77,7 +78,8 @@ export function metaAuthorizationUrl(redirectUri: string, state: string) {
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", META_OAUTH_SCOPES.join(","));
+  url.searchParams.set("scope", (purpose === "messenger" ? ["public_profile", "pages_show_list", "pages_manage_metadata", "pages_messaging"] : META_OAUTH_SCOPES).join(","));
+  if (purpose === "messenger") url.searchParams.set("auth_type", "rerequest");
   return url.toString();
 }
 
@@ -127,9 +129,9 @@ export type MetaManagedPage = {
   instagram_business_account?: { id: string; username?: string };
 };
 
-export async function managedMetaPages(userToken: string) {
+export async function managedMetaPages(userToken: string, includeInstagram = true) {
   const url = new URL(`${graphBase()}/me/accounts`);
-  url.searchParams.set("fields", "id,name,access_token,tasks,instagram_business_account{id,username}");
+  url.searchParams.set("fields", includeInstagram ? "id,name,access_token,tasks,instagram_business_account{id,username}" : "id,name,access_token,tasks");
   url.searchParams.set("limit", "100");
   url.searchParams.set("access_token", userToken);
   const result = await graphJson<{ data?: MetaManagedPage[] }>(url.toString());

@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages } from "@/db/schema";
 import { getSetting, setSetting } from "./settings-store";
+import { disconnectMessengerPage } from "./messenger-connection";
 
 export type MetaAccountRecord = {
   id: string;
@@ -109,6 +110,7 @@ export async function disconnectMetaAccount(accountId: string) {
   const exclusive = ownedRemoteIds.filter((id) => !sharedRemoteIds.has(id));
 
   if (exclusive.length) {
+    await Promise.all(exclusive.map(disconnectMessengerPage));
     await getDb().update(facebookPages).set({
       isActive: false,
       status: "disconnected",

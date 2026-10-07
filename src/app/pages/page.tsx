@@ -7,6 +7,7 @@ import { metaOAuthConfigured } from "@/services/meta-oauth";
 import { pageCan, pageSession } from "@/services/session-server";
 import { allowedPageIds } from "@/services/access-scope";
 import { listMetaAccounts } from "@/services/meta-accounts";
+import { messengerPageConnected } from "@/services/messenger-connection";
 import { AppShell } from "../ui/app-shell";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
@@ -40,11 +41,19 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
   ]);
   const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const rows = allowed === null ? allRows : allRows.filter(({ page }) => allowed.has(page.id));
+  const messengerPages = new Set((await Promise.all(rows.filter(({ page }) => page.platform === "facebook").map(async ({ page }) =>
+    await messengerPageConnected(page.facebookPageId) ? page.facebookPageId : null
+  ))).filter((id): id is string => id !== null));
   const visibleMetaAccounts = allowed === null ? metaAccounts : metaAccounts.filter((account) => rows.some(({ page }) => account.pageIds.includes(page.facebookPageId) || account.instagramIds.includes(page.facebookPageId)));
   const graph = isGraphConfigured(), windsor = Boolean(process.env.WINDSOR_API_KEY), oauthReady = metaOAuthConfigured();
   const metaState = typeof params.meta === "string" ? params.meta : null;
   const metaMessage = metaState === "connected"
     ? `تم ربط Meta بنجاح · الملف الشخصي: ${params.profile === "1" ? "متصل" : "غير متاح"} · صفحات: ${typeof params.pages === "string" ? params.pages : "0"} · Instagram: ${typeof params.instagram === "string" ? params.instagram : "0"} · Messenger: ${params.messenger === "1" ? "مفعّل" : "يحتاج صلاحية pages_messaging"}`
+    : metaState === "messenger-connected" ? `تم تفعيل Messenger والاشتراك في أحداث الرسائل لـ ${params.pages} صفحة. أرسل رسالة اختبار للتحقق من الاستقبال.`
+    : metaState === "messenger-partial" ? `تم تفعيل Messenger لـ ${params.pages} صفحة؛ تعذر الاشتراك لبعض الصفحات. أعد التفعيل لهذه الصفحات.`
+    : metaState === "messenger-permission-missing" ? "لم يمنح Meta صلاحيات Messenger المطلوبة. فعّل Messenger في تطبيق Meta وأكمل مراجعة الصلاحيات ثم أعد المحاولة."
+    : metaState === "messenger-cancelled" ? "أُلغي تفعيل Messenger."
+    : metaState === "messenger-failed" ? "تعذر تفعيل Messenger. تأكد من تفعيل المنتج والصلاحيات وربط الصفحة أولًا."
     : metaState === "missing-config" ? "الربط التلقائي جاهز، ويحتاج فقط META_APP_ID و META_APP_SECRET في Vercel."
     : metaState === "no-pages" ? "تم تسجيل الدخول إلى Meta، لكن لم نجد صفحة تديرها بهذه الصلاحيات."
     : metaState === "cancelled" ? "أُلغي ربط Meta قبل إكمال التفويض."
@@ -54,12 +63,18 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
   return <AppShell title="صفحات Facebook">
     <PageHeader title="الصفحات والحسابات" description="اربط أكثر من حساب Meta وأدر صفحات Facebook وInstagram لكل حساب. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
     {metaMessage && <div className={`banner ${metaState === "connected" ? "success" : metaState === "missing-config" ? "" : "warning"}`}>{metaMessage}</div>}
+    {canManage && <section className="card" style={{ marginBottom: 16 }}>
+      <h2>تفعيل Messenger</h2>
+      <p>تفويض مستقل للرسائل بعد ربط الصفحة. يحتاج تفعيل Messenger وصلاحياته في تطبيق Meta، وإعداد Webhook لاستقبال الأحداث.</p>
+      {oauthReady && <a className="btn btn-secondary" href="/api/meta/oauth/start?purpose=messenger">تفعيل أو إعادة ربط Messenger</a>}
+      <Link className="btn btn-ghost" href="/inbox/messages">فتح الرسائل</Link>
+    </section>}
     {visibleMetaAccounts.length > 0 && <section className="card card-flush" style={{ marginBottom: 16 }}>
       {visibleMetaAccounts.map((account) => {
         const linkedPages = rows.filter(({ page }) =>
           account.pageIds.includes(page.facebookPageId) || account.instagramIds.includes(page.facebookPageId)
         );
-        const messenger = account.permissions.includes("pages_messaging");
+        const messenger = account.pageIds.some((id) => messengerPages.has(id));
         const active = account.status === "active";
         return <div key={account.id} className="integration">
           {account.pictureUrl

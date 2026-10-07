@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/pages?meta=missing-config", request.url));
   }
   const redirectUri = metaRedirectUri(request.nextUrl.origin);
-  const state = createMetaState("/pages");
-  return NextResponse.redirect(metaAuthorizationUrl(redirectUri, state));
+  const purpose = request.nextUrl.searchParams.get("purpose") === "messenger" ? "messenger" : undefined;
+  const state = createMetaState("/pages", purpose);
+  return NextResponse.redirect(metaAuthorizationUrl(redirectUri, state, purpose));
 }

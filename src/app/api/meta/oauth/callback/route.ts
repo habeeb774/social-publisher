@@ -4,9 +4,10 @@ import { getDb } from "@/db";
 import { facebookPages, notifications } from "@/db/schema";
 import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
-import { setupMetaWebhook } from "@/services/meta-webhook";
+import { setupMetaWebhook, setupMetaWebhookApp } from "@/services/meta-webhook";
 import { upsertMetaAccount } from "@/services/meta-accounts";
 import { encryptToken } from "@/services/page-tokens";
+import { connectMessengerPage } from "@/services/messenger-connection";
 import {
   exchangeMetaCode,
   managedMetaPages,
@@ -32,22 +33,42 @@ export async function GET(request: NextRequest) {
   if (!metaOAuthConfigured()) return back(request, { meta: "missing-config" });
 
   const providerError = request.nextUrl.searchParams.get("error");
-  if (providerError) return back(request, { meta: "cancelled" });
-
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
-  if (!code || !state || !verifyMetaState(state)) return back(request, { meta: "invalid-state" });
+  const verified = state ? verifyMetaState(state) : null;
+  if (!verified) return back(request, { meta: "invalid-state" });
+  const messengerFlow = verified.purpose === "messenger";
+  if (providerError) return back(request, { meta: messengerFlow ? "messenger-cancelled" : "cancelled" });
+  if (!code) return back(request, { meta: "invalid-state" });
 
   try {
     const redirectUri = metaRedirectUri(request.nextUrl.origin);
     const userToken = await exchangeMetaCode(code, redirectUri);
     const [pages, permissions, profile] = await Promise.all([
-      managedMetaPages(userToken),
+      managedMetaPages(userToken, !messengerFlow),
       metaGrantedPermissions(userToken).catch(() => [] as string[]),
       metaUserProfile(userToken).catch(() => null),
     ]);
 
     if (!pages.length) return back(request, { meta: "no-pages" });
+
+    if (messengerFlow) {
+      if (!permissions.includes("pages_messaging") || !permissions.includes("pages_manage_metadata")) {
+        return back(request, { meta: "messenger-permission-missing" });
+      }
+      let connected = 0;
+      const failed: string[] = [];
+      await setupMetaWebhookApp();
+      for (const page of pages) {
+        try { if (await connectMessengerPage(page.id, page.access_token)) connected++; }
+        catch (error) {
+          failed.push(page.id);
+          console.error("Messenger subscription failed", { pageId: page.id, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      await logAudit("messenger.connected", "integration", null, { connected, failed });
+      return back(request, { meta: connected ? (failed.length ? "messenger-partial" : "messenger-connected") : "messenger-failed", pages: connected });
+    }
 
     const db = getDb();
     let connectedPages = 0;
@@ -144,6 +165,6 @@ export async function GET(request: NextRequest) {
     return back(request, { meta: "connected", pages: connectedPages, instagram: connectedInstagram, profile: profile ? 1 : 0, account: profile?.id ?? "", webhook, messenger: messengerGranted ? 1 : 0 });
   } catch (error) {
     console.error("Meta OAuth callback failed", { error: error instanceof Error ? error.message : String(error) });
-    return back(request, { meta: "failed" });
+    return back(request, { meta: messengerFlow ? "messenger-failed" : "failed" });
   }
 }
