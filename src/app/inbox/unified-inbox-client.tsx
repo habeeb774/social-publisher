@@ -9,6 +9,7 @@ import { Skeleton } from "../ui/kit";
 import { inboxJson as json } from "./inbox-request";
 import { commentReplyFlow, savedCommentReply } from "./comment-reply-flow";
 import { refreshCurrentSelection } from "./selection-refresh";
+import { draftAfterOpening } from "./reply-draft";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -102,11 +103,11 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
       .catch(() => {});
   }, []);
 
-  async function open(item: Item) {
+  async function open(item: Item, clearDraft = false) {
     const request = ++detailRequest.current;
     setSelected(item);
     setDetailError(false);
-    setText("");
+    setText(current => draftAfterOpening(selected, item, current, clearDraft));
     setCommentDetail(null);
     setMessageDetail(null);
     try {
@@ -145,7 +146,7 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
         });
         toast("أُرسل الرد على Messenger");
       }
-      await refreshCurrentSelection(request, () => detailRequest.current, () => open(target));
+      await refreshCurrentSelection(request, () => detailRequest.current, () => open(target, true));
       await load();
     } catch (error) {
       toast(error instanceof Error ? error.message : "تعذر إرسال الرد", "error");
