@@ -59,6 +59,15 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
     }
   };
 
+  const createLead = async () => {
+    if (!detail) return; setBusy(true);
+    try {
+      const r = await fetch("/api/leads/from-messenger", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId: detail.conversation.id }) });
+      const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error ?? "تعذر إنشاء العميل المحتمل");
+      toast("تمت إضافة المحادثة إلى العملاء المحتملين", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "تعذر إنشاء العميل المحتمل", "error"); }
+    finally { setBusy(false); }
+  };
   const send = async () => {
     if (!detail) return; setBusy(true);
     try { await api("", { action: "reply", id: detail.conversation.id, text }); toast("أُرسل الرد على ماسنجر"); await open(detail.conversation.id); await load(); }
@@ -95,7 +104,7 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
       </section>
       <section className="inbox-thread" aria-label="المحادثة">
         {!detail ? <EmptyState icon="inbox" title="اختر محادثة" description="تظهر هنا الرسائل ويمكنك الرد خلال 24 ساعة من آخر رسالة للعميل." /> : <>
-          <header><div className="row"><button className="btn btn-ghost btn-sm mobile-only" onClick={() => setDetail(null)}>رجوع</button><b style={{ color: "var(--heading)" }}>{detail.conversation.participant_name ?? "متابع"}</b><small>{detail.conversation.page_name}</small></div><div className="row"><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateConversation("state","resolved")}>تم الحل</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("unread",true)}>غير مقروء</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("state","archived")}>أرشفة</button></div></header>
+          <header><div className="row"><button className="btn btn-ghost btn-sm mobile-only" onClick={() => setDetail(null)}>رجوع</button><b style={{ color: "var(--heading)" }}>{detail.conversation.participant_name ?? "متابع"}</b><small>{detail.conversation.page_name}</small></div><div className="row"><button className="btn btn-secondary btn-sm" disabled={busy} onClick={createLead}>إضافة كعميل محتمل</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateConversation("state","resolved")}>تم الحل</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("unread",true)}>غير مقروء</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("state","archived")}>أرشفة</button></div></header>
           <div className="inbox-messages">{detail.messages.map((m) => <div key={m.id} className={`bubble ${m.is_from_page ? "outgoing" : ""}`}><p className="pre">{m.message || "(مرفق)"}</p><small>{time(m.created_time)}{m.sent_by && <> · {m.sent_by}</>}</small></div>)}</div>
           {canReply && <div className="reply-composer">
             {!detail.conversation.canReply && <small className="muted">مرّ أكثر من 24 ساعة على آخر رسالة من العميل؛ لا يسمح فيسبوك بالرد حتى يراسلك مجددًا.</small>}
