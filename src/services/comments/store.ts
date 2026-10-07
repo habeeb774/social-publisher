@@ -9,14 +9,14 @@ type Row=Record<string,unknown>;
 export async function commentsAudit(action:string,id:string|null,metadata:Row={}){
   const db=database();await db`INSERT INTO activity_logs(action,entity_type,entity_id,metadata) VALUES (${action},'facebook_comment',${id}::uuid,${JSON.stringify({actor:currentActor(),...metadata})}::jsonb)`;
 }
-export async function inbox(query:URLSearchParams){
+export async function inbox(query:URLSearchParams,allowed:ReadonlySet<string>|null=new Set()){
   const db=database();const f=filterParams(query),cursor=decodeCommentCursor(query.get("cursor"));
   const requestedAccount=(query.get("account")??"").trim();
   const accounts=await listMetaAccounts();
   const selectedAccount=accounts.find(account=>account.id===requestedAccount);
   const accountRemoteCsv=selectedAccount?.pageIds.join(",")??"";
   const items=await db`SELECT c.*,p.name AS page_name,to_char(c.created_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE
-  NOT c.is_from_page AND
+  NOT c.is_from_page AND (${allowed===null} OR c.page_id::text=ANY(${Array.from(allowed??[])}::text[])) AND
   (${f.q}='' OR c.message ILIKE ${`%${f.q}%`} OR c.author_name ILIKE ${`%${f.q}%`} OR c.post_id=${f.q} OR EXISTS(SELECT 1 FROM comment_tag_links l JOIN comment_tags t ON t.id=l.tag_id WHERE l.comment_id=c.id AND t.name ILIKE ${`%${f.q}%`}))
   AND (${f.status}='all' OR c.status=${f.status} OR (${f.status}='needs_reply' AND c.needs_reply)) AND (${f.page}='' OR c.page_id::text=${f.page})
   AND (${requestedAccount}='' OR p.facebook_page_id = ANY(string_to_array(${accountRemoteCsv}, ',')))

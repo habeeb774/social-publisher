@@ -54,7 +54,7 @@ export async function GET(request:NextRequest){
       if(allowed!==null&&!allowed.has(String(detail.comment.page_id)))return NextResponse.json({error:"ليست لديك صلاحية لهذه الصفحة"},{status:403});
       return NextResponse.json(detail);
     }
-    const result=await store.inbox(params);
+    const result=await store.inbox(params,allowed);
     return NextResponse.json(allowed===null?result:{...result,items:result.items.filter((item:Record<string,unknown>)=>allowed.has(String(item.page_id))) });
   }catch(error){return failure(error);}
 }

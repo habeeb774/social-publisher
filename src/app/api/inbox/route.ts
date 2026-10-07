@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   const allowed=await allowedPageIds(user);
   const [commentResult, messengerRows, catalog] = await Promise.all([
-    source === "messenger" ? Promise.resolve({ items: [] as Row[] }) : comments.inbox(commentParams),
+    source === "messenger" ? Promise.resolve({ items: [] as Row[] }) : comments.inbox(commentParams,allowed),
     source === "comments" ? Promise.resolve([] as Row[]) : listConversations(page, account, q, messengerState,allowed) as Promise<Row[]>,
     comments.inboxCatalog(user.id),
   ]);
