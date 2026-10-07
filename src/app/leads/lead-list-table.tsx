@@ -3,9 +3,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { LEAD_LABELS, LEAD_STAGES } from '@/services/leads-stages';
+import { LeadBulkAssignment } from './lead-bulk-assignment';
 
 export type LeadListRow={id:string;name:string;contact:string|null;source:string;status:string;pageName:string|null;updatedAt:string;version:string};
-export function LeadListTable({rows,editable}:{rows:LeadListRow[];editable:boolean}) {
+export function LeadListTable({rows,editable,assignable=false}:{rows:LeadListRow[];editable:boolean;assignable?:boolean}) {
   const router=useRouter();
   const [selected,setSelected]=useState<string[]>([]);
   const [stage,setStage]=useState<typeof LEAD_STAGES[number]>('contacted');
@@ -18,7 +19,7 @@ export function LeadListTable({rows,editable}:{rows:LeadListRow[];editable:boole
   const chosen=rows.filter(row=>selected.includes(row.id));
   function toggle(id:string){setSelected(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);setNotice('');}
   async function save(){
-    if(pending.current||!chosen.length||needsReload)return;
+    if(busy||pending.current||!chosen.length||needsReload)return;
     if(!window.confirm(`تغيير مرحلة ${chosen.length} عميلًا إلى «${LEAD_LABELS[stage]}»؟`))return;
     const controller=new AbortController();pending.current=controller;setBusy(true);setError('');setNotice('');
     try{
@@ -41,6 +42,7 @@ export function LeadListTable({rows,editable}:{rows:LeadListRow[];editable:boole
       <button type="button" className="btn btn-secondary" disabled={busy||!chosen.length} onClick={()=>setSelected([])}>إلغاء التحديد</button>
       {needsReload?<button type="button" className="btn btn-secondary" disabled={busy} onClick={()=>window.location.reload()}>إعادة تحميل القائمة</button>:null}
     </div>:null}
+    {assignable&&chosen.length?<div style={{padding:16}}><LeadBulkAssignment key={chosen.map(row=>`${row.id}:${row.version}`).sort().join(',')} rows={chosen} disabled={busy||needsReload} onBusy={setBusy} onSaved={()=>{setBusy(false);setNotice(`حُدّث إسناد ${chosen.length} عميلًا.`);setSelected([]);router.refresh();}} onUncertain={message=>{setError(message);setNeedsReload(true);}}/></div>:null}
     {error?<p role="alert" style={{padding:16}}>{error}</p>:null}{notice?<p role="status" style={{padding:16}}>{notice}</p>:null}
     <div className="table-wrap"><table><thead><tr>{editable?<th><input type="checkbox" aria-label="تحديد كل العملاء في الصفحة الحالية" disabled={busy||needsReload||!rows.length} checked={rows.length>0&&chosen.length===rows.length} onChange={event=>setSelected(event.target.checked?rows.map(row=>row.id):[])}/></th>:null}<th>العميل</th><th>المصدر</th><th>الصفحة</th><th>الحالة</th><th>آخر تحديث</th></tr></thead><tbody>
       {rows.map(row=><tr key={row.id}>{editable?<td><input type="checkbox" aria-label={`تحديد ${row.name}`} disabled={busy||needsReload} checked={selected.includes(row.id)} onChange={()=>toggle(row.id)}/></td>:null}

@@ -3,10 +3,25 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { leadBulkStageSchema, leadBulkStageQuery } from '../src/services/leads-bulk';
+import { leadBulkStageSchema, leadBulkStageQuery, leadBulkAssignmentSchema,leadBulkAssignmentQuery } from '../src/services/leads-bulk';
 import { assertDisposableDatabase } from './database-safety';
 
 const id='8a79eb88-d269-44de-bee6-243ca0391432',version='2026-10-07T10:00:00.123456Z';
+test('bulk assignment rejects forged authorization and keeps clear-assignment explicit',()=>{
+  const body={assignedTo:null,leads:[{id,expectedUpdatedAt:version}]};
+  assert.equal(leadBulkAssignmentSchema.safeParse(body).success,true);
+  for(const patch of [{assignedTo:'env-admin'},{assignedTo:undefined},{role:'admin'},{leads:[]},{leads:[body.leads[0],body.leads[0]]}])assert.equal(leadBulkAssignmentSchema.safeParse({...body,...patch}).success,false);
+  assert.throws(()=>leadBulkAssignmentQuery({...body,assignedTo:id},null,'actor',null),/AUTHORIZATION_REQUIRED/);
+});
+test('bulk assignment binds authorization snapshots and couples all-row eligibility to audit',()=>{
+  const input=leadBulkAssignmentSchema.parse({assignedTo:id,leads:[{id,expectedUpdatedAt:version}]});
+  const target={role:'editor' as const,scopeValue:'scope-snapshot',catalogValue:'catalog-snapshot',unrestricted:false,pageIds:[id],remoteIds:['remote-page']};
+  const query=new PgDialect().sqlToQuery(leadBulkAssignmentQuery(input,new Set([id]),'actor',target));
+  assert.match(query.sql,/for share/);assert.match(query.sql,/order by l.id for update of l/);
+  assert.match(query.sql,/bool_and\(updated_at=version and eligible\)/);assert.match(query.sql,/is not distinct from/);
+  assert.match(query.sql,/p.is_active=true/);assert.match(query.sql,/where d.permitted/);assert.match(query.sql,/from changed returning id/);
+  for(const value of ['scope-snapshot','catalog-snapshot','remote-page',version]){assert.ok(query.params.includes(value));assert.equal(query.sql.includes(value),false);}
+});
 test('bulk validation limits input, rejects duplicate IDs regardless of case and invalid stages/versions',()=>{
   const item={id,expectedUpdatedAt:version};
   assert.equal(leadBulkStageSchema.safeParse({status:'won',leads:[item]}).success,true);
