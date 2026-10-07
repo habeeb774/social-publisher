@@ -119,9 +119,10 @@ export async function listConversations(pageId = "", accountId = "", q = "", sta
     const record = row as Row;
     const stateAt = record.state_at ? new Date(String(record.state_at)).getTime() : 0;
     const lastAt = record.last_message_at ? new Date(String(record.last_message_at)).getTime() : 0;
-    const effectiveState = Boolean(record.unread) && lastAt > stateAt ? "open" : String(record.stored_state ?? "open");
-    return { ...record, state: effectiveState };
-  }).filter((row) => state === "all" ? true : state === "unread" ? Boolean(row.unread) : state === "archived" ? row.state === "archived" : row.state !== "archived");
+    const unread = Boolean(record.unread);
+    const effectiveState = unread && lastAt > stateAt ? "open" : String(record.stored_state ?? "open");
+    return { ...record, unread, state: effectiveState };
+  }).filter((row) => state === "all" ? true : state === "unread" ? row.unread : state === "archived" ? row.state === "archived" : row.state !== "archived");
 }
 
 export async function setMessengerConversationState(id: string, state: "resolved" | "open" | "archived") {
