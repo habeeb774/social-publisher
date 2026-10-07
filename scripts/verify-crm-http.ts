@@ -71,6 +71,7 @@ try {
   console.log("CRM HTTP QA: form/detail server rendering, edit conflicts, follow-up schedule/filter/completion passed.");
   const tag=`visibility-${randomUUID()}`;
   const hiddenPage=randomUUID(),hiddenLead=randomUUID();
+  await db.execute(sql`update leads set name=${`${tag} visible lead`},contact=${`${tag}-contact-only`} where id=${leadId}::uuid`);
   await db.execute(sql`update facebook_pages set name=${`${tag} visible page`} where id=${pageId}::uuid`);
   await db.execute(sql`insert into facebook_pages(id,name,facebook_page_id,is_active) values(${hiddenPage}::uuid,${`${tag} hidden page`},${`qa-${hiddenPage}`},true)`);
   await db.execute(sql`insert into leads(id,page_id,name) values(${hiddenLead}::uuid,${hiddenPage}::uuid,${`${tag} hidden lead`})`);
@@ -85,11 +86,15 @@ try {
   }
   await db.execute(sql`insert into post_templates(name,content) values(${`${tag} unscoped template`},'QA only')`);
   await db.execute(sql`insert into activity_logs(action,entity_type,entity_id,metadata) values(${`${tag}.global`},'user',null,${JSON.stringify({actor:`${tag} hidden global actor`})}::jsonb)`);
-  // Malformed historical IDs must fail closed rather than crash UUID casts.
+  // Orphan UUIDs must fail closed without disclosing historical activity.
   await db.execute(sql`insert into activity_logs(action,entity_type,entity_id,metadata) values('post.updated','post',${randomUUID()}::uuid,'{}'::jsonb)`);
   const search=await call(`/api/search?q=${encodeURIComponent(tag)}`);assert.equal(search.status,200);
   const searchBody=await search.json() as {results:Array<{label:string;type:string}>};
-  for(const type of ["منشور","وسائط","صفحة","حملة"])assert.ok(searchBody.results.some(result=>result.type===type&&result.label.includes("visible")),`${type} accessible result must remain available`);
+  for(const type of ["منشور","وسائط","صفحة","حملة","عميل محتمل"])assert.ok(searchBody.results.some(result=>result.type===type&&result.label.includes("visible")),`${type} accessible result must remain available`);
+  const contactSearch=await call(`/api/search?q=${encodeURIComponent(`${tag}-contact-only`)}`);
+  assert.equal(contactSearch.status,200);const contactBody=await contactSearch.json();
+  assert.ok(contactBody.results.some((result:{href:string})=>result.href===`/leads/${leadId}`));
+  assert.equal(JSON.stringify(contactBody).includes("contact-only"),false);
   assert.equal(JSON.stringify(searchBody).includes("hidden"),false);
   assert.equal(searchBody.results.some(result=>result.type==="سجل"||result.type==="قالب"),false);
   const logs=await call("/logs");assert.equal(logs.status,200);assert.ok((await logs.text()).includes("ليست لديك صلاحية"));

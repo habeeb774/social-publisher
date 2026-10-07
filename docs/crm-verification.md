@@ -10,8 +10,6 @@
 - Page scope, inactive recipient, stale due time and closed-stage checks prevented reminder delivery without consuming it.
 - Existing queue, approvals, recurrence, library and trash database tests ran successfully. These do not constitute real Meta publishing verification.
 
-## Manual creation flow
-
 ## Scoped discovery security verification
 
 - Full isolated database suite: 125 passed, 0 failed, 0 skipped; the updated UUID comparison unit tests also passed after the schema correction.
@@ -19,6 +17,15 @@
 - Search retained accessible posts, pages, linked media and campaigns, while excluding outside-page fixtures. Restricted accounts cannot search unscoped templates or system audit records.
 - Dashboard activity is filtered before pagination and includes only accessible post/lead entities for non-administrators. Missing entity IDs do not disclose orphan activity.
 - System logs require the current database administrator role. This does not establish complete workspace isolation across other routes or verify production browser interactions.
+
+## Manual creation flow
+
+## Lead discovery verification
+
+- Global search now includes leads by name or contact, bounded to five records and enforced against the current user's page scope and `leads.read` permission.
+- Results contain only a truncated name and detail link; searching a contact does not include that contact or notes in the response.
+- Two focused SQL tests passed for bound scope, empty assignments, literal wildcards and input limits. The production build and targeted ESLint passed.
+- Actual local HTTP checks on the isolated QA branch confirmed accessible lead discovery by name/contact and exclusion of hidden-page leads. Browser interaction and production account verification remain separate boundaries.
 
 ## Manual creation flow
 
