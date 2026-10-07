@@ -6,6 +6,27 @@ import { authorizeWorkspace, type WorkspaceContext, type WorkspaceRequestDepende
 import { WORKSPACE_PERMISSIONS } from "./workspace-access";
 import { posts } from "../db/schema";
 
+const createFieldsSchema=z.object({content:z.string().min(1).max(63206),status:z.enum(["draft","scheduled","pending_approval"]),scheduledAt:z.date().nullable(),timezone:z.literal("Asia/Riyadh"),category:z.string().max(100).nullable().optional(),tags:z.array(z.string().max(40)).max(20).optional(),campaignId:z.null().optional()});
+export type WorkspacePostCreateFields=z.input<typeof createFieldsSchema>;
+
+/** INSERT ... SELECT makes current page ownership and author permission part of the write. */
+export function workspacePostCreateQuery(context:WorkspaceContext,pageId:string,fields:WorkspacePostCreateFields,scheduling=false) {
+  z.uuid().parse(context.userId);z.uuid().parse(context.workspaceId);z.uuid().parse(pageId);
+  const data=createFieldsSchema.parse(fields);
+  const mustPublish=scheduling || data.status!=="draft";
+  const roles=WORKSPACE_PERMISSIONS["posts.create"].filter(role=>!mustPublish || (WORKSPACE_PERMISSIONS["posts.publish"] as readonly string[]).includes(role));
+  return sql`INSERT INTO posts(page_id,content,status,scheduled_at,timezone,category,tags,created_by)
+    SELECT wp.page_id,${data.content},${data.status}::post_status,${data.scheduledAt?.toISOString()??null}::timestamptz,${data.timezone},${data.category??null},ARRAY[${sql.join((data.tags??[]).map(tag=>sql`${tag}`),sql`,`)}]::text[],${context.userId}::uuid
+    FROM workspace_pages wp
+    JOIN workspaces w ON w.id=wp.workspace_id AND w.is_active=true
+    JOIN facebook_pages fp ON fp.id=wp.page_id AND fp.is_active=true
+    JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=${context.userId}::uuid AND m.is_active=true
+    JOIN users u ON u.id=m.user_id AND u.is_active=true
+    WHERE wp.workspace_id=${context.workspaceId}::uuid AND wp.page_id=${pageId}::uuid
+    AND m.role IN (${sql.join(roles.map(role=>sql`${role}`),sql`,`)})
+    RETURNING id`;
+}
+
 /** Correlated predicate for reads and writes; never authorize from the context's historical role. */
 export function workspacePostEditPredicate(context:WorkspaceContext, scheduling=false) {
   z.uuid().parse(context.userId); z.uuid().parse(context.workspaceId);

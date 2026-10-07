@@ -90,3 +90,15 @@ model. Non-null campaign attachments are rejected until campaign ownership is
 migrated. Other post mutations, media writes, scheduling settings, alerts and
 audit visibility still require the full workspace migration. Do not enable
 multi-customer access based on this route alone.
+
+POST `/api/posts?workspace=<uuid>` now additionally checks `posts.create` and
+uses an INSERT SELECT joined to current active membership and exclusive page
+ownership. Scheduling requires both author and publisher permission inside the
+INSERT, including when the legacy approval setting changes scheduled status to
+pending approval. The authenticated database user is stored as creator.
+Non-null campaign references remain rejected. The cutover flag makes workspace
+mandatory on this POST route as well, but must still remain disabled until every
+activation gate is complete. Real SQL and signed-session route tests cover own
+and foreign pages, role downgrades, inactive memberships and unauthorized
+scheduling. Media registration, alerts and settings are still legacy boundaries;
+this change does not enable multi-client onboarding or prove browser QA.

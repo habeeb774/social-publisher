@@ -7,7 +7,7 @@ import { assertDisposableDatabase } from "./database-safety";
 import { workspaceMembershipQuery, workspacePagesQuery } from "../src/services/workspace-access";
 import { NextRequest } from "next/server";
 import { authorizeWorkspace, createWorkspaceAccessHandler } from "../src/services/workspace-request";
-import { createWorkspacePostListHandler, workspacePostListQuery, workspacePostEditPredicate } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, workspacePostListQuery, workspacePostEditPredicate, workspacePostCreateQuery } from "../src/services/workspace-posts";
 import { and, eq } from "drizzle-orm";
 import { posts } from "../src/db/schema";
 
@@ -106,13 +106,20 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
     await connection`INSERT INTO posts(id,page_id,content,status) VALUES(${own},${pageA},'QA edit','draft'),(${foreign},${pageB},'QA foreign','draft')`;
     await connection`UPDATE workspace_members SET role='editor' WHERE workspace_id=${a} AND user_id=${member}`;
     const context={userId:member,workspaceId:a,role:'owner' as const};
+    const createFields={content:'QA created',status:'draft' as const,scheduledAt:null,timezone:'Asia/Riyadh' as const};
+    const create=(pageId=pageA)=>db.execute(workspacePostCreateQuery(context,pageId,createFields));
+    assert.equal((await create()).rows.length,1);
+    assert.equal((await create(pageB)).rows.length,0);
+    assert.equal((await db.execute(workspacePostCreateQuery(context,pageA,createFields,true))).rows.length,0);
     const update=(id:string)=>db.update(posts).set({content:'QA edited'}).where(and(eq(posts.id,id),workspacePostEditPredicate(context))).returning({id:posts.id});
     assert.equal((await update(own)).length,1);
     assert.equal((await update(foreign)).length,0);
     await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
     assert.equal((await update(own)).length,0);
+    assert.equal((await create()).rows.length,0);
     await connection`UPDATE workspace_members SET role='editor',is_active=false WHERE workspace_id=${a} AND user_id=${member}`;
     assert.equal((await update(own)).length,0);
+    assert.equal((await create()).rows.length,0);
     await connection`UPDATE workspace_members SET is_active=true WHERE workspace_id=${a} AND user_id=${member}`;
     const previousSecret=process.env.AUTH_SECRET;
     process.env.AUTH_SECRET=randomUUID();
@@ -120,10 +127,15 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
     try {
       const {createSessionToken}=await import('../src/services/request-auth');
       const {PATCH}=await import('../src/app/api/posts/[id]/route');
+      const {POST}=await import('../src/app/api/posts/route');
       const token=await createSessionToken({userId:member,role:'admin'});
       const [row]=await db.select({updatedAt:posts.updatedAt}).from(posts).where(eq(posts.id,own));
       const request=(pageId=pageA,extra:Record<string,unknown>={})=>new NextRequest(`https://qa.example.test/api/posts/${own}?workspace=${a}`,{method:'PATCH',headers:{origin:'https://qa.example.test',cookie:`sp_admin=${token}`,'content-type':'application/json'},body:JSON.stringify({pageId,content:'QA route edit',status:'draft',updatedAt:row.updatedAt.toISOString(),...extra})});
       const params=(id=own)=>({params:Promise.resolve({id})});
+      const createRequest=(pageId=pageA,extra:Record<string,unknown>={})=>new NextRequest(`https://qa.example.test/api/posts?workspace=${a}`,{method:'POST',headers:{origin:'https://qa.example.test',cookie:`sp_admin=${token}`,'content-type':'application/json'},body:JSON.stringify({pageId,content:'QA route create',status:'draft',...extra})});
+      assert.equal((await POST(createRequest())).status,201);
+      assert.equal((await POST(createRequest(pageB))).status,403);
+      assert.equal((await POST(createRequest(pageA,{status:'scheduled',scheduledAt:new Date(Date.now()+3600000).toISOString()}))).status,403);
       assert.equal((await PATCH(request(pageB),params(foreign))).status,404);
       assert.equal((await PATCH(request(pageA,{status:'scheduled',scheduledAt:new Date(Date.now()+3600000).toISOString()}),params())).status,403);
       assert.equal((await PATCH(request(pageA,{campaignId:randomUUID()}),params())).status,422);

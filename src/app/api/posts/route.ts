@@ -11,8 +11,9 @@ import { sendAlert } from "@/services/alerts";
 import { prePublishChecks } from "@/services/prepublish";
 import { allowedPageIds, denyPageOutsideScope } from "@/services/access-scope";
 import { currentUser } from "@/services/rbac";
-import { workspaceMembershipQuery } from "@/services/workspace-access";
-import { createWorkspacePostListHandler, workspacePostListQuery } from "@/services/workspace-posts";
+import { workspaceMembershipQuery, workspaceCan } from "@/services/workspace-access";
+import { createWorkspacePostListHandler, workspacePostListQuery, workspacePostCreateQuery } from "@/services/workspace-posts";
+import { authorizeWorkspace } from "@/services/workspace-request";
 
 const workspacePostList = createWorkspacePostListHandler({
   user:currentUser,
@@ -32,9 +33,21 @@ export async function GET(request:NextRequest) {
 export async function POST(request:NextRequest) {
   {const denied=await guard(request);if(denied)return denied;}
   if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"Invalid origin"},{status:403});
+  const workspaceId=request.nextUrl.searchParams.get("workspace");
+  let workspaceContext;
+  if(workspaceId!==null || process.env.WORKSPACE_ISOLATION_ENABLED==="true") {
+    const access=await authorizeWorkspace(request,workspaceId??"",{
+      user:currentUser,
+      membership:async(userId,workspace)=>(await getDb().execute(workspaceMembershipQuery(userId,workspace))).rows,
+    },"posts.create");
+    if(access.response)return access.response;
+    workspaceContext=access.context;
+  }
   const parsed=postInputSchema.safeParse(await request.json().catch(()=>null));
   if(!parsed.success)return NextResponse.json({error:parsed.error.issues[0]?.message||"بيانات غير صالحة"},{status:400});
   const data=parsed.data;
+  if(workspaceContext && data.campaignId)return NextResponse.json({error:"ربط الحملات بمساحات العمل غير متاح بعد."},{status:422});
+  if(workspaceContext && data.status==="scheduled" && !workspaceCan(workspaceContext.role,"posts.publish"))return NextResponse.json({error:"ليست لديك صلاحية جدولة النشر."},{status:403});
   if(data.pageId!=="habeb"&&!z.uuid().safeParse(data.pageId).success)return NextResponse.json({error:"الصفحة غير صالحة"},{status:400});
   try {
     const db=getDb();
@@ -43,7 +56,16 @@ export async function POST(request:NextRequest) {
     {const scoped=await denyPageOutsideScope(request,page.id);if(scoped)return scoped;}
     // Server-side gate: critical checklist failures block scheduling regardless of the UI.
     if(data.status==="scheduled"){const check=await prePublishChecks({pageId:page.id,content:data.content,scheduledAt:data.scheduledAt,imageUrl:data.imageUrl,postId:undefined});if(check.blocking)return NextResponse.json({error:check.items.filter(i=>i.critical&&!i.ok).map(i=>`${i.label}: ${i.detail??"فشل"}`).join(" · "),checks:check.items},{status:422});}
-    const [post]=await db.insert(posts).values({pageId:page.id,...await toPostFields(data)}).returning();
+    const fields=await toPostFields(data);
+    let post;
+    if(workspaceContext) {
+      const result=await db.execute(workspacePostCreateQuery(workspaceContext,page.id,{...fields,campaignId:null},data.status==="scheduled"));
+      const inserted=result.rows[0];
+      if(!inserted)return NextResponse.json({error:"الصفحة أو صلاحية إنشاء المنشور لم تعد متاحة."},{status:403});
+      const id=z.uuid().parse(inserted.id);
+      [post]=await db.select().from(posts).where(eq(posts.id,id)).limit(1);
+    } else [post]=await db.insert(posts).values({pageId:page.id,...fields}).returning();
+    if(!post)throw new Error("POST_CREATE_RESULT_UNAVAILABLE");
     await syncImage(post.id,data.imageUrl);
     await logAudit("post.created","post",post.id,{status:post.status});
     if(post.status==="scheduled")await sendAlert("scheduled",`تمت جدولة منشور (${post.id.slice(0,8)})`,post.content.slice(0,120),0);

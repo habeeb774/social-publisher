@@ -2,10 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { encodeCommentCursor } from "../src/services/comments/filters";
-import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate, workspacePostCreateQuery } from "../src/services/workspace-posts";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const workspace="58d38e8d-2f0f-4d60-bc11-5e9beddd994d", user="09a77e83-d77b-4cc7-86c9-4bac2e8aa122";
+test("workspace creates validate fields and require current author/publisher membership in INSERT", () => {
+  const context={userId:user,workspaceId:workspace,role:"owner" as const};
+  const fields={content:"private QA content",status:"draft" as const,scheduledAt:null,timezone:"Asia/Riyadh" as const,tags:["QA"]};
+  const query=new PgDialect().sqlToQuery(workspacePostCreateQuery(context,workspace,fields));
+  assert.match(query.sql,/INSERT INTO posts/);assert.match(query.sql,/SELECT wp.page_id/);
+  assert.match(query.sql,/wp.workspace_id=\$\d+::uuid AND wp.page_id=\$\d+::uuid/);
+  assert.ok(!query.sql.includes(fields.content));assert.ok(query.params.includes(fields.content));
+  assert.deepEqual(query.params.slice(-4),["owner","admin","manager","editor"]);
+  assert.deepEqual(new PgDialect().sqlToQuery(workspacePostCreateQuery(context,workspace,fields,true)).params.slice(-3),["owner","admin","manager"]);
+  assert.throws(()=>workspacePostCreateQuery(context,"habeb",fields));
+  assert.throws(()=>workspacePostCreateQuery(context,workspace,{...fields,content:""}));
+});
 test("workspace edit predicate correlates target page and uses current database membership", () => {
   const query=new PgDialect().sqlToQuery(workspacePostEditPredicate({userId:user,workspaceId:workspace,role:"owner"}));
   assert.match(query.sql,/wp\.page_id="posts"\."page_id"/);
