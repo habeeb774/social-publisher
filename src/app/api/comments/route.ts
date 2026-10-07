@@ -1,14 +1,12 @@
 import { NextRequest,NextResponse } from "next/server";
 import { z } from "zod";
-import { commentsPrincipal } from "@/services/comments/team";
+import { commentsPrincipal,commentsPageScope } from "@/services/comments/team";
 import { canComment } from "@/services/comments/permissions";
 import { withCommentsActor } from "@/services/comments/actor";
 import { inboxFilterSchema } from "@/services/comments/filters";
 import { flags,ruleSchema,templateSchema } from "@/services/comments/rules";
 import { commentsProvider } from "@/services/comments/provider";
 import * as store from "@/services/comments/store";
-import { currentUser } from "@/services/rbac";
-import { allowedPageIds } from "@/services/access-scope";
 import { commentNotifications,readCommentNotifications } from "@/services/comments/notification-store";
 export const dynamic="force-dynamic";
 const mutation=z.discriminatedUnion("action",[
@@ -29,8 +27,7 @@ const mutation=z.discriminatedUnion("action",[
 function failure(error:unknown){const code=error instanceof z.ZodError?"INVALID_FILTER":error instanceof Error?error.message:"COMMENTS_INTERNAL_ERROR";return NextResponse.json({code:code.length<100?code:"COMMENTS_INTERNAL_ERROR",error:code==="COMMENTS_REPLY_UNAVAILABLE"?"موصل Facebook الحالي لا يوفر صلاحية الرد على التعليقات.":"تعذر تنفيذ العملية؛ راجع حالة التكامل."},{status:code.startsWith("INVALID")?400:code.includes("NOT_FOUND")?404:code.includes("UNAVAILABLE")?409:503});}
 export async function GET(request:NextRequest){
   const principal=await commentsPrincipal(request);if(!principal)return NextResponse.json({error:"Unauthorized"},{status:401});
-  const mainUser=await currentUser(request);
-  const allowed=mainUser?await allowedPageIds(mainUser):null;
+  const allowed=await commentsPageScope(principal);
   try{
     if(!await store.enforceCommentsRateLimit(`${principal.id}:read`))return NextResponse.json({code:"RATE_LIMITED"},{status:429});
     const params=request.nextUrl.searchParams;const view=params.get("view");
@@ -63,8 +60,7 @@ export async function POST(request:NextRequest){
   if(request.headers.get("origin")!==request.nextUrl.origin)return NextResponse.json({error:"Invalid origin"},{status:403});
   const parsed=mutation.safeParse(await request.json().catch(()=>null));if(!parsed.success)return NextResponse.json({code:"INVALID_INPUT",error:parsed.error.issues[0]?.message},{status:400});
   if(!canComment(principal.role,parsed.data.action==="delete_view"?"save_view":parsed.data.action))return NextResponse.json({code:"FORBIDDEN",error:"الدور لا يسمح بهذا الإجراء"},{status:403});
-  const mainUser=await currentUser(request);
-  const allowed=mainUser?await allowedPageIds(mainUser):null;
+  const allowed=await commentsPageScope(principal);
   if(allowed!==null){
     const action=parsed.data.action;
     let ids:string[]=[];

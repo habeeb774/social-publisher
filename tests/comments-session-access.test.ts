@@ -12,7 +12,8 @@ test('comment principal honors current role and account revocation instead of st
   try{
     const {getDb}=await import('../src/db');const db=getDb();
     const {createSessionToken,SESSION_COOKIE}=await import('../src/services/request-auth');
-    const {commentsPrincipal,hashTeamPassword,loginCommentTeam}=await import('../src/services/comments/team');
+    const {commentsPrincipal,commentsPageScope,hashTeamPassword,loginCommentTeam}=await import('../src/services/comments/team');
+    const {setUserAccessScope}=await import('../src/services/access-scope');
     const {teamToken,TEAM_COOKIE}=await import('../src/services/comments/team-token');
     const {canComment}=await import('../src/services/comments/permissions');
     const id=randomUUID(),email=`comment-session-${id}@example.invalid`;
@@ -30,7 +31,12 @@ test('comment principal honors current role and account revocation instead of st
     await db.execute(sql`insert into comment_team_members(user_id,password_hash) values(${memberId}::uuid,${await hashTeamPassword(password)})`);
     const memberToken=await teamToken(memberId,0);
     const teamRequest=new NextRequest('http://localhost/api/comments',{headers:{cookie:`${TEAM_COOKIE}=${memberToken}`}});
-    assert.equal((await commentsPrincipal(teamRequest))?.id,memberId);
+    const member=await commentsPrincipal(teamRequest);assert.equal(member?.id,memberId);
+    const scopedPage=randomUUID();
+    await setUserAccessScope(memberId,{unrestricted:false,accountIds:[],pageIds:[scopedPage]});
+    assert.deepEqual(await commentsPageScope(member!),new Set([scopedPage]),'team-cookie login must not bypass Page restrictions');
+    await setUserAccessScope(memberId,{unrestricted:false,accountIds:[],pageIds:[]});
+    assert.deepEqual(await commentsPageScope(member!),new Set());
     const mixed=new NextRequest('http://localhost/api/comments',{headers:{cookie:`${SESSION_COOKIE}=${token}; ${TEAM_COOKIE}=${memberToken}`}});
     assert.equal(await commentsPrincipal(mixed),null,'revoked main session cannot fall back to another team identity');
     await db.execute(sql`update users set is_active=false where id=${memberId}::uuid`);

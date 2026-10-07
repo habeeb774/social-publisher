@@ -4,10 +4,15 @@ import { neon } from "@neondatabase/serverless";
 import type { NextRequest } from "next/server";
 import { sessionFrom } from "../request-auth";
 import { currentUser } from "../rbac";
+import { allowedPageIds } from "../access-scope";
 import { TEAM_COOKIE,verifyTeamToken,teamToken } from "./team-token";
 import type { CommentRole } from "./permissions";
 const db=()=>{if(!process.env.DATABASE_URL)throw new Error("DATABASE_UNAVAILABLE");return neon(process.env.DATABASE_URL);};
 const derive=promisify(scrypt);
+/** Both login paths use the same server-side Page scope. */
+export function commentsPageScope(principal:{id:string;role:CommentRole}){
+  return allowedPageIds({id:principal.id==='system-admin'?'env-admin':principal.id,role:principal.role});
+}
 export async function hashTeamPassword(password:string){const salt=randomBytes(16).toString("hex");const hash=await derive(password,salt,64) as Buffer;return `scrypt:${salt}:${hash.toString("hex")}`;}
 export async function checkTeamPassword(password:string,stored:string){const [type,salt,hex]=stored.split(":");if(type!=="scrypt"||!salt||!hex||hex.length!==128)return false;const hash=await derive(password,salt,64) as Buffer;return timingSafeEqual(hash,Buffer.from(hex,"hex"));}
 export async function commentsPrincipal(request:NextRequest){
