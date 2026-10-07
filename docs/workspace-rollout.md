@@ -111,3 +111,16 @@ read version so a concurrent save cannot be overwritten. Reschedule versions are
 recorded only after a successful write. Workspace-aware conflict counts and
 duplicate checks apply to these paths and scoped composer writes; global settings,
 scheduler operational health and remaining mutation routes are not migrated yet.
+
+Retry now checks `posts.publish` and compares the previously read version in the
+final update. Unknown publishing outcomes still require explicit confirmation.
+The duplicate transition path requires both read and create permissions in SQL;
+one statement creates a fresh draft and copies its attached media atomically.
+Creator attribution uses the authenticated workspace user. Provider identifiers,
+scheduled times, publishing state and queue membership do not carry over.
+Campaign-linked sources are rejected with 422 until campaign ownership is migrated;
+legacy duplication remains unchanged. The response read rechecks current ownership.
+Real disposable-database tests verify attached media, foreign-source rejection,
+missing creation permission and membership revocation inside the copy statement.
+These transition routes do not enable multi-client UI, migrate production data,
+scope shared media-library ownership, or verify browser/real Meta publishing.

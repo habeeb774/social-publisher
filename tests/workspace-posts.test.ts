@@ -2,10 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { encodeCommentCursor } from "../src/services/comments/filters";
-import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate, workspacePostCreateQuery, workspacePostPermissionPredicate } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate, workspacePostCreateQuery, workspacePostPermissionPredicate, workspacePostDuplicateQuery } from "../src/services/workspace-posts";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const workspace="58d38e8d-2f0f-4d60-bc11-5e9beddd994d", user="09a77e83-d77b-4cc7-86c9-4bac2e8aa122";
+test("workspace duplicates atomically copy only owned content and media into a fresh draft",()=>{
+  const query=new PgDialect().sqlToQuery(workspacePostDuplicateQuery({userId:user,workspaceId:workspace,role:"owner"},user));
+  assert.match(query.sql,/WITH source AS/);
+  assert.match(query.sql,/posts.campaign_id IS NULL/);
+  assert.match(query.sql,/wp\.page_id="posts"\."page_id"/);
+  assert.match(query.sql,/INSERT INTO post_media/);
+  assert.match(query.sql,/JOIN source ON source.id=m.post_id CROSS JOIN copy/);
+  assert.match(query.sql,/'draft'::post_status/);
+  assert.ok(!query.sql.includes("facebook_post_id"));
+  assert.ok(!query.sql.includes("scheduled_at"));
+  assert.ok(!query.sql.includes(user));
+  assert.deepEqual(query.params.slice(3,-1),["owner","admin","manager","editor"]);
+  assert.throws(()=>workspacePostDuplicateQuery({userId:user,workspaceId:workspace,role:"owner"},"' OR true --"));
+});
 test("publish predicates permit publishers without accidentally granting editor or support publishing",()=>{
   const context={userId:user,workspaceId:workspace,role:"owner" as const};
   const dialect=new PgDialect();

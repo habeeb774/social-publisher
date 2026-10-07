@@ -9,6 +9,25 @@ import { posts } from "../db/schema";
 const createFieldsSchema=z.object({content:z.string().min(1).max(63206),status:z.enum(["draft","scheduled","pending_approval"]),scheduledAt:z.date().nullable(),timezone:z.literal("Asia/Riyadh"),category:z.string().max(100).nullable().optional(),tags:z.array(z.string().max(40)).max(20).optional(),campaignId:z.null().optional()});
 export type WorkspacePostCreateFields=z.input<typeof createFieldsSchema>;
 
+/** Copy content and attached media atomically; publishing state never carries over. */
+export function workspacePostDuplicateQuery(context:WorkspaceContext, sourceId:string) {
+  z.uuid().parse(sourceId);
+  const permission=workspacePostPermissionPredicate(context,["posts.read","posts.create"]);
+  return sql`WITH source AS (
+    SELECT posts.* FROM posts WHERE posts.id=${sourceId}::uuid
+    AND posts.deleted_at IS NULL AND posts.campaign_id IS NULL AND ${permission}
+  ), copy AS (
+    INSERT INTO posts(page_id,content,status,timezone,category,tags,created_by)
+    SELECT page_id,content,'draft'::post_status,timezone,category,tags,${context.userId}::uuid FROM source
+    RETURNING id
+  ), media_copy AS (
+    INSERT INTO post_media(post_id,type,url,storage_key,mime_type,size)
+    SELECT copy.id,m.type,m.url,m.storage_key,m.mime_type,m.size
+    FROM post_media m JOIN source ON source.id=m.post_id CROSS JOIN copy
+    RETURNING id
+  ) SELECT copy.id,(SELECT count(*) FROM media_copy) AS media_count FROM copy`;
+}
+
 /** INSERT ... SELECT makes current page ownership and author permission part of the write. */
 export function workspacePostCreateQuery(context:WorkspaceContext,pageId:string,fields:WorkspacePostCreateFields,scheduling=false) {
   z.uuid().parse(context.userId);z.uuid().parse(context.workspaceId);z.uuid().parse(pageId);

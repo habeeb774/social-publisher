@@ -8,6 +8,8 @@ import { sendAlert } from "./alerts";
 import { prePublishChecks } from "./prepublish";
 import { getPublishingRules } from "./rules-store";
 import { violation } from "./publishing-rules";
+import { type WorkspaceContext } from "./workspace-request";
+import { workspacePostDuplicateQuery, workspacePostPermissionPredicate } from "./workspace-posts";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -22,10 +24,20 @@ export async function snapshotPost(post: Post, reason: string) {
   await db.insert(postVersions).values({ postId: post.id, content: post.content, scheduledAt: post.scheduledAt, status: post.status, mediaSnapshot: media, changedBy: currentActor(), reason });
 }
 
-export async function duplicatePost(id: string) {
+export async function duplicatePost(id: string, workspace?: WorkspaceContext) {
   const db = getDb();
-  const [source] = await db.select().from(posts).where(and(eq(posts.id, id), isNull(posts.deletedAt))).limit(1);
+  const [source] = await db.select().from(posts).where(and(eq(posts.id, id), isNull(posts.deletedAt), workspace ? workspacePostPermissionPredicate(workspace,["posts.read","posts.create"]) : undefined)).limit(1);
   if (!source) throw new Error("NOT_FOUND");
+  if (workspace) {
+    if (source.campaignId) throw new Error("WORKSPACE_CAMPAIGN_UNAVAILABLE");
+    const result=await db.execute(workspacePostDuplicateQuery(workspace,id));
+    const copyId=result.rows[0]?.id;
+    if(typeof copyId!=="string")throw new Error("NOT_FOUND");
+    const [copy]=await db.select().from(posts).where(and(eq(posts.id,copyId),isNull(posts.deletedAt),workspacePostPermissionPredicate(workspace,["posts.read"]))).limit(1);
+    if(!copy)throw new Error("NOT_FOUND");
+    await logAudit("post.duplicated", "post", copy.id, { sourceId: id });
+    return copy;
+  }
   const [copy] = await db.insert(posts).values({ pageId: source.pageId, content: source.content, status: "draft", timezone: source.timezone, category: source.category, tags: source.tags, campaignId: source.campaignId }).returning();
   const media = await db.select().from(postMedia).where(eq(postMedia.postId, id));
   if (media.length) await db.insert(postMedia).values(media.map((item) => ({ postId: copy.id, type: item.type, url: item.url, storageKey: item.storageKey, mimeType: item.mimeType, size: item.size })));
