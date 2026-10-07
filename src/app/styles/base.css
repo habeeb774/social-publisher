@@ -31,3 +31,22 @@ button { cursor: pointer; }
 @supports not (overflow: clip) {
   html, body { overflow-x: hidden; }
 }
+
+body {
+  background:
+    radial-gradient(circle at 12% 12%, color-mix(in srgb, var(--primary) 20%, transparent), transparent 30%),
+    radial-gradient(circle at 88% 82%, rgba(197,78,118,.12), transparent 28%),
+    linear-gradient(135deg, #0b0d14 0%, #111522 48%, #090b11 100%);
+  background-attachment: fixed;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: .5;
+  background:
+    linear-gradient(115deg, transparent 0 38%, rgba(255,255,255,.025) 45%, transparent 52%),
+    radial-gradient(circle at 70% 15%, rgba(255,255,255,.055), transparent 22%);
+}
