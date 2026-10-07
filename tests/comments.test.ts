@@ -4,6 +4,20 @@ import { classify,evaluateRules,flags,retryRead,ruleSchema,withinBusinessHours }
 import { WindsorFacebookCommentsProvider } from "../src/services/comments/provider";
 const rule=(id:string,priority=100,stopAfterMatch=true)=>({id,...ruleSchema.parse({name:id,action:"important",keywords:["سعر","بكم"],priority,active:true,stopAfterMatch})});
 const comment={message:"بكم سعر المنتج؟",pageId:"page",postId:"post",authorId:"customer",isFromPage:false,hidden:false,replied:false};
+
+test("any and question operators require no keywords while text matching still does", () => {
+  for (const operator of ["any", "question"]) assert.equal(ruleSchema.safeParse({ name: "rule", action: "important", operator, keywords: [] }).success, true);
+  for (const operator of ["contains", "equals", "starts_with"]) assert.equal(ruleSchema.safeParse({ name: "rule", action: "important", operator, keywords: [] }).success, false);
+});
+
+test("malformed stored rules cannot stop valid rules or become automatic matches", () => {
+  const broken = { ...rule("broken"), excludedAuthors: null } as unknown as ReturnType<typeof rule>;
+  const result = evaluateRules(comment, [broken, rule("valid")], new Date("2026-10-05T10:00:00Z"));
+  assert.deepEqual(result.matches.map(match => match.rule.id), ["valid"]);
+  assert.equal(evaluateRules(comment, [broken]).reason, "INVALID_RULE_CONFIGURATION");
+  const unsupported = { ...rule("unsupported"), operator: "unrecognized" } as unknown as ReturnType<typeof rule>;
+  assert.equal(evaluateRules(comment, [unsupported]).matches.length, 0);
+});
 test("rules use OR keywords and stable priority",()=>{const result=evaluateRules(comment,[rule("second",20,false),rule("first",10,false)],new Date("2026-10-05T10:00:00Z"));assert.deepEqual(result.matches.map(m=>m.rule.id),["first","second"]);});
 test("stop after match",()=>assert.equal(evaluateRules(comment,[rule("first",10),rule("second",20)]).matches.length,1));
 test("self replies, hidden comments and previously replied comments cannot loop",()=>{for(const patch of [{isFromPage:true},{hidden:true},{replied:true}])assert.equal(evaluateRules({...comment,...patch},[rule("a")]).matches.length,0);});
