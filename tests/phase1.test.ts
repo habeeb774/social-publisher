@@ -81,6 +81,8 @@ test("import row mapping validates, converts Drive links and flags duplicates", 
 // ---------- Database behaviour (runs against a disposable Neon branch when TEST_DATABASE_URL is set) ----------
 const dbUrl = process.env.TEST_DATABASE_URL;
 test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, async (t) => {
+  const { assertDisposableDatabase } = await import("./database-safety");
+  assertDisposableDatabase(dbUrl,process.env.DISPOSABLE_TEST_DATABASE_HOST,process.env.DATABASE_URL);
   process.env.DATABASE_URL = dbUrl;
   delete process.env.RESEND_API_KEY;
   process.env.WINDSOR_API_KEY ||= "test-only"; // satisfies the "publishing connection configured" check; no network call is made

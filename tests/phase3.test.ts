@@ -24,6 +24,8 @@ test("audit labels are human readable with a safe fallback", () => {
 
 const dbUrl = process.env.TEST_DATABASE_URL;
 test("phase 3 database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, async (t) => {
+  const { assertDisposableDatabase } = await import("./database-safety");
+  assertDisposableDatabase(dbUrl,process.env.DISPOSABLE_TEST_DATABASE_HOST,process.env.DATABASE_URL);
   process.env.DATABASE_URL = dbUrl;
   const { getDb } = await import("../src/db");
   const schema = await import("../src/db/schema");

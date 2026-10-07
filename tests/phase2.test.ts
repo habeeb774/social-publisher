@@ -57,6 +57,8 @@ test("CSV escapes quotes/newlines, adds BOM and neutralizes formulas", () => {
 
 const dbUrl = process.env.TEST_DATABASE_URL;
 test("phase 2 database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, async (t) => {
+  const { assertDisposableDatabase } = await import("./database-safety");
+  assertDisposableDatabase(dbUrl,process.env.DISPOSABLE_TEST_DATABASE_HOST,process.env.DATABASE_URL);
   process.env.DATABASE_URL = dbUrl;
   delete process.env.RESEND_API_KEY;
   const { getDb } = await import("../src/db");
