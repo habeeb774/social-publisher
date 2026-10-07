@@ -50,3 +50,17 @@ body::before {
     linear-gradient(115deg, transparent 0 38%, rgba(255,255,255,.025) 45%, transparent 52%),
     radial-gradient(circle at 70% 15%, rgba(255,255,255,.055), transparent 22%);
 }
+
+:root:not([data-theme="dark"]) body,
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 10% 10%, rgba(92,119,255,.20), transparent 31%),
+    radial-gradient(circle at 88% 78%, rgba(223,117,158,.16), transparent 28%),
+    linear-gradient(135deg, #f8faff 0%, #edf3fb 48%, #f8f4f8 100%);
+}
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(124,140,255,.18), transparent 30%),
+    radial-gradient(circle at 88% 82%, rgba(197,78,118,.12), transparent 28%),
+    linear-gradient(135deg, #0b0d14 0%, #111522 48%, #090b11 100%);
+}
