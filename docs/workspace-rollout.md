@@ -81,3 +81,12 @@ Real-database tests exercise the existing GET route with signed sessions, missin
 workspace under cutover, unauthorized tenants, and SQL paging with newer foreign
 posts, equal timestamps, microseconds and membership revocation before the read.
 No browser rendering or production multi-customer readiness is implied.
+
+The existing PATCH post route also accepts the transition workspace parameter.
+It adds `posts.edit` membership checks to the initial read and to the final
+compare-and-update SQL. Legacy global permissions and page scopes still apply
+as additional restrictions; this is not the final workspace-only authorization
+model. Non-null campaign attachments are rejected until campaign ownership is
+migrated. Other post mutations, media writes, scheduling settings, alerts and
+audit visibility still require the full workspace migration. Do not enable
+multi-customer access based on this route alone.

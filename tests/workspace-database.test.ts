@@ -7,7 +7,9 @@ import { assertDisposableDatabase } from "./database-safety";
 import { workspaceMembershipQuery, workspacePagesQuery } from "../src/services/workspace-access";
 import { NextRequest } from "next/server";
 import { authorizeWorkspace, createWorkspaceAccessHandler } from "../src/services/workspace-request";
-import { createWorkspacePostListHandler, workspacePostListQuery } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, workspacePostListQuery, workspacePostEditPredicate } from "../src/services/workspace-posts";
+import { and, eq } from "drizzle-orm";
+import { posts } from "../src/db/schema";
 
 const testUrl = process.env.TEST_DATABASE_URL;
 test("workspace foundation on explicitly disposable database", {skip:!testUrl && "TEST_DATABASE_URL not set"}, async t => {
@@ -98,6 +100,42 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
     }});
     assert.deepEqual((await (await revoked(request(),a)).json()).items,[]);
     await connection`UPDATE workspace_members SET is_active=true WHERE workspace_id=${a} AND user_id=${member}`;
+  });
+  await t.test("post edits enforce tenant ownership and revoked membership in the actual update", async () => {
+    const own=randomUUID(),foreign=randomUUID();
+    await connection`INSERT INTO posts(id,page_id,content,status) VALUES(${own},${pageA},'QA edit','draft'),(${foreign},${pageB},'QA foreign','draft')`;
+    await connection`UPDATE workspace_members SET role='editor' WHERE workspace_id=${a} AND user_id=${member}`;
+    const context={userId:member,workspaceId:a,role:'owner' as const};
+    const update=(id:string)=>db.update(posts).set({content:'QA edited'}).where(and(eq(posts.id,id),workspacePostEditPredicate(context))).returning({id:posts.id});
+    assert.equal((await update(own)).length,1);
+    assert.equal((await update(foreign)).length,0);
+    await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
+    assert.equal((await update(own)).length,0);
+    await connection`UPDATE workspace_members SET role='editor',is_active=false WHERE workspace_id=${a} AND user_id=${member}`;
+    assert.equal((await update(own)).length,0);
+    await connection`UPDATE workspace_members SET is_active=true WHERE workspace_id=${a} AND user_id=${member}`;
+    const previousSecret=process.env.AUTH_SECRET;
+    process.env.AUTH_SECRET=randomUUID();
+    await connection`UPDATE users SET role='admin' WHERE id=${member}`;
+    try {
+      const {createSessionToken}=await import('../src/services/request-auth');
+      const {PATCH}=await import('../src/app/api/posts/[id]/route');
+      const token=await createSessionToken({userId:member,role:'admin'});
+      const [row]=await db.select({updatedAt:posts.updatedAt}).from(posts).where(eq(posts.id,own));
+      const request=(pageId=pageA,extra:Record<string,unknown>={})=>new NextRequest(`https://qa.example.test/api/posts/${own}?workspace=${a}`,{method:'PATCH',headers:{origin:'https://qa.example.test',cookie:`sp_admin=${token}`,'content-type':'application/json'},body:JSON.stringify({pageId,content:'QA route edit',status:'draft',updatedAt:row.updatedAt.toISOString(),...extra})});
+      const params=(id=own)=>({params:Promise.resolve({id})});
+      assert.equal((await PATCH(request(pageB),params(foreign))).status,404);
+      assert.equal((await PATCH(request(pageA,{status:'scheduled',scheduledAt:new Date(Date.now()+3600000).toISOString()}),params())).status,403);
+      assert.equal((await PATCH(request(pageA,{campaignId:randomUUID()}),params())).status,422);
+      assert.equal((await PATCH(request(),params())).status,200);
+      assert.equal((await PATCH(request(),params())).status,409);
+      await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
+      assert.equal((await PATCH(request(),params())).status,403);
+    } finally {
+      if(previousSecret===undefined)delete process.env.AUTH_SECRET;else process.env.AUTH_SECRET=previousSecret;
+      await connection`UPDATE users SET role='viewer' WHERE id=${member}`;
+      await connection`UPDATE workspace_members SET role='support' WHERE workspace_id=${a} AND user_id=${member}`;
+    }
   });
   await t.test("inactive user, membership, workspace or page immediately removes scope", async () => {
     await connection`UPDATE workspace_members SET is_active=false WHERE workspace_id=${a} AND user_id=${member}`;

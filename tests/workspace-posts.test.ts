@@ -2,9 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { encodeCommentCursor } from "../src/services/comments/filters";
-import { createWorkspacePostListHandler, parseWorkspacePostPage } from "../src/services/workspace-posts";
+import { createWorkspacePostListHandler, parseWorkspacePostPage, workspacePostEditPredicate } from "../src/services/workspace-posts";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const workspace="58d38e8d-2f0f-4d60-bc11-5e9beddd994d", user="09a77e83-d77b-4cc7-86c9-4bac2e8aa122";
+test("workspace edit predicate correlates target page and uses current database membership", () => {
+  const query=new PgDialect().sqlToQuery(workspacePostEditPredicate({userId:user,workspaceId:workspace,role:"owner"}));
+  assert.match(query.sql,/wp\.page_id="posts"\."page_id"/);
+  for(const fragment of ["w.is_active=true","fp.is_active=true","m.is_active=true","u.is_active=true","m.role IN"])assert.ok(query.sql.includes(fragment));
+  assert.deepEqual(query.params,[user,workspace,"owner","admin","manager","editor"]);
+  assert.deepEqual(new PgDialect().sqlToQuery(workspacePostEditPredicate({userId:user,workspaceId:workspace,role:"owner"},true)).params,[user,workspace,"owner","admin","manager"]);
+  assert.ok(!query.sql.includes(user));assert.ok(!query.sql.includes(workspace));
+  assert.throws(()=>workspacePostEditPredicate({userId:"env-admin",workspaceId:workspace,role:"owner"}));
+  assert.throws(()=>workspacePostEditPredicate({userId:user,workspaceId:"' OR true --",role:"owner"}));
+});
 test("workspace post paging rejects unbounded or malformed input and preserves timestamp precision", () => {
   for(const query of ["limit=0","limit=101","limit=2.5","limit=Infinity","cursor=garbage",`cursor=${"x".repeat(1025)}`])assert.throws(()=>parseWorkspacePostPage(new URLSearchParams(query)));
   const time="2026-10-07T01:00:00.123456Z";
