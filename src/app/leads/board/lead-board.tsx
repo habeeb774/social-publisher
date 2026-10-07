@@ -4,7 +4,7 @@ import { useRef,useState } from "react";
 import { useRouter } from "next/navigation";
 import { LEAD_STAGES,LEAD_LABELS } from "@/services/leads-stages";
 import type { LeadCard,LeadColumn } from "@/services/leads-board-data";
-export function LeadBoard({initial,editable,q}:{initial:Record<string,LeadColumn>;editable:boolean;q:string}){
+export function LeadBoard({initial,editable,q,ownership="all"}:{initial:Record<string,LeadColumn>;editable:boolean;q:string;ownership?:string}){
   const [columns,setColumns]=useState(initial),[busy,setBusy]=useState<string|null>(null),[dragged,setDragged]=useState<string|null>(null),[message,setMessage]=useState("");
   const locked=useRef(false),router=useRouter();
   async function move(card:LeadCard,status:string){
@@ -24,7 +24,7 @@ export function LeadBoard({initial,editable,q}:{initial:Record<string,LeadColumn
     const cursor=columns[stage].cursor;if(!cursor||locked.current)return;
     locked.current=true;setBusy(stage);setMessage("");
     try{
-      const response=await fetch(`/api/leads/board?${new URLSearchParams({status:stage,q,cursor})}`);
+      const response=await fetch(`/api/leads/board?${new URLSearchParams({status:stage,q,cursor,ownership})}`);
       if(!response.ok)throw new Error("UNAVAILABLE");
       const result:LeadColumn=await response.json();
       if(!Array.isArray(result.items))throw new Error("INVALID_RESPONSE");
