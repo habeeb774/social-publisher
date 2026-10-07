@@ -4,6 +4,7 @@ import { currentActor, logAudit } from "./audit";
 import { storedPageToken } from "./page-tokens";
 import { getSetting, setSetting } from "./settings-store";
 import { listMetaAccounts } from "./meta-accounts";
+import { planMessengerAutomation, recordMessengerAutomation } from "./messenger-automation";
 
 // Messenger inbox through the Graph API (needs pages_messaging on the page token).
 // Replies are only allowed within Meta's 24-hour window after the customer's last message.
@@ -232,6 +233,34 @@ export async function ingestMessengerWebhook(pageRemoteId: string, event: Messen
     await db.execute(sql`insert into notifications(type,title,message) values(
       'message_new','رسالة ماسنجر جديدة',${(event.text ?? "(مرفق)").slice(0,300)}
     )`);
+    const plan = await planMessengerAutomation({
+      conversationId: conversation.id,
+      pageId: page.id,
+      message: event.text ?? "",
+    });
+    if (plan.matched) {
+      if (plan.rule.requireApproval) {
+        await recordMessengerAutomation(conversation.id, plan.rule.id, "approval", { preview: plan.rule.replyText.slice(0, 200) });
+        await db.execute(sql`insert into notifications(type,title,message) values(
+          'messenger_approval','رد Messenger بانتظار المراجعة',${plan.rule.replyText.slice(0,300)}
+        )`);
+      } else {
+        try {
+          const sent = await replyMessage(conversation.id, plan.rule.replyText);
+          await recordMessengerAutomation(conversation.id, plan.rule.id, "sent", { messageId: sent.messageId });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "MESSENGER_AUTO_REPLY_FAILED";
+          await recordMessengerAutomation(conversation.id, plan.rule.id, "failed", { error: message.slice(0, 300) });
+          await db.execute(sql`insert into notifications(type,title,message) values(
+            'messenger_auto_failed','تعذر إرسال رد Messenger تلقائي',${message.slice(0,300)}
+          )`);
+        }
+      }
+    } else if (plan.reason === "SENSITIVE_HUMAN_REVIEW") {
+      await db.execute(sql`insert into notifications(type,title,message) values(
+        'messenger_review','رسالة Messenger تحتاج مراجعة بشرية',${(event.text ?? "").slice(0,300)}
+      )`);
+    }
   }
   await setSetting("messenger_status", {
     checkedAt: new Date().toISOString(),
