@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser, type CurrentUser } from "./rbac";
 import { listMetaAccounts } from "./meta-accounts";
 import { getSetting, setSetting } from "./settings-store";
+import { parseUserAccessScope } from "./access-scope-model";
 
 export type UserAccessScope = {
   unrestricted: boolean;
@@ -22,20 +23,12 @@ const key = (userId: string) => `user_access_scope:${userId}`;
 
 export async function getUserAccessScope(userId: string): Promise<UserAccessScope> {
   if (userId === "env-admin") return defaultScope();
-  const raw = await getSetting<Partial<UserAccessScope>>(key(userId), {});
-  return {
-    unrestricted: raw.unrestricted ?? true,
-    accountIds: Array.from(new Set((raw.accountIds ?? []).filter(Boolean))),
-    pageIds: Array.from(new Set((raw.pageIds ?? []).filter(Boolean))),
-  };
+  const raw = await getSetting<unknown>(key(userId), defaultScope(), { strict: true });
+  return parseUserAccessScope(raw);
 }
 
 export async function setUserAccessScope(userId: string, scope: UserAccessScope) {
-  const next: UserAccessScope = {
-    unrestricted: Boolean(scope.unrestricted),
-    accountIds: Array.from(new Set(scope.accountIds.filter(Boolean))),
-    pageIds: Array.from(new Set(scope.pageIds.filter(Boolean))),
-  };
+  const next = parseUserAccessScope(scope);
   await setSetting(key(userId), next);
   return next;
 }
