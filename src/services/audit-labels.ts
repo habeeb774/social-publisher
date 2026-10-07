@@ -1,5 +1,6 @@
 const LABELS: Record<string, string> = {
   "lead.converted_from_messenger": "تحويل محادثة إلى عميل محتمل",
+  "lead.updated": "تعديل بيانات العميل",
   "post.created": "إنشاء منشور", "post.updated": "تعديل منشور", "post.duplicated": "تكرار منشور", "post.restored": "استرجاع نسخة",
   "post.queued": "إضافة للطابور", "post.rescheduled": "نقل موعد", "post.retry": "إعادة محاولة النشر", "post.submitted": "إرسال للمراجعة",
   "post.approved": "موافقة", "post.rejected": "رفض", "post.changes_requested": "طلب تعديل", "post.publish_now": "نشر فوري", "auth.login": "تسجيل دخول", "user.created": "إضافة مستخدم", "user.updated": "تعديل مستخدم", "post.note_added": "ملاحظة داخلية", "post.purged": "حذف نهائي",

@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   "inbox.manage": ["admin", "editor"],
   "leads.read": ["admin", "editor", "reviewer", "viewer"],
   "leads.create": ["admin", "editor"],
+  "leads.edit": ["admin", "editor"],
   "automation.manage": ["admin"],
   "settings.manage": ["admin"],
   "users.manage": ["admin"],
