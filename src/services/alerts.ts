@@ -40,8 +40,8 @@ export async function sendAlert(type: AlertType, title: string, message: string,
     if (pref.inApp) await db.insert(notifications).values({ type, title, message });
     const emailed = pref.email ? await sendEmail(title, message) : false;
     return { sent: true, emailed };
-  } catch (error) {
-    console.error("Alert delivery failed", { type, error: error instanceof Error ? error.message : String(error) });
+  } catch {
+    console.error("Alert delivery failed", { type, code: "ALERT_DELIVERY_UNAVAILABLE" });
     return { sent: false, reason: "error" as const };
   }
 }
@@ -77,7 +77,7 @@ export async function sendEmail(subject: string, text: string, attachments?: Att
   return response.ok;
 }
 
-/** Sends a test email and reports Resend's exact answer (no secrets). */
+/** Sends a test email without exposing provider error bodies or transport details. */
 export async function sendTestEmail() {
   const key = process.env.RESEND_API_KEY?.trim();
   const to = (process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL)?.trim();
@@ -89,8 +89,8 @@ export async function sendTestEmail() {
 
 ${new Date().toISOString()}`);
     const body = await response.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
-    return response.ok ? { ok: true, to, from, id: body.id ?? null } : { ok: false, to, from, error: `Resend ${response.status}: ${body.message ?? body.name ?? "rejected"}` };
-  } catch (error) { return { ok: false, to, error: error instanceof Error ? error.message : "network error" }; }
+    return response.ok ? { ok: true, to, from, id: body.id ?? null } : { ok: false, to, from, error: "تعذر إرسال البريد التجريبي. تحقق من إعدادات البريد وعنوان المرسل." };
+  } catch { return { ok: false, to, error: "تعذر تأكيد إرسال البريد التجريبي. تحقق من وصوله قبل إعادة المحاولة." }; }
 }
 
 
@@ -107,8 +107,8 @@ export async function resolveAlerts(types: AlertType[], titleContains?: string) 
       : and(eq(notifications.isRead, false), inArray(notifications.type, types));
     const rows = await db.update(notifications).set({ isRead: true }).where(where).returning({ id: notifications.id });
     return rows.length;
-  } catch (error) {
-    console.error("Alert resolution failed", { types, error: error instanceof Error ? error.message : String(error) });
+  } catch {
+    console.error("Alert resolution failed", { types, code: "ALERT_RESOLUTION_UNAVAILABLE" });
     return 0;
   }
 }
