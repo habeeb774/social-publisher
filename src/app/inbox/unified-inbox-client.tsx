@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
 import { toast } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
+import { inboxJson as json } from "./inbox-request";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -36,13 +37,6 @@ type MessengerDetail = {
 };
 type Template = { id: string; name: string; content: string; active: boolean };
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error ?? data.code ?? "تعذر التنفيذ");
-  return data as T;
-}
-
 export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='' }: { canReply: boolean;initialSource?:Source;initialQuery?:string }) {
   const [source, setSource] = useState<Source>(initialSource);
   const [account, setAccount] = useState("");
@@ -57,6 +51,11 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
   const [templates, setTemplates] = useState<Template[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listError, setListError] = useState(false);
+  const [detailError, setDetailError] = useState(false);
+  const listRequest = useRef(0);
+  const detailRequest = useRef(0);
+  useEffect(() => () => { ++listRequest.current; ++detailRequest.current; }, []);
 
   const visiblePages = useMemo(
     () => catalog.pages.filter((item) => !account || item.account_id === account),
@@ -64,6 +63,7 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
   );
 
   const load = useCallback(async () => {
+    const request = ++listRequest.current;
     const query = new URLSearchParams({ source });
     if (account) query.set("account", account);
     if (page) query.set("page", page);
@@ -71,22 +71,19 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
     if (source !== "comments") query.set("state", messengerState);
     try {
       const data = await json<{ items: Item[]; catalog: Catalog }>(`/api/inbox?${query}`);
+      if (request !== listRequest.current) return;
+      setListError(false);
       setItems(data.items);
       setCatalog(data.catalog);
-      if (selected && !data.items.some((item) => item.kind === selected.kind && item.id === selected.id)) {
-        setSelected(null);
-        setCommentDetail(null);
-        setMessageDetail(null);
-      }
-    } catch (error) {
-      setItems([]);
-      toast(error instanceof Error ? error.message : "تعذر تحميل صندوق الوارد", "error");
+    } catch {
+      if (request === listRequest.current) setListError(true);
     }
-  }, [source, account, page, q, messengerState, selected]);
+  }, [source, account, page, q, messengerState]);
 
   useEffect(() => {
+    const requests = listRequest;
     const timer = setTimeout(() => void load(), 220);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); ++requests.current; };
   }, [load]);
 
   useEffect(() => {
@@ -103,18 +100,22 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
   }, []);
 
   async function open(item: Item) {
+    const request = ++detailRequest.current;
     setSelected(item);
+    setDetailError(false);
     setText("");
     setCommentDetail(null);
     setMessageDetail(null);
     try {
       if (item.kind === "comment") {
-        setCommentDetail(await json<CommentDetail>(`/api/comments?id=${item.id}`));
+        const detail = await json<CommentDetail>(`/api/comments?id=${item.id}`);
+        if (request === detailRequest.current) setCommentDetail(detail);
       } else {
-        setMessageDetail(await json<MessengerDetail>(`/api/messages?id=${item.id}`));
+        const detail = await json<MessengerDetail>(`/api/messages?id=${item.id}`);
+        if (request === detailRequest.current) setMessageDetail(detail);
       }
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "تعذر فتح المحادثة", "error");
+    } catch {
+      if (request === detailRequest.current) setDetailError(true);
     }
   }
 
@@ -202,7 +203,7 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
 
   const canSend = selected?.kind === "messenger"
     ? Boolean(messageDetail?.conversation.canReply)
-    : Boolean(selected?.kind === "comment");
+    : Boolean(selected?.kind === "comment" && commentDetail);
 
   return <div className={`inbox ${selected ? "has-selection" : ""}`}>
     <section className="inbox-list" aria-label="الوارد الموحد">
@@ -228,8 +229,9 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
       </div>
 
       <div className="inbox-items">
-        {items === null ? <div style={{ padding: 16 }}><Skeleton lines={5} /></div> : !items.length
-          ? <EmptyState icon="inbox" title="لا توجد محادثات" description="لا توجد تعليقات أو رسائل مطابقة للفلاتر الحالية." />
+        {listError && <div role="alert" style={{ padding: 16 }}><p>تعذر تحديث صندوق الوارد. البيانات الظاهرة قد لا تكون محدثة.</p><button className="btn btn-secondary btn-sm" onClick={() => void load()}>إعادة المحاولة</button></div>}
+        {items === null ? (listError ? null : <div style={{ padding: 16 }}><Skeleton lines={5} /></div>) : !items.length
+          ? (listError ? null : <EmptyState icon="inbox" title="لا توجد محادثات" description="لا توجد تعليقات أو رسائل مطابقة للفلاتر الحالية." />)
           : items.map((item) => <button key={`${item.kind}:${item.id}`} className={`inbox-item ${selected?.kind === item.kind && selected.id === item.id ? "active" : ""} ${item.unread ? "unread" : ""}`} onClick={() => void open(item)}>
               <span className="avatar" style={{ width: 32, height: 32 }}>{item.person.slice(0, 1)}</span>
               <span className="row-between"><b>{item.person}</b><small>{riyadh(item.occurredAt, "time")}</small></span>
@@ -259,13 +261,14 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
         </header>
 
         <div className="inbox-messages">
-          {selected.kind === "comment" && !commentDetail && <Skeleton lines={4} />}
+          {detailError && <div role="alert"><p>تعذر تحميل المحادثة.</p><button className="btn btn-secondary btn-sm" onClick={() => void open(selected)}>إعادة المحاولة</button></div>}
+          {selected.kind === "comment" && !commentDetail && !detailError && <Skeleton lines={4} />}
           {selected.kind === "comment" && commentDetail && <>
             {commentDetail.thread.filter((row) => row.id !== commentDetail.comment.id).map((row) => <div className="bubble" key={row.id}><p className="pre">{row.message}</p><small>{row.author_name ?? "متابع"} · {riyadh(row.created_time, "time")}</small></div>)}
             <div className="bubble"><p className="pre">{commentDetail.comment.message}</p><small>{riyadh(commentDetail.comment.created_time)}</small></div>
             {commentDetail.replies.map((row) => <div className="bubble outgoing" key={row.id}><p className="pre">{row.content}</p><small>{row.status} · {row.reply_type}</small></div>)}
           </>}
-          {selected.kind === "messenger" && !messageDetail && <Skeleton lines={4} />}
+          {selected.kind === "messenger" && !messageDetail && !detailError && <Skeleton lines={4} />}
           {selected.kind === "messenger" && messageDetail?.messages.map((row) => <div className={`bubble ${row.is_from_page ? "outgoing" : ""}`} key={row.id}><p className="pre">{row.message || "(مرفق)"}</p><small>{riyadh(row.created_time)}{row.sent_by ? ` · ${row.sent_by}` : ""}</small></div>)}
         </div>
 
