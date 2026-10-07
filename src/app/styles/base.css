@@ -64,3 +64,10 @@ body::before {
     radial-gradient(circle at 88% 82%, rgba(197,78,118,.12), transparent 28%),
     linear-gradient(135deg, #0b0d14 0%, #111522 48%, #090b11 100%);
 }
+
+/* Accessibility: keep light glass surfaces readable over the cinematic background. */
+:root:not([data-theme="dark"]) body, :root[data-theme="light"] body { font-weight: 450; }
+:root:not([data-theme="dark"]) small, :root[data-theme="light"] small { color: var(--muted); }
+:root:not([data-theme="dark"]) .muted, :root[data-theme="light"] .muted { color: var(--muted) !important; }
+:root:not([data-theme="dark"]) input::placeholder, :root:not([data-theme="dark"]) textarea::placeholder,
+:root[data-theme="light"] input::placeholder, :root[data-theme="light"] textarea::placeholder { color: var(--faint); opacity: 1; }
