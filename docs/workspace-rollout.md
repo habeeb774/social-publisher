@@ -45,3 +45,19 @@ or team management. Workspace permissions still require route-level enforcement.
 additive migration there, and verifies SQL membership/page isolation, immediate
 revocation and database ownership constraints including overlapping page claims.
 These tests do not prove isolation of the legacy API routes or production data.
+
+## Server access check
+
+`GET /api/workspaces/[id]/access` uses the existing signed session and current
+database user, then the SQL membership query. It returns only the authorized
+workspace ID, current tenant role and permission names. Caller role headers have
+no authority. Anonymous requests get 401; invalid IDs get 400; unavailable
+membership gets 403. Lookup outages/malformed database results get a safe 503,
+never global access. Every response is private and uncached.
+
+`authorizeWorkspace` is the shared request-scoped guard for the subsequent rollout.
+It does not yet change legacy routes and is not a replacement for SQL membership
+checks inside writes. The real-database test also covers signed sessions, forged
+cookies, a global administrator without membership and role downgrades.
+Production still needs migration 0017 and explicit bootstrap membership before
+real workspace access is available. No multi-client UI is enabled by this endpoint.

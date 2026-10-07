@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 import { neon } from "@neondatabase/serverless";
 import { assertDisposableDatabase } from "./database-safety";
 import { workspaceMembershipQuery, workspacePagesQuery } from "../src/services/workspace-access";
+import { NextRequest } from "next/server";
+import { authorizeWorkspace, createWorkspaceAccessHandler } from "../src/services/workspace-request";
 
 const testUrl = process.env.TEST_DATABASE_URL;
 test("workspace foundation on explicitly disposable database", {skip:!testUrl && "TEST_DATABASE_URL not set"}, async t => {
@@ -27,6 +29,30 @@ test("workspace foundation on explicitly disposable database", {skip:!testUrl &&
   await connection`INSERT INTO workspace_pages(workspace_id,page_id) VALUES(${a},${pageA}),(${b},${pageB})`;
   const membership = (user=member, workspace=a) => db.execute(workspaceMembershipQuery(user,workspace));
   const pages = (user=member, workspace=a) => db.execute(workspacePagesQuery(user,workspace));
+
+  await t.test("signed sessions use real database membership and current tenant role", async () => {
+    const previousSecret = process.env.AUTH_SECRET;
+    process.env.AUTH_SECRET = randomUUID();
+    try {
+      const { currentUser } = await import("../src/services/rbac");
+      const { createSessionToken } = await import("../src/services/request-auth");
+      const dependencies = {user:currentUser,membership:async(userId:string,workspaceId:string)=>(await db.execute(workspaceMembershipQuery(userId,workspaceId))).rows};
+      const handler = createWorkspaceAccessHandler(dependencies);
+      const token = await createSessionToken({userId:member,role:"viewer"});
+      const adminToken = await createSessionToken({userId:outsider,role:"admin"});
+      const request = (cookie=token) => new NextRequest(`https://qa.example.test/api/workspaces/${a}/access`,{headers:{cookie:`sp_admin=${cookie}`,"x-workspace-role":"owner"}});
+      assert.equal((await handler(request(),{params:Promise.resolve({id:a})})).status,200);
+      assert.equal((await handler(request(),{params:Promise.resolve({id:b})})).status,403);
+      assert.equal((await handler(request(adminToken),{params:Promise.resolve({id:a})})).status,403);
+      assert.equal((await handler(request("forged"),{params:Promise.resolve({id:a})})).status,401);
+      assert.ok((await authorizeWorkspace(request(),a,dependencies,"messages.reply")).context);
+      await connection`UPDATE workspace_members SET role='viewer' WHERE workspace_id=${a} AND user_id=${member}`;
+      assert.equal((await authorizeWorkspace(request(),a,dependencies,"messages.reply")).response?.status,403);
+      await connection`UPDATE workspace_members SET role='support' WHERE workspace_id=${a} AND user_id=${member}`;
+    } finally {
+      if (previousSecret === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET=previousSecret;
+    }
+  });
 
   await t.test("only actual membership grants access, not a global administrator role", async () => {
     assert.equal((await membership()).rows[0].role, "support");
