@@ -27,16 +27,21 @@ export async function inbox(query:URLSearchParams,allowed:ReadonlySet<string>|nu
   AND (${cursor?.time??null}::timestamptz IS NULL OR (c.created_time,c.id)<(${cursor?.time??null}::timestamptz,${cursor?.id??null}::uuid)) ORDER BY c.created_time DESC,c.id DESC LIMIT 51`;
   return {items:items.slice(0,50),nextCursor:items.length>50?encodeCommentCursor(String(items[49].cursor_time),String(items[49].id)):null};
 }
-export async function commentDetail(id:string){
-  const db=database();const [comment]=await db`SELECT c.*,p.name AS page_name,p.facebook_page_id FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE c.id=${id}::uuid`;
+export async function commentAccess(id:string,allowed:ReadonlySet<string>|null=new Set()){
+  const db=database();const [comment]=await db`SELECT c.*,p.name AS page_name,p.facebook_page_id FROM facebook_comments c JOIN facebook_pages p ON p.id=c.page_id WHERE c.id=${id}::uuid
+    AND (${allowed===null} OR c.page_id::text=ANY(${Array.from(allowed??[])}::text[]))`;
   if(!comment)throw new Error("COMMENT_NOT_FOUND");
+  return comment;
+}
+export async function commentDetail(id:string,allowed:ReadonlySet<string>|null=null){
+  const db=database();const comment=await commentAccess(id,allowed);
   const [thread,replies,notes,tags,users,related]=await Promise.all([
-    db`SELECT * FROM facebook_comments WHERE parent_facebook_comment_id=${comment.facebook_comment_id} ORDER BY created_time LIMIT 100`,
+    db`SELECT * FROM facebook_comments WHERE parent_facebook_comment_id=${comment.facebook_comment_id} AND page_id=${comment.page_id}::uuid ORDER BY created_time LIMIT 100`,
     db`SELECT * FROM comment_replies WHERE comment_id=${id}::uuid ORDER BY created_at LIMIT 100`,
     db`SELECT * FROM comment_notes WHERE comment_id=${id}::uuid ORDER BY created_at LIMIT 100`,
     db`SELECT t.* FROM comment_tags t JOIN comment_tag_links l ON l.tag_id=t.id WHERE l.comment_id=${id}::uuid`,
     db`SELECT id,name,email FROM users ORDER BY name LIMIT 100`,
-    db`SELECT p.id,p.content,p.facebook_permalink,p.published_at,c.name AS campaign_name FROM posts p LEFT JOIN campaigns c ON c.id=p.campaign_id WHERE p.facebook_post_id=${comment.post_id} LIMIT 1`,
+    db`SELECT p.id,p.content,p.facebook_permalink,p.published_at,c.name AS campaign_name FROM posts p LEFT JOIN campaigns c ON c.id=p.campaign_id WHERE p.facebook_post_id=${comment.post_id} AND p.page_id=${comment.page_id}::uuid LIMIT 1`,
   ]);
   const history=comment.author_id?await db`SELECT id,message,created_time,status FROM facebook_comments WHERE author_id=${comment.author_id} AND page_id=${comment.page_id}::uuid ORDER BY created_time DESC LIMIT 10`:[];
   const [authorTotal]=comment.author_id?await db`SELECT count(*)::int AS count FROM facebook_comments WHERE author_id=${comment.author_id} AND page_id=${comment.page_id}::uuid`:[{count:0}];
