@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { leadEditSchema, leadUpdateValues } from "../src/services/leads-model";
+import { leadEditSchema, leadPatchSchema, leadUpdateValues } from "../src/services/leads-model";
 import { LEAD_STAGES } from "../src/services/leads-stages";
 const base={name:"متابع",contact:null,status:"new",notes:null,expectedUpdatedAt:"2026-10-07 10:00:00.123456+00"};
+test("stage-only moves cannot overwrite contact or notes and require a concurrency version",()=>{
+  const move=leadPatchSchema.parse({status:"won",expectedUpdatedAt:base.expectedUpdatedAt});
+  const query=new PgDialect().sqlToQuery(leadUpdateValues(move));
+  assert.equal(query.sql,"status=$1,updated_at=now()");
+  assert.deepEqual(query.params,["won"]);
+  for(const patch of [{status:"won"},{status:"fake",expectedUpdatedAt:base.expectedUpdatedAt},{status:"won",expectedUpdatedAt:base.expectedUpdatedAt,notes:null}])assert.equal(leadPatchSchema.safeParse(patch).success,false);
+});
 test("CRM edits accept every required stage and retain the exact concurrency version",()=>{
   for(const status of LEAD_STAGES)assert.equal(leadEditSchema.parse({...base,status}).expectedUpdatedAt,base.expectedUpdatedAt);
 });

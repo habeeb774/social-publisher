@@ -37,7 +37,7 @@ export default async function Leads({ searchParams }:{ searchParams:Promise<{sta
   rows=rows.slice(0,50);
   const last=rows.at(-1);
   return <AppShell title="العملاء المحتملون">
-    <PageHeader title="العملاء المحتملون" description="تابع الأشخاص المهتمين القادمين من Messenger والتفاعلات، وحوّل المحادثة إلى فرصة متابعة." actions={<Link className="btn btn-secondary" href="/inbox/messages">Messenger</Link>} />
+    <PageHeader title="العملاء المحتملون" description="تابع الأشخاص المهتمين القادمين من Messenger والتفاعلات، وحوّل المحادثة إلى فرصة متابعة." actions={<><Link className="btn btn-secondary" href={`/leads/board?q=${encodeURIComponent(q)}`}>لوحة المراحل</Link><Link className="btn btn-secondary" href="/inbox/messages">Messenger</Link></>} />
     <form action="/leads" className="leads-filter"><input name="q" defaultValue={q} maxLength={100} aria-label="البحث عن عميل" placeholder="بحث بالاسم أو معلومات الاتصال"/><input type="hidden" name="status" value={status}/><button className="btn btn-secondary" type="submit">بحث</button></form>
     <div className="segmented leads-filter">{[["","الكل"],...Object.entries(labels)].map(([v,l])=><Link key={v} className={status===v?"active":""} href={leadListHref(q,v)}>{l}</Link>)}</div>
     {failed?<div className="alert alert-info" role="alert">تعذر تحميل العملاء المحتملين. <Link href={status?`/leads?status=${encodeURIComponent(status)}`:"/leads"}>إعادة المحاولة</Link></div>:<section className="card card-flush"><div className="table-wrap"><table><thead><tr><th>العميل</th><th>المصدر</th><th>الصفحة</th><th>الحالة</th><th>آخر تحديث</th></tr></thead><tbody>
