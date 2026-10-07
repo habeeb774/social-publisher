@@ -98,16 +98,47 @@ export async function messengerStatus() {
   return getSetting<{ checkedAt: string; pages: Record<string, string | null> } | null>("messenger_status", null);
 }
 
-export async function listConversations(pageId = "", accountId = "") {
+export async function listConversations(pageId = "", accountId = "", q = "", state = "active") {
   const accounts = await listMetaAccounts();
   const selected = accounts.find((account) => account.id === accountId);
   const remoteCsv = selected?.pageIds.join(",") ?? "";
-  const rows = await getDb().execute(sql`select c.id, c.page_id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name, p.facebook_page_id
+  const rows = await getDb().execute(sql`select c.id, c.page_id, c.participant_name, c.last_message, c.last_message_at, c.last_customer_message_at, c.unread, p.name as page_name, p.facebook_page_id,
+      coalesce((select case a.action when 'messenger.resolved' then 'resolved' when 'messenger.archived' then 'archived' when 'messenger.reopened' then 'open' else 'open' end
+        from activity_logs a where a.entity_type='messenger_conversation' and a.entity_id=c.id
+          and a.action in ('messenger.resolved','messenger.archived','messenger.reopened')
+        order by a.created_at desc limit 1),'open') as stored_state,
+      (select a.created_at from activity_logs a where a.entity_type='messenger_conversation' and a.entity_id=c.id
+          and a.action in ('messenger.resolved','messenger.archived','messenger.reopened')
+        order by a.created_at desc limit 1) as state_at
     from messenger_conversations c join facebook_pages p on p.id = c.page_id
     where (${pageId} = '' or c.page_id::text = ${pageId})
       and (${accountId} = '' or p.facebook_page_id = any(string_to_array(${remoteCsv}, ',')))
+      and (${q} = '' or coalesce(c.participant_name,'') ilike ${`%${q}%`} or coalesce(c.last_message,'') ilike ${`%${q}%`})
     order by c.last_message_at desc nulls last limit 100`);
-  return rows.rows;
+  return rows.rows.map((row) => {
+    const record = row as Row;
+    const stateAt = record.state_at ? new Date(String(record.state_at)).getTime() : 0;
+    const lastAt = record.last_message_at ? new Date(String(record.last_message_at)).getTime() : 0;
+    const effectiveState = Boolean(record.unread) && lastAt > stateAt ? "open" : String(record.stored_state ?? "open");
+    return { ...record, state: effectiveState };
+  }).filter((row) => state === "all" ? true : state === "unread" ? Boolean(row.unread) : state === "archived" ? row.state === "archived" : row.state !== "archived");
+}
+
+export async function setMessengerConversationState(id: string, state: "resolved" | "open" | "archived") {
+  const db = getDb();
+  const [row] = (await db.execute(sql`select id from messenger_conversations where id=${id}::uuid limit 1`)).rows as Array<{ id: string }>;
+  if (!row) throw new Error("CONVERSATION_NOT_FOUND");
+  const action = state === "resolved" ? "messenger.resolved" : state === "archived" ? "messenger.archived" : "messenger.reopened";
+  await logAudit(action, "messenger_conversation", id, { state });
+  if (state !== "open") await db.execute(sql`update messenger_conversations set unread=false,updated_at=now() where id=${id}::uuid`);
+  return { ok: true, state };
+}
+
+export async function setMessengerUnread(id: string, unread: boolean) {
+  const result = await getDb().execute(sql`update messenger_conversations set unread=${unread},updated_at=now() where id=${id}::uuid returning id`);
+  if (!result.rows.length) throw new Error("CONVERSATION_NOT_FOUND");
+  await logAudit(unread ? "messenger.marked_unread" : "messenger.marked_read", "messenger_conversation", id, {});
+  return { ok: true, unread };
 }
 
 export async function messengerCatalog() {
