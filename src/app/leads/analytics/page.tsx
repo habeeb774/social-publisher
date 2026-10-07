@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LeadExportButton } from './export-button';
 import { getDb } from "@/db";
 import { pageSession } from "@/services/session-server";
 import { can } from "@/services/rbac";
@@ -44,7 +45,7 @@ export default async function LeadAnalytics({searchParams}:{searchParams:Promise
       <label>البحث عن صفحة<input name="pageQ" defaultValue={pageQ} maxLength={100} placeholder="اسم الصفحة"/></label><button className="btn btn-secondary">عرض التقرير</button></form>
     {pages.length>200&&<p>تظهر أول 200 صفحة. ابحث بالاسم لتضييق خيارات الصفحات.</p>}
     <p>الفترة: <b dir="ltr">{range.from} — {range.to}</b> بتوقيت الرياض.</p>
-    {can(session.role,"data.export")&&<a className="btn btn-secondary" href={exportHref} download>تصدير التقرير CSV</a>}
+    {can(session.role,"data.export")&&<LeadExportButton key={exportHref} href={exportHref}/>}
     <section className="card"><h2>ملخص الفترة</h2><p>إجمالي العملاء: <strong>{totals.total}</strong> · مكتسبون: <strong>{totals.won}</strong> · مفقودون: <strong>{totals.lost}</strong></p><p>نسبة التحويل إلى مكتسب: <strong>{totals.conversion===null?"غير متاحة":`${totals.conversion}%`}</strong></p><small>عدد العملاء المكتسبين حاليًا ÷ إجمالي العملاء الذين أُنشئوا في الفترة. ليست نسبة الصفقات المغلقة أثناء الفترة.</small></section>
     {rows.length?<section className="card card-flush"><div className="table-wrap"><table><caption>أداء مصادر العملاء</caption><thead><tr><th>المصدر</th><th>العملاء</th><th>مكتسبون</th><th>مفقودون</th><th>التحويل</th></tr></thead><tbody>{rows.map(row=><tr key={row.source}><td>{sources[row.source]??"مصادر أخرى"}</td><td>{row.total}</td><td>{row.won}</td><td>{row.lost}</td><td>{leadAnalyticsSummary([row]).conversion??"—"}%</td></tr>)}</tbody></table></div></section>:<div className="empty-inline">لا يوجد عملاء أُنشئوا خلال هذه الفترة ضمن صلاحياتك.</div>}
   </AppShell>;

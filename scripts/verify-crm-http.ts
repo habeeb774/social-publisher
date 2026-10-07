@@ -15,14 +15,15 @@ assertDisposableDatabase(process.env.TEST_DATABASE_URL,process.env.DISPOSABLE_TE
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.AUTH_SECRET = randomBytes(32).toString("hex");
 const db = getDb();
-const pageId = randomUUID(),editorId = randomUUID(),viewerId = randomUUID(),leadId = randomUUID();
+const pageId = randomUUID(),editorId = randomUUID(),viewerId = randomUUID(),adminId = randomUUID(),leadId = randomUUID();
 await db.execute(sql`insert into facebook_pages(id,name,facebook_page_id,platform,is_active) values(${pageId}::uuid,'HTTP QA page',${`qa-${pageId}`},'facebook',true)`);
-for (const [id,role] of [[editorId,"editor"],[viewerId,"viewer"]]) {
+for (const [id,role] of [[editorId,"editor"],[viewerId,"viewer"],[adminId,"admin"]]) {
   await db.execute(sql`insert into users(id,email,name,role,is_active) values(${id}::uuid,${`${id}@example.test`},'HTTP QA user',${role},true)`);
   await db.execute(sql`insert into settings(key,value) values(${`user_access_scope:${id}`},${JSON.stringify({unrestricted:false,accountIds:[],pageIds:[pageId]})})`);
 }
 const editorToken = await createSessionToken({userId:editorId,role:"editor"});
 const viewerToken = await createSessionToken({userId:viewerId,role:"viewer"});
+const adminToken = await createSessionToken({userId:adminId,role:"admin"});
 // Next's production route adapter canonicalizes its local origin to localhost.
 const origin = "http://localhost:3217";
 const environment: NodeJS.ProcessEnv = { NODE_ENV:"production", DATABASE_URL:process.env.TEST_DATABASE_URL, AUTH_SECRET:process.env.AUTH_SECRET, NEXT_TELEMETRY_DISABLED:"1", APP_URL:origin };
@@ -32,7 +33,7 @@ let output = "";
 server.stdout.on("data",chunk => { output=(output+String(chunk)).slice(-12000); });
 server.stderr.on("data",chunk => { output=(output+String(chunk)).slice(-12000); });
 const exited = once(server,"exit");
-const redact = (text:string) => [process.env.TEST_DATABASE_URL,process.env.AUTH_SECRET,editorToken,viewerToken].reduce<string>((value,secret) => secret ? value.split(secret).join("[redacted]") : value,text);
+const redact = (text:string) => [process.env.TEST_DATABASE_URL,process.env.AUTH_SECRET,editorToken,viewerToken,adminToken].reduce<string>((value,secret) => secret ? value.split(secret).join("[redacted]") : value,text);
 async function call(path:string,body?:unknown,token=editorToken,requestOrigin=origin,method="POST") {
   return fetch(`${origin}${path}`,{method:body === undefined ? "GET" : method,headers:{...(token?{cookie:`${SESSION_COOKIE}=${token}`}:{ }),...(body===undefined?{}:{origin:requestOrigin,"content-type":"application/json"})},...(body===undefined?{}:{body:JSON.stringify(body)}),redirect:"manual",signal:AbortSignal.timeout(15000)});
 }
@@ -91,6 +92,32 @@ try {
   const analytics=await call("/leads/analytics?days=7");assert.equal(analytics.status,200);
   const analyticsHtml=await analytics.text();assert.ok(analyticsHtml.includes("ملخص الفترة"));assert.ok(analyticsHtml.includes(`${tag} visible page`));assert.equal(analyticsHtml.includes(`${tag} hidden page`),false);
   const invalidAnalytics=await call("/leads/analytics?from=bad");assert.ok((await invalidAnalytics.text()).includes("الفترة غير صالحة"));
+  const exportPath=`/api/leads/analytics/export?days=7&platform=facebook&pageId=${pageId}`;
+  assert.equal((await call(exportPath,undefined,'')).status,401);
+  for(const token of [editorToken,viewerToken])assert.equal((await call(exportPath,undefined,token)).status,403);
+  assert.equal(analyticsHtml.includes('تصدير التقرير CSV'),false,'editor must not see export control');
+  const adminReport=await call(`/leads/analytics?days=7&platform=facebook&pageId=${pageId}`,undefined,adminToken);
+  const adminHtml=await adminReport.text();assert.equal(adminReport.status,200);assert.ok(adminHtml.includes('تصدير التقرير CSV'));
+  assert.ok(adminHtml.includes('/api/leads/analytics/export?from='));assert.ok(adminHtml.includes(`pageId=${pageId}`));
+  const exportResponse=await call(exportPath,undefined,adminToken);assert.equal(exportResponse.status,200);
+  assert.match(exportResponse.headers.get('content-type')!,/text\/csv/);
+  assert.match(exportResponse.headers.get('content-disposition')!,/attachment; filename="leads-analytics-/);
+  assert.equal(exportResponse.headers.get('cache-control'),'no-store');
+  const exportBytes=new Uint8Array(await exportResponse.arrayBuffer());assert.deepEqual(Array.from(exportBytes.slice(0,3)),[239,187,191]);
+  const exported=new TextDecoder().decode(exportBytes);
+  assert.match(exported,/الإجمالي,1,0,0,0,/);assert.match(exported,/يدوي,1,0,0,0,/);assert.match(exported,/Asia\/Riyadh/);
+  for(const privateText of [tag,'contact-only','ملاحظة اختبار',hiddenLead,hiddenPage])assert.equal(exported.includes(privateText),false,'aggregate export must exclude private/unselected data');
+  const noDataExport=await call(`/api/leads/analytics/export?days=7&platform=instagram&pageId=${pageId}`,undefined,adminToken);
+  assert.equal(noDataExport.status,200);assert.match(await noDataExport.text(),/الإجمالي,0,0,0,غير متاحة/);
+  for(const query of ['from=bad','platform=tiktok','pageId=invalid'])assert.equal((await call(`/api/leads/analytics/export?${query}`,undefined,adminToken)).status,400);
+  const exportAudits=await db.execute(sql`select metadata from activity_logs where action='export.downloaded' and metadata->>'kind'='leads-analytics' and metadata->>'pageId'=${pageId}`);
+  assert.equal(exportAudits.rows.length,2);
+  for(const row of exportAudits.rows)assert.equal(JSON.stringify(row.metadata).includes('contact-only'),false);
+  await db.execute(sql`update users set role='viewer' where id=${adminId}::uuid`);
+  assert.equal((await call(exportPath,undefined,adminToken)).status,403,'stale admin cookie must lose export permission');
+  const downgradedReport=await call(`/leads/analytics?pageId=${pageId}`,undefined,adminToken);
+  assert.equal((await downgradedReport.text()).includes('تصدير التقرير CSV'),false);
+  console.log('CRM HTTP QA: aggregate CSV bytes, filtered totals, unavailable conversion, safe audit and current-role export authorization passed.');
   for(const [target,visibility] of [[pageId,"visible"],[hiddenPage,"hidden"]]) {
     const campaign=randomUUID(),post=randomUUID();const name=`${tag} ${visibility}`;
     await db.execute(sql`insert into campaigns(id,name) values(${campaign}::uuid,${`${name} campaign`})`);
