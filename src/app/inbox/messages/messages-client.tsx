@@ -4,6 +4,8 @@ import { toast } from "../../ui/feedback";
 import { EmptyState } from "../../ui/empty-state";
 import { Skeleton } from "../../ui/kit";
 import { inboxJson } from "../inbox-request";
+import Link from "next/link";
+import { convertMessengerLead } from "./lead-conversion";
 
 type Conversation = { id: string; participant_name: string | null; last_message: string | null; last_message_at: string | null; unread: boolean; page_name: string; state?: string };
 type Message = { id: string; from_name: string | null; message: string; is_from_page: boolean; created_time: string; sent_by: string | null };
@@ -16,7 +18,7 @@ async function api<T>(query: string, body?: unknown): Promise<T> {
   return inboxJson<T>(`/api/messages${query}`, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
 }
 
-export function MessagesClient({ canReply }: { canReply: boolean }) {
+export function MessagesClient({ canReply, canManage = false, canCreateLead = false }: { canReply: boolean; canManage?: boolean; canCreateLead?: boolean }) {
   const [items, setItems] = useState<Conversation[] | null>(null);
   const [status, setStatus] = useState<Status>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -30,6 +32,8 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
   const [listError, setListError] = useState(false);
   const [detailError, setDetailError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [convertedLead, setConvertedLead] = useState<string | null>(null);
+  const converting = useRef(false);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
   useEffect(() => () => { ++listRequest.current; ++detailRequest.current; }, []);
@@ -48,14 +52,14 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
   }, [load]);
   const open = async (id: string) => {
     const request = ++detailRequest.current;
-    setSelectedId(id); setDetail(null); setDetailError(false); setText("");
+    setSelectedId(id); setDetail(null); setDetailError(false); setText(""); setConvertedLead(null);
     try { const result = await api<Detail>(`?id=${id}`); if (request === detailRequest.current) setDetail(result); }
     catch { if (request === detailRequest.current) setDetailError(true); }
   };
   const close = () => { ++detailRequest.current; setSelectedId(null); setDetail(null); setDetailError(false); };
-  const sync = async () => { setBusy(true); try { const r = await api<{ imported: number }>("", { action: "sync" }); toast(`اكتملت المزامنة (${r.imported} رسالة جديدة)`); await load(); } catch (e) { toast(e instanceof Error ? e.message : "تعذرت المزامنة", "error"); } finally { setBusy(false); } };
+  const sync = async () => { if (!canManage || busy) return; setBusy(true); try { const r = await api<{ imported: number }>("", { action: "sync" }); toast(`اكتملت المزامنة (${r.imported} رسالة جديدة)`); await load(); } catch (e) { toast(e instanceof Error ? e.message : "تعذرت المزامنة", "error"); } finally { setBusy(false); } };
   const updateConversation = async (action: "state" | "unread", value: string | boolean) => {
-    if (!detail) return;
+    if (!detail || !canManage || busy) return;
     setBusy(true);
     try {
       await api("", { action, id: detail.conversation.id, value });
@@ -71,13 +75,15 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
   };
 
   const createLead = async () => {
-    if (!detail || busy) return; setBusy(true);
+    if (!detail || busy || !canCreateLead || converting.current) return;
+    const request = detailRequest.current;
+    converting.current = true; setBusy(true);
     try {
-      const r = await fetch("/api/leads/from-messenger", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId: detail.conversation.id }) });
-      const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error ?? "تعذر إنشاء العميل المحتمل");
+      const id = await convertMessengerLead(detail.conversation.id);
+      if (request === detailRequest.current) setConvertedLead(id);
       toast("تمت إضافة المحادثة إلى العملاء المحتملين", "success");
     } catch (e) { toast(e instanceof Error ? e.message : "تعذر إنشاء العميل المحتمل", "error"); }
-    finally { setBusy(false); }
+    finally { converting.current = false; setBusy(false); }
   };
   const send = async () => {
     if (!detail || busy || !canReply || !text.trim() || !detail.conversation.canReply) return; setBusy(true);
@@ -92,7 +98,7 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
       : status && <div className="alert alert-success" role="note"><span><b>آخر مزامنة تمت دون أخطاء مسجلة.</b> لا يؤكد ذلك وحده استقبال أحداث Webhook.</span></div>}
     <div className={`inbox ${selectedId ? "has-selection" : ""}`}>
       <section className="inbox-list" aria-label="المحادثات">
-        <div className="search row"><strong style={{ flex: 1 }}>رسائل ماسنجر</strong><button className="btn btn-secondary btn-sm" disabled={busy} onClick={sync}>مزامنة</button></div>
+        <div className="search row"><strong style={{ flex: 1 }}>رسائل ماسنجر</strong>{canManage && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={sync}>مزامنة</button>}</div>
         {(catalog.accounts.length > 1 || catalog.pages.length > 1) && <div className="search row">
           {catalog.accounts.length > 1 && <select aria-label="حساب Meta" value={account} onChange={(e) => { setAccount(e.target.value); setPage(""); }}><option value="">كل حسابات Meta</option>{catalog.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}
           {catalog.pages.length > 1 && <select aria-label="الصفحة" value={page} onChange={(e) => setPage(e.target.value)}><option value="">كل الصفحات</option>{catalog.pages.filter((p) => !account || p.accountId === account).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
@@ -115,7 +121,10 @@ export function MessagesClient({ canReply }: { canReply: boolean }) {
       </section>
       <section className="inbox-thread" aria-label="المحادثة">
         {!detail ? (selectedId ? <div style={{ padding: 16 }}><button className="btn btn-ghost btn-sm" disabled={busy} onClick={close}>رجوع</button>{detailError ? <div role="alert"><p>تعذر تحميل المحادثة.</p><button className="btn btn-secondary btn-sm" onClick={() => void open(selectedId)}>إعادة المحاولة</button></div> : <Skeleton lines={4} />}</div> : <EmptyState icon="inbox" title="اختر محادثة" description="تظهر هنا الرسائل ويمكنك الرد خلال 24 ساعة من آخر رسالة للعميل." />) : <>
-          <header><div className="row"><button className="btn btn-ghost btn-sm mobile-only" disabled={busy} onClick={close}>رجوع</button><b style={{ color: "var(--heading)" }}>{detail.conversation.participant_name ?? "متابع"}</b><small>{detail.conversation.page_name}</small></div><div className="row"><button className="btn btn-secondary btn-sm" disabled={busy} onClick={createLead}>إضافة كعميل محتمل</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateConversation("state","resolved")}>تم الحل</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("unread",true)}>غير مقروء</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("state","archived")}>أرشفة</button></div></header>
+          <header><div className="row"><button className="btn btn-ghost btn-sm mobile-only" disabled={busy} onClick={close}>رجوع</button><b style={{ color: "var(--heading)" }}>{detail.conversation.participant_name ?? "متابع"}</b><small>{detail.conversation.page_name}</small></div><div className="row">
+            {canCreateLead && (convertedLead ? <Link className="btn btn-secondary btn-sm" href={`/leads/${convertedLead}`}>فتح العميل المحتمل</Link> : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={createLead}>إضافة كعميل محتمل</button>)}
+            {canManage && <><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateConversation("state","resolved")}>تم الحل</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("unread",true)}>غير مقروء</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateConversation("state","archived")}>أرشفة</button></>}
+          </div></header>
           <div className="inbox-messages">{detail.messages.map((m) => <div key={m.id} className={`bubble ${m.is_from_page ? "outgoing" : ""}`}><p className="pre">{m.message || "(مرفق)"}</p><small>{time(m.created_time)}{m.sent_by && <> · {m.sent_by}</>}</small></div>)}</div>
           {canReply && <div className="reply-composer">
             {!detail.conversation.canReply && <small className="muted">مرّ أكثر من 24 ساعة على آخر رسالة من العميل؛ لا يسمح فيسبوك بالرد حتى يراسلك مجددًا.</small>}
