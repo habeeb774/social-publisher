@@ -19,6 +19,7 @@ type Item = {
   unread: boolean;
   needsReply: boolean;
   sentiment: string;
+  state?: string;
 };
 type Catalog = {
   accounts: Array<{ id: string; name: string; status: string }>;
@@ -47,6 +48,7 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
   const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
   const [q, setQ] = useState("");
+  const [messengerState, setMessengerState] = useState("active");
   const [items, setItems] = useState<Item[] | null>(null);
   const [catalog, setCatalog] = useState<Catalog>({ accounts: [], pages: [] });
   const [selected, setSelected] = useState<Item | null>(null);
@@ -66,6 +68,7 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
     if (account) query.set("account", account);
     if (page) query.set("page", page);
     if (q.trim()) query.set("q", q.trim());
+    if (source !== "comments") query.set("state", messengerState);
     try {
       const data = await json<{ items: Item[]; catalog: Catalog }>(`/api/inbox?${query}`);
       setItems(data.items);
@@ -79,7 +82,7 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
       setItems([]);
       toast(error instanceof Error ? error.message : "تعذر تحميل صندوق الوارد", "error");
     }
-  }, [source, account, page, q, selected]);
+  }, [source, account, page, q, messengerState, selected]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 220);
@@ -154,6 +157,31 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
     }
   }
 
+  async function updateMessenger(action: "state" | "unread", value: string | boolean) {
+    if (!selected || selected.kind !== "messenger") return;
+    setBusy(true);
+    try {
+      await json("/api/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, id: selected.id, value }),
+      });
+      toast(action === "unread" ? (value ? "عُلّمت كغير مقروء" : "عُلّمت كمقروء") : value === "resolved" ? "تم حل المحادثة" : value === "archived" ? "أُرشفت المحادثة" : "أُعيد فتح المحادثة");
+      await load();
+      if (value === "archived") {
+        setSelected(null);
+        setMessageDetail(null);
+      } else {
+        const refreshed = items?.find((item) => item.kind === "messenger" && item.id === selected.id);
+        if (refreshed) setSelected({ ...refreshed, state: String(value === true || value === false ? refreshed.state ?? "open" : value) });
+      }
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "تعذر تحديث المحادثة", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function resolveComment() {
     if (!selected || selected.kind !== "comment") return;
     setBusy(true);
@@ -189,7 +217,15 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
         {catalog.pages.length > 1 && <select aria-label="الصفحة" value={page} onChange={(e) => setPage(e.target.value)}><option value="">كل الصفحات</option>{visiblePages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
       </div>}
 
-      <div className="search"><input type="search" aria-label="بحث في صندوق الوارد" placeholder="ابحث بالاسم أو الرسالة…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="search row">
+        <input type="search" aria-label="بحث في صندوق الوارد" placeholder="ابحث بالاسم أو الرسالة…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {source !== "comments" && <select aria-label="حالة Messenger" value={messengerState} onChange={(e) => setMessengerState(e.target.value)}>
+          <option value="active">Messenger النشط</option>
+          <option value="unread">غير المقروء</option>
+          <option value="archived">المؤرشف</option>
+          <option value="all">كل Messenger</option>
+        </select>}
+      </div>
 
       <div className="inbox-items">
         {items === null ? <div style={{ padding: 16 }}><Skeleton lines={5} /></div> : !items.length
@@ -213,6 +249,13 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
             <small>{selected.pageName}</small>
           </div>
           {selected.kind === "comment" && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={resolveComment}><Icon name="check" width={14} />تم الحل</button>}
+          {selected.kind === "messenger" && <div className="row">
+            {selected.state === "resolved"
+              ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateMessenger("state", "open")}>إعادة فتح</button>
+              : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => updateMessenger("state", "resolved")}><Icon name="check" width={14} />تم الحل</button>}
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateMessenger("unread", !selected.unread)}>{selected.unread ? "مقروء" : "غير مقروء"}</button>
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateMessenger("state", "archived")}>أرشفة</button>
+          </div>}
         </header>
 
         <div className="inbox-messages">
@@ -240,7 +283,7 @@ export function UnifiedInboxClient({ canReply }: { canReply: boolean }) {
         <div className="stack" style={{ gap: 6 }}><small className="section-title">المصدر</small><span>{selected.kind === "messenger" ? "Facebook Messenger" : "تعليقات Facebook"}</span></div>
         <div className="stack" style={{ gap: 6 }}><small className="section-title">الصفحة</small><span>{selected.pageName}</span></div>
         <div className="stack" style={{ gap: 6 }}><small className="section-title">آخر نشاط</small><span>{riyadh(selected.occurredAt)}</span></div>
-        <div className="stack" style={{ gap: 6 }}><small className="section-title">الحالة</small><span className={`badge ${selected.needsReply ? "badge-warning" : "badge-success"}`}>{selected.needsReply ? "بحاجة رد" : "متابع"}</span></div>
+        <div className="stack" style={{ gap: 6 }}><small className="section-title">الحالة</small><span className={`badge ${selected.needsReply ? "badge-warning" : "badge-success"}`}>{selected.kind === "messenger" ? (selected.state === "resolved" ? "محلولة" : selected.state === "archived" ? "مؤرشفة" : selected.unread ? "غير مقروءة" : "مفتوحة") : selected.needsReply ? "بحاجة رد" : "متابع"}</span></div>
       </>}
     </aside>
   </div>;
