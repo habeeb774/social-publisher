@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
 const body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("toggle"), enabled: z.boolean() }),
-  z.object({ action: z.literal("save"), id: z.uuid().optional(), input: messengerRuleSchema.omit({ id: true }) }),
+  z.object({ action: z.literal("save"), id: z.uuid().optional(), input: messengerRuleSchema }),
   z.object({ action: z.literal("delete"), id: z.uuid() }),
 ]);
 
