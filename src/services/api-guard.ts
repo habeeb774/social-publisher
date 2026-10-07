@@ -1,26 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { sessionFrom } from "./request-auth";
-import { can, type Permission } from "./rbac";
+import { sessionFrom, type Session } from "./request-auth";
+import { can, currentUser, type CurrentUser, type Permission } from "./rbac";
 import { bindActor } from "./audit";
-import { getDb } from "@/db";
-import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
 
 /**
  * Shared server-side authorization: signed session, role permission, and same-origin for writes.
  * Default permission is content.read for GET and content.write for mutations.
  */
-export async function guard(request: NextRequest, write = request.method !== "GET", permission?: Permission) {
-  const session = await sessionFrom(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!can(session.role, permission ?? (write ? "content.write" : "content.read"))) return NextResponse.json({ error: "ليست لديك صلاحية لهذا الإجراء", code: "FORBIDDEN" }, { status: 403 });
-  if (write && request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
-  // Attribute audit entries and versions to the signed-in user.
-  if (session.userId === "env-admin") bindActor(process.env.ADMIN_EMAIL?.trim() || "admin");
-  else { const [u] = await getDb().select({ email: users.email, active: users.isActive }).from(users).where(eq(users.id, session.userId)).limit(1).catch(() => []); if (!u?.active) return NextResponse.json({ error: "الحساب معطل" }, { status: 401 }); bindActor(u.email); }
-  return null;
+type GuardDependencies = {
+  readSession: (request: NextRequest) => Promise<Session | null>;
+  readUser: (request: NextRequest) => Promise<CurrentUser | null>;
+  bindActor: (email: string) => void;
+};
+
+/** Dependency boundary allows testing the actual request guard without production credentials. */
+export function createGuard(dependencies: GuardDependencies) {
+  return async (request: NextRequest, write = request.method !== "GET", permission?: Permission) => {
+    try {
+      const session = await dependencies.readSession(request);
+      if (!session) return NextResponse.json({ error: "يرجى تسجيل الدخول" }, { status: 401 });
+      if (write && request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "مصدر الطلب غير مسموح" }, { status: 403 });
+      // Never authorize a historical role from a still-valid cookie after a downgrade.
+      const user = await dependencies.readUser(request);
+      if (!user || user.id !== session.userId) return NextResponse.json({ error: "الحساب غير متاح. يرجى تسجيل الدخول مجددًا." }, { status: 401 });
+      if (!can(user.role, permission ?? (write ? "content.write" : "content.read"))) return NextResponse.json({ error: "ليست لديك صلاحية لهذا الإجراء", code: "FORBIDDEN" }, { status: 403 });
+      dependencies.bindActor(user.email || "admin");
+      return null;
+    } catch {
+      console.error("Authorization check unavailable", { code: "AUTHORIZATION_UNAVAILABLE" });
+      return NextResponse.json({ error: "تعذر التحقق من الصلاحيات. حاول لاحقًا.", code: "AUTHORIZATION_UNAVAILABLE" }, { status: 503 });
+    }
+  };
 }
+
+export const guard = createGuard({ readSession: sessionFrom, readUser: currentUser, bindActor });
 
 export const isUuid = (value: unknown): value is string => z.uuid().safeParse(value).success;
 

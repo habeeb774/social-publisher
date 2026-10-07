@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 }
 
 const patchBody = z.object({ id: z.uuid(), role: z.enum(ROLES).optional(), isActive: z.boolean().optional(), name: z.string().trim().min(1).max(80).optional(), password: z.string().max(200).optional(), scope: z.object({ unrestricted: z.boolean(), accountIds: z.array(z.string().trim().min(1).max(200)).max(100), pageIds: z.array(z.uuid()).max(500) }).optional() });
-/** Role/status changes apply at the user's next sign-in; disabling blocks API access immediately. */
+/** Role/status changes are checked by the shared API guard on the next request. */
 export async function PATCH(request: NextRequest) {
   const denied = await guard(request, true, "users.manage"); if (denied) return denied;
   const parsed = patchBody.safeParse(await request.json().catch(() => null));
