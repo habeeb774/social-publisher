@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commentReplyFlow, type CommentReplyRequest } from "../src/app/inbox/comment-reply-flow";
+import { commentReplyFlow, savedCommentReply, type CommentReplyRequest } from "../src/app/inbox/comment-reply-flow";
 
 test("editor saves a draft without attempting approval or sending", async () => {
   const actions: string[] = [];
@@ -41,4 +41,22 @@ test("failed approval never proceeds to send", async () => {
     throw new Error("الدور لا يسمح بهذا الإجراء");
   }, "comment", "مرحبا", true));
   assert.deepEqual(actions, ["draft", "approve"]);
+});
+
+test("saved draft approval preserves identity and never creates or sends a reply", async () => {
+  const calls: unknown[] = [];
+  const result = await savedCommentReply(async (body) => { calls.push(body); return {}; }, "comment", { id: "existing", status: "draft" }, "approve");
+  assert.equal(result, "approved");
+  assert.deepEqual(calls, [{ action: "approve", id: "comment", replyId: "existing" }]);
+});
+
+test("only approved saved replies can be sent, and dry runs remain unsent", async () => {
+  const calls: unknown[] = [];
+  const request: CommentReplyRequest = async (body) => { calls.push(body); return { dryRun: true, realReply: false }; };
+  for (const status of ["draft", "pending_approval", "sent", "sending", "failed", "outcome_unknown"]) {
+    await assert.rejects(savedCommentReply(request, "comment", { id: "existing", status }, "send"));
+  }
+  assert.equal(calls.length, 0);
+  assert.equal(await savedCommentReply(request, "comment", { id: "existing", status: "approved" }, "send"), "dry_run");
+  assert.deepEqual(calls, [{ action: "send", id: "comment", replyId: "existing" }]);
 });

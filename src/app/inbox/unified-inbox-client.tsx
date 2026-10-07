@@ -7,7 +7,7 @@ import { toast } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
 import { inboxJson as json } from "./inbox-request";
-import { commentReplyFlow } from "./comment-reply-flow";
+import { commentReplyFlow, savedCommentReply } from "./comment-reply-flow";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -56,6 +56,7 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
   const [detailError, setDetailError] = useState(false);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
+  const replyAction = useRef(false);
   useEffect(() => () => { ++listRequest.current; ++detailRequest.current; }, []);
 
   const visiblePages = useMemo(
@@ -121,7 +122,8 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
   }
 
   async function send() {
-    if (!selected || !text.trim() || !canReply || busy) return;
+    if (!selected || !text.trim() || !canReply || busy || replyAction.current) return;
+    replyAction.current = true;
     setBusy(true);
     try {
       if (selected.kind === "comment") {
@@ -145,6 +147,29 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
     } catch (error) {
       toast(error instanceof Error ? error.message : "تعذر إرسال الرد", "error");
     } finally {
+      replyAction.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function reviewReply(reply: { id: string; status: string }, action: "approve" | "send") {
+    if (!selected || selected.kind !== "comment" || !canReply || busy || replyAction.current || (action === "approve" && !canApproveComments)) return;
+    if (action === "send" && !window.confirm("إرسال هذا الرد المعتمد إلى Facebook؟")) return;
+    const target = selected;
+    const request = detailRequest.current;
+    replyAction.current = true;
+    setBusy(true);
+    try {
+      const outcome = await savedCommentReply((body) => json("/api/comments", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      }), target.id, reply, action);
+      toast(outcome === "approved" ? "اعتُمد الرد دون إرسال." : outcome === "sent" ? "أُرسل الرد إلى Facebook." : "الإرسال الفعلي غير مفعّل. لم يُرسل الرد إلى Facebook.");
+    } catch {
+      toast("تعذر تأكيد الإجراء. راجع حالة الرد قبل إعادة المحاولة.", "error");
+    } finally {
+      if (request === detailRequest.current) await open(target);
+      await load();
+      replyAction.current = false;
       setBusy(false);
     }
   }
@@ -257,7 +282,11 @@ export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSo
           {selected.kind === "comment" && commentDetail && <>
             {commentDetail.thread.filter((row) => row.id !== commentDetail.comment.id).map((row) => <div className="bubble" key={row.id}><p className="pre">{row.message}</p><small>{row.author_name ?? "متابع"} · {riyadh(row.created_time, "time")}</small></div>)}
             <div className="bubble"><p className="pre">{commentDetail.comment.message}</p><small>{riyadh(commentDetail.comment.created_time)}</small></div>
-            {commentDetail.replies.map((row) => <div className="bubble outgoing" key={row.id}><p className="pre">{row.content}</p><small>{row.status} · {row.reply_type}</small></div>)}
+            {commentDetail.replies.map((row) => <div className="bubble outgoing" key={row.id}><p className="pre">{row.content}</p><small>{{ draft: "مسودة", pending_approval: "بانتظار الاعتماد", approved: "معتمد", sending: "جارٍ الإرسال", sent: "أُرسل", failed: "فشل الإرسال", outcome_unknown: "نتيجة الإرسال غير مؤكدة" }[row.status] ?? "حالة غير معروفة"}</small>
+              {canApproveComments && ["draft", "pending_approval"].includes(row.status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void reviewReply(row, "approve")}>اعتماد دون إرسال</button>}
+              {canReply && row.status === "approved" && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void reviewReply(row, "send")}>إرسال الرد المعتمد</button>}
+              {row.status === "outcome_unknown" && <p>تحقق من التعليق على Facebook قبل أي إعادة إرسال لتجنب التكرار.</p>}
+            </div>)}
           </>}
           {selected.kind === "messenger" && !messageDetail && !detailError && <Skeleton lines={4} />}
           {selected.kind === "messenger" && messageDetail?.messages.map((row) => <div className={`bubble ${row.is_from_page ? "outgoing" : ""}`} key={row.id}><p className="pre">{row.message || "(مرفق)"}</p><small>{riyadh(row.created_time)}{row.sent_by ? ` · ${row.sent_by}` : ""}</small></div>)}
