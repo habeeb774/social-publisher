@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { riyadh } from "../ui/api";
 import { EmptyState } from "../ui/empty-state";
-import { toast } from "../ui/feedback";
+import { confirmDialog, toast } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
 import { inboxJson as json } from "./inbox-request";
 import { commentReplyFlow, savedCommentReply } from "./comment-reply-flow";
 import { refreshCurrentSelection } from "./selection-refresh";
 import { draftAfterOpening } from "./reply-draft";
+import { confirmCurrentSelection } from "./selection-confirmation";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -158,12 +159,18 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
 
   async function reviewReply(reply: { id: string; status: string }, action: "approve" | "send") {
     if (!selected || selected.kind !== "comment" || !canReply || busy || replyAction.current || (action === "approve" && !canApproveComments)) return;
-    if (action === "send" && !window.confirm("إرسال هذا الرد المعتمد إلى Facebook؟")) return;
     const target = selected;
     const request = detailRequest.current;
     replyAction.current = true;
     setBusy(true);
+    let attempted = false;
     try {
+      if (action === "send" && !await confirmCurrentSelection(request, () => detailRequest.current, () => confirmDialog({
+        title: "إرسال الرد المعتمد؟",
+        message: `سيُرسل الرد إلى تعليق ${target.person} على صفحة ${target.pageName}. لا يمكن التراجع عن الإرسال من هنا.`,
+        confirmLabel: "إرسال إلى Facebook",
+      }))) return;
+      attempted = true;
       const outcome = await savedCommentReply((body) => json("/api/comments", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       }), target.id, reply, action);
@@ -171,8 +178,10 @@ export function UnifiedInboxClient({ canReply,canManageInbox=false,canApproveCom
     } catch {
       toast("تعذر تأكيد الإجراء. راجع حالة الرد قبل إعادة المحاولة.", "error");
     } finally {
-      await refreshCurrentSelection(request, () => detailRequest.current, () => open(target));
-      await load();
+      if (attempted) {
+        await refreshCurrentSelection(request, () => detailRequest.current, () => open(target));
+        await load();
+      }
       replyAction.current = false;
       setBusy(false);
     }
