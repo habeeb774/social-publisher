@@ -124,3 +124,12 @@ Real disposable-database tests verify attached media, foreign-source rejection,
 missing creation permission and membership revocation inside the copy statement.
 These transition routes do not enable multi-client UI, migrate production data,
 scope shared media-library ownership, or verify browser/real Meta publishing.
+
+Trash restore/purge transition requests now require `posts.delete` membership
+inside the write. Purge locks eligible trashed drafts and removes their media,
+versions, notes and parent in one statement (including the legacy cleanup path).
+Any publication attempt excludes the parent. Other restrictive references fail
+the statement and roll back dependent deletions. Real disposable-database route
+tests cover restore, foreign tenants, role denial, never-attempted eligibility,
+successful dependent removal and complete rollback for a recurrence-linked draft.
+No production purge was used for verification; multi-client activation stays off.
