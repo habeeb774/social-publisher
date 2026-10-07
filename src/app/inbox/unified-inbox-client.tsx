@@ -7,6 +7,7 @@ import { toast } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { Skeleton } from "../ui/kit";
 import { inboxJson as json } from "./inbox-request";
+import { commentReplyFlow } from "./comment-reply-flow";
 
 type Source = "all" | "comments" | "messenger";
 type Item = {
@@ -37,7 +38,7 @@ type MessengerDetail = {
 };
 type Template = { id: string; name: string; content: string; active: boolean };
 
-export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='' }: { canReply: boolean;initialSource?:Source;initialQuery?:string }) {
+export function UnifiedInboxClient({ canReply,canApproveComments=false,initialSource='all',initialQuery='' }: { canReply: boolean;canApproveComments?:boolean;initialSource?:Source;initialQuery?:string }) {
   const [source, setSource] = useState<Source>(initialSource);
   const [account, setAccount] = useState("");
   const [page, setPage] = useState("");
@@ -120,26 +121,16 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
   }
 
   async function send() {
-    if (!selected || !text.trim() || !canReply) return;
+    if (!selected || !text.trim() || !canReply || busy) return;
     setBusy(true);
     try {
       if (selected.kind === "comment") {
-        const draft = await json<{ id: string }>("/api/comments", {
+        const outcome = await commentReplyFlow((body) => json("/api/comments", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "draft", id: selected.id, content: text.trim(), templateId: null }),
-        });
-        await json("/api/comments", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "approve", id: selected.id, replyId: draft.id }),
-        });
-        await json("/api/comments", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "send", id: selected.id, replyId: draft.id }),
-        });
-        toast("أُرسل الرد على تعليق Facebook");
+          body: JSON.stringify(body),
+        }), selected.id, text, canApproveComments);
+        toast(outcome === "sent" ? "أُرسل الرد على تعليق Facebook" : outcome === "draft" ? "حُفظت مسودة الرد؛ تحتاج اعتماد المسؤول قبل الإرسال." : "حُفظ الرد المعتمد، لكن الإرسال الفعلي غير مفعّل. لم يُرسل إلى Facebook.");
       } else {
         await json("/api/messages", {
           method: "POST",
@@ -276,7 +267,7 @@ export function UnifiedInboxClient({ canReply,initialSource='all',initialQuery='
           {templates.length > 0 && <div className="chips">{templates.slice(0, 6).map((item) => <button key={item.id} type="button" className="chip" onClick={() => setText(item.content)}>{item.name}</button>)}</div>}
           {selected.kind === "messenger" && messageDetail && !messageDetail.conversation.canReply && <small className="muted">انتهت نافذة الرد المسموحة؛ انتظر رسالة جديدة من العميل.</small>}
           <textarea aria-label="نص الرد" placeholder="اكتب الرد…" value={text} disabled={!canSend} onChange={(e) => setText(e.target.value)} />
-          <div className="row-between"><small>{selected.kind === "messenger" ? "الرد عبر Messenger" : "الرد على تعليق Facebook"}</small><button className="btn btn-primary btn-sm" disabled={busy || !text.trim() || !canSend} onClick={send}><Icon name="send" width={14} />إرسال</button></div>
+          <div className="row-between"><small>{selected.kind === "messenger" ? "الرد عبر Messenger" : canApproveComments ? "الرد على تعليق Facebook" : "مسودة تحتاج اعتماد المسؤول"}</small><button className="btn btn-primary btn-sm" disabled={busy || !text.trim() || !canSend} onClick={send}><Icon name="send" width={14} />{selected.kind === "comment" && !canApproveComments ? "حفظ مسودة" : "إرسال"}</button></div>
         </div>}
       </>}
     </section>

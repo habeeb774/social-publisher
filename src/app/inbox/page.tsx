@@ -16,8 +16,9 @@ export default async function Inbox({searchParams}:{searchParams:Promise<{source
   // Comments-team members sign in separately (/comments/login) and get the comments-only workspace.
   if (!await pageSession()) return <AppShell title="صندوق الوارد" commentsOnly><CommentsClient /></AppShell>;
   const canReply = await pageCan("inbox.reply");
+  const canApproveComments = await pageCan("settings.manage");
   return <AppShell title="صندوق الوارد">
     <PageHeader title="صندوق الوارد" description="التعليقات ورسائل Messenger في مركز واحد، مع فلترة حسب حساب Meta والصفحة." actions={<><Link className="btn btn-secondary btn-sm" href="/inbox/messages">Messenger فقط</Link><Link className="btn btn-secondary btn-sm" href="/templates/replies">الردود الجاهزة</Link><Link className="btn btn-secondary btn-sm" href="/automations/comments">الأتمتة</Link><Link className="btn btn-ghost btn-sm" href="/analytics/comments">تحليلات التعليقات</Link></>} />
-    <Suspense fallback={<Skeleton lines={6} />}><UnifiedInboxClient key={`${initialSource}:${initialQuery}`} canReply={canReply} initialSource={initialSource} initialQuery={initialQuery} /></Suspense>
+    <Suspense fallback={<Skeleton lines={6} />}><UnifiedInboxClient key={`${initialSource}:${initialQuery}`} canReply={canReply} canApproveComments={canApproveComments} initialSource={initialSource} initialQuery={initialQuery} /></Suspense>
   </AppShell>;
 }
