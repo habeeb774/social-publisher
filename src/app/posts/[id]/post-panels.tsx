@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { STATUS_LABELS, ago, api, riyadh } from "../../ui/api";
 import { confirmDialog, toast } from "../../ui/feedback";
 import { Icon } from "../../ui/icons";
@@ -14,9 +14,12 @@ const REASONS: Record<string, string> = { edit: "قبل التعديل", before_
 function useAction() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   async function run(fn: () => Promise<unknown>, success: string, after?: (r: unknown) => void) {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
-    try { const r = await fn(); toast(success); after ? after(r) : router.refresh(); } catch (e) { toast(e instanceof Error ? e.message : "تعذر التنفيذ", "error"); } finally { setBusy(false); }
+    try { const r = await fn(); toast(success); after ? after(r) : router.refresh(); } catch (e) { toast(e instanceof Error ? e.message : "تعذر التنفيذ", "error"); } finally { running.current = false; setBusy(false); }
   }
   return { busy, run, router };
 }
@@ -56,20 +59,36 @@ export function RetryButton({ id, retryable, uncertain }: { id: string; retryabl
 }
 
 export function VersionHistory({ id, editable }: { id: string; editable: boolean }) {
-  const { run } = useAction();
+  const { busy, run } = useAction();
   const [versions, setVersions] = useState<Version[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const requestNumber = useRef(0);
   const [open, setOpen] = useState<string | null>(null);
-  const load = () => api<Version[]>(`/api/posts/${id}/versions`).then(setVersions).catch(() => setVersions([]));
-  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useCallback(async () => {
+    const current = ++requestNumber.current;
+    setLoadError(false);
+    setVersions(null);
+    try {
+      const result = await api<Version[]>(`/api/posts/${id}/versions`);
+      if (current === requestNumber.current) setVersions(result);
+    } catch {
+      if (current === requestNumber.current) setLoadError(true);
+    }
+  }, [id]);
+  useEffect(() => {
+    const requests = requestNumber;
+    const timer = setTimeout(() => { void load(); }, 0);
+    return () => { clearTimeout(timer); requests.current++; };
+  }, [load]);
   async function restore(versionId: string) {
     if (!await confirmDialog({ title: "استرجاع هذه النسخة كمسودة؟", message: "تُحفظ النسخة الحالية في السجل أولًا، وتعود النسخة المسترجعة إلى مسودة تحتاج مراجعة أو جدولة جديدة. لا يتغير أي منشور على Facebook." , confirmLabel: "استرجاع كمسودة" })) return;
     run(() => api(`/api/posts/${id}/versions/${versionId}`, { method: "POST" }), "تم الاسترجاع كمسودة", () => { load(); location.reload(); });
   }
   return <section className="card"><div className="card-header"><h2>سجل التعديلات</h2>{versions && <small>{versions.length} نسخة</small>}</div>
-    {versions === null ? <Skeleton lines={2} /> : !versions.length ? <small>لا توجد نسخ سابقة. تُحفظ نسخة عند كل تعديل مهم.</small> : <ul className="timeline-list">{versions.map((v) => <li key={v.id}>
+    {loadError ? <div role="alert"><p>تعذر تحميل سجل التعديلات.</p><button className="btn btn-secondary btn-sm" onClick={() => void load()}>إعادة المحاولة</button></div> : versions === null ? <Skeleton lines={2} /> : !versions.length ? <small>لا توجد نسخ سابقة. تُحفظ نسخة عند كل تعديل مهم.</small> : <ul className="timeline-list">{versions.map((v) => <li key={v.id}>
       <button className="link-button" style={{ textAlign: "right" }} aria-expanded={open === v.id} onClick={() => setOpen(open === v.id ? null : v.id)}>{ago(v.createdAt)} · {REASONS[v.reason] ?? v.reason} · {STATUS_LABELS[v.status] ?? v.status}</button>
       <small>{riyadh(v.createdAt)} · {v.changedBy}</small>
-      {open === v.id && <div className="version-body"><p className="pre">{v.content}</p><small>الموعد: {riyadh(v.scheduledAt)}{v.mediaSnapshot.length ? ` · ${v.mediaSnapshot.length} صورة` : ""}</small>{editable && <div><button className="btn btn-secondary btn-sm" onClick={() => restore(v.id)}>استرجاع هذه النسخة</button></div>}</div>}
+      {open === v.id && <div className="version-body"><p className="pre">{v.content}</p><small>الموعد: {riyadh(v.scheduledAt)}{v.mediaSnapshot.length ? ` · ${v.mediaSnapshot.length} صورة` : ""}</small>{editable && <div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => restore(v.id)}>{busy ? "جارٍ الاسترجاع…" : "استرجاع هذه النسخة"}</button></div>}</div>}
     </li>)}</ul>}
   </section>;
 }

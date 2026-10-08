@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
-import { PostActions } from "../src/app/posts/[id]/post-panels";
+import { PostActions, VersionHistory } from "../src/app/posts/[id]/post-panels";
+
+test("version history starts loading without claiming an empty history", () => {
+  const router = { bfcacheId: "qa", back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch: async () => {} };
+  const html = renderToStaticMarkup(React.createElement(AppRouterContext.Provider, { value: router },
+    React.createElement(VersionHistory, { id: "qa", editable: false })));
+  assert.ok(html.includes("سجل التعديلات"));
+  assert.ok(!html.includes("لا توجد نسخ سابقة"));
+  assert.ok(!html.includes("استرجاع هذه النسخة"));
+});
 
 test("post action rendering separates authors, reviewers and publishers", () => {
   const router = { bfcacheId: "qa", back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch: async () => {} };
