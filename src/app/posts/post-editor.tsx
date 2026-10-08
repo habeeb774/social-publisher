@@ -11,6 +11,7 @@ import { confirmDialog, toast } from "../ui/feedback";
 import { HelpTip, HELP } from "../ui/help-tip";
 import { Icon } from "../ui/icons";
 import { AiAssist } from "./ai-assist";
+import { TEXT_HOOK_POSTS } from "@/content/text-hook-posts";
 
 export type EditorPost = { id: string; pageId: string; content: string; scheduledAt: string | null; updatedAt: string; status: string; category?: string | null; tags?: string[]; campaignId?: string | null; imageUrl?: string | null };
 type Option = { id: string; name: string };
@@ -169,6 +170,12 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
             <div className="chips" aria-label="إدراج سريع">{["👇", "✅", "🔥", "📌", "\n\n"].map((x) => <button key={x} type="button" className="chip muted" onClick={() => insertAtCursor(x)}>{x === "\n\n" ? "فقرة جديدة" : x}</button>)}</div>
             {urls.length > 0 && <div className="link-preview"><small><Icon name="link" width={12} /> روابط مكتشفة — يعرض Facebook معاينتها عند النشر:</small>{urls.map((u) => { let host = u; try { host = new URL(u).hostname; } catch {} return <a key={u} href={u} target="_blank" rel="noopener noreferrer">{host}</a>; })}</div>}
             {hashtags.length > 0 && <div><small>هاشتاقات استخدمتها سابقًا (إدراج في النص):</small><div className="chips" style={{ marginTop: 6 }}>{hashtags.slice(0, 10).map((h) => <button type="button" className="chip" key={h.tag} onClick={() => insertAtCursor(` #${h.tag}`)}>#{h.tag} <small>{h.uses}</small></button>)}</div></div>}
+            <div className="stack" style={{ gap: 8 }}>
+              <small><b>منشورات نصية بهوك قوي</b> — جاهزة للاستخدام بدون صورة:</small>
+              <div className="chips">
+                {TEXT_HOOK_POSTS.map((preset) => <button type="button" className="chip" key={preset.id} title={preset.hook} onClick={() => { setBody(preset.content); setCategory("تفاعل"); setImageUrl(""); setImageInfo(null); }}>{preset.label}</button>)}
+              </div>
+            </div>
             {aiEnabled && <AiAssist text={body} onApply={(value, mode) => setBody(mode === "append" ? `${body}\n\n${value}` : value)} />}
           </section>
 
