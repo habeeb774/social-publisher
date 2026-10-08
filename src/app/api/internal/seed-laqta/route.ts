@@ -287,7 +287,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({})) as { dryRun?: boolean; pageId?: string };
   const db = getDb();
   const matches = await db.select({
     id: facebookPages.id,
@@ -370,4 +369,18 @@ export async function POST(request: NextRequest) {
     inserted: inserted.length,
     schedule: inserted,
   });
+}
+
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({})) as { dryRun?: boolean; pageId?: string };
+  const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  return seed(request, body, provided);
+}
+
+export async function GET(request: NextRequest) {
+  const provided = request.nextUrl.searchParams.get("key") ?? "";
+  const pageId = request.nextUrl.searchParams.get("pageId") ?? undefined;
+  const dryRun = request.nextUrl.searchParams.get("dryRun") === "1";
+  return seed(request, { pageId, dryRun }, provided);
 }
