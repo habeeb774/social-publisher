@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activityLogs, campaigns, facebookPages, postMedia, posts, publicationAttempts } from "@/db/schema";
 import { auditLabel } from "@/services/audit-labels";
 import { classifyError } from "@/services/error-classes";
 import { approvalRequired } from "@/services/post-ops";
-import { pageCan } from "@/services/session-server";
+import { pageCan, pageSession } from "@/services/session-server";
+import { allowedPageIds } from "@/services/access-scope";
+import { REVIEW_ACTIONS, reviewHistory } from "@/services/review-history";
 import { AppShell } from "../../ui/app-shell";
 import { riyadh } from "../../ui/api";
 import { Icon } from "../../ui/icons";
@@ -22,16 +24,22 @@ const ATTEMPT: Record<string, [string, "ok" | "bad" | "warn" | ""]> = { started:
 export default async function PostDetails({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
+  const session = await pageSession();
+  if (!session) notFound();
+  const allowed = await allowedPageIds({ id: session.userId, role: session.role });
+  const scope = allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`;
   const db = getDb();
-  const [row] = await db.select({ post: posts, page: facebookPages, campaign: campaigns.name }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.id, id), isNull(posts.deletedAt))).limit(1);
+  const [row] = await db.select({ post: posts, page: facebookPages, campaign: campaigns.name }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.id, id), isNull(posts.deletedAt), scope)).limit(1);
   if (!row) notFound();
-  const [attempts, media, audit, approval, canWrite, canPublish, canReview] = await Promise.all([
+  const [attempts, media, audit, approval, canWrite, canPublish, canReview, reviewAudit] = await Promise.all([
     db.select().from(publicationAttempts).where(eq(publicationAttempts.postId, id)).orderBy(desc(publicationAttempts.startedAt)).limit(20),
     db.select().from(postMedia).where(eq(postMedia.postId, id)),
     db.select().from(activityLogs).where(eq(activityLogs.entityId, id)).orderBy(asc(activityLogs.createdAt)).limit(40),
     approvalRequired(), pageCan("content.write"), pageCan("content.publish"), pageCan("content.review"),
+    db.select({id:activityLogs.id,action:activityLogs.action,createdAt:activityLogs.createdAt,metadata:activityLogs.metadata}).from(activityLogs).where(and(eq(activityLogs.entityId,id),eq(activityLogs.entityType,"post"),inArray(activityLogs.action,REVIEW_ACTIONS))).orderBy(desc(activityLogs.createdAt),desc(activityLogs.id)).limit(30),
   ]);
   const { post, page, campaign } = row;
+  const reviews = reviewHistory(reviewAudit);
   const editable = ["draft", "scheduled", "pending_approval", "approved"].includes(post.status);
   const kind = post.status === "failed" ? classifyError(post.lastError) : null;
   const errorCode = post.lastError?.match(/^([A-Z_]+)/)?.[1] ?? null;
@@ -78,6 +86,9 @@ export default async function PostDetails({ params }: { params: Promise<{ id: st
         {post.status === "published" && <PostPerformance id={id} />}
       </section>
       <aside className="stack">
+        <section className="card" aria-label="سجل المراجعة"><div className="card-header"><h2>سجل المراجعة</h2><small>آخر ٣٠ حدثًا محفوظًا</small></div>
+          {!reviews.length ? <p>لا توجد أحداث مراجعة محفوظة لهذا المنشور.</p> : <ol className="timeline">{reviews.map(review => <li key={review.id}><strong>{review.label}</strong><div><time dateTime={review.at.toISOString()}>{riyadh(review.at)}</time></div><small>{review.actor ?? "منفّذ العملية غير مسجّل"}</small>{review.reason && <p className="pre" style={{overflowWrap:"anywhere"}}>{review.reason}</p>}</li>)}</ol>}
+        </section>
         <section className="card"><div className="card-header"><h2>سجل النشر</h2><small>{attempts.length} محاولة</small></div>
           <ol className="timeline">{events.map((e, i) => <li key={i} className={e.tone}><div className="row-between"><span style={{ color: "var(--heading)" }}>{e.label}</span><time title={dateOnly(e.at)}>{time(e.at)}</time></div>{e.detail && <small className="pre">{e.detail.slice(0, 220)}</small>}</li>)}</ol>
           {attempts.some((a) => a.status === "DRY_RUN_SUCCESS") && post.status === "draft" && <small>أُعيد المنشور إلى مسودة بعد الاختبار الآمن لمنع تكرار الاختبار تلقائيًا.</small>}
