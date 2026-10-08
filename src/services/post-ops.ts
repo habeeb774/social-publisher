@@ -12,6 +12,8 @@ import { type WorkspaceContext } from "./workspace-request";
 import { workspacePostDuplicateQuery, workspacePostPermissionPredicate } from "./workspace-posts";
 import { rejectPostQuery } from "./approval-queries";
 import { versionRestoreQuery } from "./version-restore-query";
+import { bulkPostPermissions, type BulkPostAction } from "./bulk-post-permissions";
+import { bulkPostGuard } from "./bulk-post-guard";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -61,15 +63,19 @@ export async function restoreVersion(postId: string, versionId: string, workspac
   return updated;
 }
 
-export type BulkAction = "schedule" | "to_draft" | "unschedule" | "archive" | "delete_drafts" | "change_page" | "assign_campaign";
-export async function bulkAction(ids: string[], action: BulkAction, value?: string | null) {
+export type BulkAction = BulkPostAction;
+export async function bulkAction(ids: string[], action: BulkAction, value?: string | null, workspace?: WorkspaceContext) {
+  // Campaign ownership has not yet been migrated; never attach global campaigns to a tenant.
+  if (workspace && action === "assign_campaign" && value) throw new Error("WORKSPACE_CAMPAIGN_UNAVAILABLE");
   const db = getDb();
-  const rows = await db.select().from(posts).where(and(inArray(posts.id, ids), isNull(posts.deletedAt)));
+  const permission = workspace ? workspacePostPermissionPredicate(workspace, bulkPostPermissions(action)) : undefined;
+  const rows = await db.select().from(posts).where(and(inArray(posts.id, ids), isNull(posts.deletedAt), permission));
   const changed: string[] = [];
   const skipped: Array<{ id: string; reason: string }> = [];
   const now = Date.now();
   for (const post of rows) {
-    const guard = (statuses: string[]) => and(eq(posts.id, post.id), inArray(posts.status, statuses as Post["status"][]));
+    // Checks above apply only to this revision, not a concurrently edited or deleted post.
+    const guard = (statuses: Post["status"][]) => bulkPostGuard(post, statuses, action, workspace);
     let result: Post[] = [];
     if (action === "schedule") {
       if (!["draft", "approved"].includes(post.status) || !post.scheduledAt || post.scheduledAt.getTime() <= now + 60000) { skipped.push({ id: post.id, reason: "يحتاج موعدًا مستقبليًا وحالة مسودة أو موافق عليه" }); continue; }
@@ -88,14 +94,16 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
       if (!value) throw new Error("PAGE_REQUIRED");
       const [page] = await db.select({ id: facebookPages.id }).from(facebookPages).where(and(eq(facebookPages.id, value), eq(facebookPages.isActive, true))).limit(1);
       if (!page) throw new Error("PAGE_UNAVAILABLE");
-      result = await db.update(posts).set({ pageId: page.id, updatedAt: new Date() }).where(guard(["draft", "scheduled", "pending_approval", "approved", "failed"])).returning();
+      const destination = workspace ? sql`EXISTS (SELECT 1 FROM workspace_pages wp JOIN facebook_pages fp ON fp.id=wp.page_id AND fp.is_active=true WHERE wp.page_id=${page.id}::uuid AND wp.workspace_id=${workspace.workspaceId}::uuid)` : undefined;
+      result = await db.update(posts).set({ pageId: page.id, updatedAt: new Date() }).where(and(guard(["draft", "scheduled", "pending_approval", "approved", "failed"]), destination)).returning();
     } else if (action === "assign_campaign") {
-      result = await db.update(posts).set({ campaignId: value || null, updatedAt: new Date() }).where(and(eq(posts.id, post.id), isNull(posts.deletedAt))).returning();
+      result = await db.update(posts).set({ campaignId: value || null, updatedAt: new Date() }).where(guard([post.status])).returning();
     }
     if (result.length) changed.push(post.id); else skipped.push({ id: post.id, reason: "الحالة الحالية لا تسمح بهذا الإجراء" });
   }
   for (const id of ids) if (!rows.some((row) => row.id === id)) skipped.push({ id, reason: "غير موجود" });
-  if (action === "to_draft" || action === "unschedule" || action === "archive") await recomputeQueue();
+  // Keep remaining tenant slots unchanged until queue configuration is workspace-owned.
+  if (!workspace && (action === "to_draft" || action === "unschedule" || action === "archive")) await recomputeQueue();
   await logAudit(`post.bulk.${action}`, "post", null, { changed, skipped: skipped.length, value: value ?? null });
   return { changed, skipped };
 }
