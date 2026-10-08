@@ -25,11 +25,11 @@ export default async function PostDetails({ params }: { params: Promise<{ id: st
   const db = getDb();
   const [row] = await db.select({ post: posts, page: facebookPages, campaign: campaigns.name }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).leftJoin(campaigns, eq(posts.campaignId, campaigns.id)).where(and(eq(posts.id, id), isNull(posts.deletedAt))).limit(1);
   if (!row) notFound();
-  const [attempts, media, audit, approval, canWrite, canPublish] = await Promise.all([
+  const [attempts, media, audit, approval, canWrite, canPublish, canReview] = await Promise.all([
     db.select().from(publicationAttempts).where(eq(publicationAttempts.postId, id)).orderBy(desc(publicationAttempts.startedAt)).limit(20),
     db.select().from(postMedia).where(eq(postMedia.postId, id)),
     db.select().from(activityLogs).where(eq(activityLogs.entityId, id)).orderBy(asc(activityLogs.createdAt)).limit(40),
-    approvalRequired(), pageCan("content.write"), pageCan("content.publish"),
+    approvalRequired(), pageCan("content.write"), pageCan("content.publish"), pageCan("content.review"),
   ]);
   const { post, page, campaign } = row;
   const editable = ["draft", "scheduled", "pending_approval", "approved"].includes(post.status);
@@ -57,7 +57,7 @@ export default async function PostDetails({ params }: { params: Promise<{ id: st
       <span><b>موعد النشر</b><span className="num">{riyadh(post.scheduledAt)}</span></span>
       <span><b>نُشر في</b><span className="num">{riyadh(post.publishedAt)}</span></span>
     </div>
-    {canWrite && <PostActions id={id} status={post.status} approvalRequired={approval} />}
+    {(canWrite || canReview || canPublish) && <PostActions id={id} status={post.status} approvalRequired={approval} canWrite={canWrite} canReview={canReview} canPublish={canPublish} />}
 
     {kind && <div className="alert alert-danger" role="alert" style={{ display: "grid", gap: 8 }}>
       <div className="row-between"><strong>{kind.label}{errorCode && <code style={{ marginInlineStart: 8 }}>{errorCode}</code>}</strong>{canPublish && <RetryButton id={id} retryable={kind.retryable} uncertain={kind.key === "uncertain"} />}</div>

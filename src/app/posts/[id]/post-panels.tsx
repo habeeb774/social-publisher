@@ -21,20 +21,28 @@ function useAction() {
   return { busy, run, router };
 }
 
-export function PostActions({ id, status, approvalRequired }: { id: string; status: string; approvalRequired: boolean }) {
+export function PostActions({ id, status, approvalRequired, canWrite, canReview, canPublish }: { id: string; status: string; approvalRequired: boolean; canWrite: boolean; canReview: boolean; canPublish: boolean }) {
   const { busy, run, router } = useAction();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  function returnForReview(action: "reject" | "changes") {
+    if (busy) return;
+    void run(
+      () => api(`/api/posts/${id}/approval`, { method: "POST", body: { action, reason } }),
+      action === "changes" ? "أُرسل طلب التعديل" : "رُفض المنشور",
+      () => { setRejecting(false); setReason(""); router.refresh(); },
+    );
+  }
   return <div className="post-actions">
-    <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api<{ id: string }>(`/api/posts/${id}/duplicate`, { method: "POST" }), "أُنشئت نسخة كمسودة", (r) => router.push(`/posts/${(r as { id: string }).id}/edit`))}><Icon name="copy" width={14} />تكرار</button>
-    {["draft", "approved"].includes(status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api(`/api/posts/${id}/queue`, { method: "POST" }), "أُضيف إلى الطابور")}><Icon name="queue" width={14} />إضافة للطابور</button>}
-    {["draft", "approved", "scheduled"].includes(status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => { if (await confirmDialog({ title: "نشر الآن؟", message: "يُنشر خلال دقيقة عبر عامل النشر.", confirmLabel: "نشر الآن" })) run(() => api(`/api/posts/${id}/publish-now`, { method: "POST" }), "سيُنشر خلال دقيقة"); }}><Icon name="send" width={14} />نشر الآن</button>}
-    {status === "draft" && approvalRequired && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api(`/api/posts/${id}/approval`, { method: "POST", body: { action: "submit" } }), "أُرسل للمراجعة")}><Icon name="review" width={14} />إرسال للمراجعة</button>}
-    {status === "pending_approval" && <>
+    {canWrite && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api<{ id: string }>(`/api/posts/${id}/duplicate`, { method: "POST" }), "أُنشئت نسخة كمسودة", (r) => router.push(`/posts/${(r as { id: string }).id}/edit`))}><Icon name="copy" width={14} />تكرار</button>}
+    {canWrite && ["draft", "approved"].includes(status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api(`/api/posts/${id}/queue`, { method: "POST" }), "أُضيف إلى الطابور")}><Icon name="queue" width={14} />إضافة للطابور</button>}
+    {canPublish && ["draft", "approved", "scheduled"].includes(status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => { if (await confirmDialog({ title: "نشر الآن؟", message: "يُنشر خلال دقيقة عبر عامل النشر.", confirmLabel: "نشر الآن" })) run(() => api(`/api/posts/${id}/publish-now`, { method: "POST" }), "سيُنشر خلال دقيقة"); }}><Icon name="send" width={14} />نشر الآن</button>}
+    {canWrite && status === "draft" && approvalRequired && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => run(() => api(`/api/posts/${id}/approval`, { method: "POST", body: { action: "submit" } }), "أُرسل للمراجعة")}><Icon name="review" width={14} />إرسال للمراجعة</button>}
+    {canReview && status === "pending_approval" && <>
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(() => api(`/api/posts/${id}/approval`, { method: "POST", body: { action: "approve" } }), "تمت الموافقة")}><Icon name="check" width={14} />موافقة</button>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRejecting(true)}>رفض / طلب تعديل</button>
     </>}
-    {rejecting && <><div className="dialog-backdrop" onClick={() => setRejecting(false)} /><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="reject-title"><h2 id="reject-title">إعادة المنشور للمحرر</h2><label>السبب (يظهر في الملاحظات الداخلية)<textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثال: غيّر الصورة وراجع السعر" /></label><div className="form-actions"><button className="btn btn-primary" onClick={() => { setRejecting(false); run(() => api(`/api/posts/${id}/approval`, { method: "POST", body: { action: "reject", reason } }), "أُعيد للمحرر"); }}>إرسال</button><button className="btn btn-secondary" onClick={() => setRejecting(false)}>إلغاء</button></div></div></>}
+    {rejecting && canReview && <><div className="dialog-backdrop" onClick={() => { if (!busy) setRejecting(false); }} /><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="reject-title" aria-busy={busy}><h2 id="reject-title">إعادة المنشور للمحرر</h2><label>السبب (يظهر في الملاحظات الداخلية)<textarea value={reason} disabled={busy} maxLength={1000} onChange={(e) => setReason(e.target.value)} placeholder="مثال: غيّر الصورة وراجع السعر" /></label><small>طلب التعديل يتيح للمحرر تصحيح المحتوى وإرساله للمراجعة مجددًا.</small><div className="form-actions"><button className="btn btn-primary" disabled={busy} onClick={() => returnForReview("changes")}>{busy ? "جارٍ الحفظ…" : "طلب تعديل"}</button><button className="btn btn-secondary" disabled={busy} onClick={() => returnForReview("reject")}>رفض المنشور</button><button className="btn btn-secondary" disabled={busy} onClick={() => setRejecting(false)}>إلغاء</button></div></div></>}
   </div>;
 }
 
