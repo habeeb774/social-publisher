@@ -98,6 +98,28 @@ test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, asyn
     created.push(row.id); return row;
   };
 
+  await t.test("changing page invalidates approval and scheduling but does not move published history", async () => {
+    const [destination] = await db.insert(schema.facebookPages).values({ name: "QA page change", facebookPageId: `qa-page-change-${crypto.randomUUID()}` }).returning();
+    for (const status of ["scheduled", "approved", "pending_approval", "failed"] as const) {
+      const source = await make({ status, scheduledAt: new Date(Date.now() + 7200000), inQueue: true, queueOrder: 2, lastError: "old error", failedAt: new Date() });
+      assert.deepEqual((await ops.bulkAction([source.id], "change_page", destination.id)).changed, [source.id]);
+      const [moved] = await db.select().from(schema.posts).where(eq(schema.posts.id, source.id));
+      assert.equal(moved.pageId, destination.id);
+      assert.equal(moved.status, "draft");
+      assert.equal(moved.scheduledAt, null);
+      assert.equal(moved.inQueue, false);
+      assert.equal(moved.queueOrder, null);
+      assert.equal(moved.lastError, null);
+      assert.equal(moved.failedAt, null);
+    }
+    const historical = await make({ status: "failed", facebookPostId: "qa-already-published" });
+    assert.deepEqual((await ops.bulkAction([historical.id], "change_page", destination.id)).changed, []);
+    assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id, historical.id)))[0].pageId, page.id);
+    const unchanged = await make({ status: "approved" });
+    assert.deepEqual((await ops.bulkAction([unchanged.id], "change_page", page.id)).changed, []);
+    assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id, unchanged.id)))[0].status, "approved");
+  });
+
   await t.test("duplicate copies text, image and page but not Facebook IDs or attempts", async () => {
     const src = await make({ status: "published", facebookPostId: "fb_1", facebookPermalink: "https://facebook.com/x", publishedAt: new Date(), tags: ["a"] });
     await db.insert(schema.postMedia).values({ postId: src.id, type: "image", url: "https://example.com/a.png" });

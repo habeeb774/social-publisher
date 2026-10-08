@@ -32,6 +32,7 @@ export function PostsTable({ rows, pages, campaigns, canWrite = true }: { rows: 
   }
   async function runBulk() {
     if (!selected.size) return;
+    if (action === "change_page" && !await confirmDialog({ title: "تغيير صفحة المنشورات؟", message: "تعود المنشورات التي تتغير صفحتها إلى مسودات وتُلغى موافقتها وجدولتها القديمة. راجعها ثم أعد جدولة نشرها. المنشورات التي لها سجل نشر لن تُنقل.", confirmLabel: "تغيير الصفحة" })) return;
     if (["delete_drafts", "archive"].includes(action) && !await confirmDialog({ title: `${BULK.find((b) => b[0] === action)?.[1]} ${selected.size} منشور؟`, message: action === "delete_drafts" ? "تُنقل المسودات إلى سلة المحذوفات لمدة 30 يومًا. المنشورات غير المسودة لن تتأثر." : "تبقى المنشورات وسجل نشرها محفوظة في الأرشيف.", danger: action === "delete_drafts", confirmLabel: "متابعة" })) return;
     bulk([...selected], action, value || null);
   }

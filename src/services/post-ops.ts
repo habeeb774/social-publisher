@@ -14,6 +14,7 @@ import { rejectPostQuery } from "./approval-queries";
 import { versionRestoreQuery } from "./version-restore-query";
 import { bulkPostPermissions, type BulkPostAction } from "./bulk-post-permissions";
 import { bulkPostGuard } from "./bulk-post-guard";
+import { pageChangeState } from "./post-page-change";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -92,10 +93,14 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
       result = await db.update(posts).set({ deletedAt: new Date(), updatedAt: new Date() }).where(guard(["draft"])).returning();
     } else if (action === "change_page") {
       if (!value) throw new Error("PAGE_REQUIRED");
+      if (post.pageId === value || post.facebookPostId || post.publishedAt) {
+        skipped.push({ id: post.id, reason: post.pageId === value ? "المنشور على الصفحة المختارة بالفعل" : "للمنشور سجل نشر؛ أنشئ نسخة كمسودة لتغيير الصفحة" });
+        continue;
+      }
       const [page] = await db.select({ id: facebookPages.id }).from(facebookPages).where(and(eq(facebookPages.id, value), eq(facebookPages.isActive, true))).limit(1);
       if (!page) throw new Error("PAGE_UNAVAILABLE");
       const destination = workspace ? sql`EXISTS (SELECT 1 FROM workspace_pages wp JOIN facebook_pages fp ON fp.id=wp.page_id AND fp.is_active=true WHERE wp.page_id=${page.id}::uuid AND wp.workspace_id=${workspace.workspaceId}::uuid)` : undefined;
-      result = await db.update(posts).set({ pageId: page.id, updatedAt: new Date() }).where(and(guard(["draft", "scheduled", "pending_approval", "approved", "failed"]), destination)).returning();
+      result = await db.update(posts).set({ pageId: page.id, ...pageChangeState(), updatedAt: new Date() }).where(and(guard(["draft", "scheduled", "pending_approval", "approved", "failed"]), destination)).returning();
     } else if (action === "assign_campaign") {
       result = await db.update(posts).set({ campaignId: value || null, updatedAt: new Date() }).where(guard([post.status])).returning();
     }
