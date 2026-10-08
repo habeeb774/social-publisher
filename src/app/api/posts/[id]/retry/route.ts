@@ -8,10 +8,12 @@ import { logAudit } from "@/services/audit";
 import { classifyError } from "@/services/error-classes";
 import { denyPostOutsideScope } from "@/services/access-scope";
 import { workspacePostMutationAccess } from "@/services/workspace-post-auth";
+import { postRetryUnavailable } from "@/services/post-retry-response";
 
 /** Requeues a failed post for the next worker run. Uncertain outcomes require explicit confirmation. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await guard(request, true, "content.publish"); if (denied) return denied;
+  try {
   const workspace = await workspacePostMutationAccess(request, ["posts.publish"]);
   if (workspace.response) return workspace.response;
   const { id } = await params;
@@ -33,5 +35,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   )).returning();
   if (!row) return NextResponse.json({ error: "تغيرت حالة المنشور" }, { status: 409 });
   await logAudit("post.retry", "post", id, { class: kind.key });
-  return NextResponse.json(row);
+  return NextResponse.json(row, { headers: { "Cache-Control": "private, no-store" } });
+  } catch {
+    return postRetryUnavailable();
+  }
 }
