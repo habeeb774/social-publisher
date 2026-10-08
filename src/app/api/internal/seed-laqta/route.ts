@@ -280,9 +280,8 @@ function equal(a: string, b: string) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-export async function POST(request: NextRequest) {
+async function seed(request: NextRequest, body: { dryRun?: boolean; pageId?: string }, provided: string) {
   const expected = process.env.CONTENT_SEED_TOKEN?.trim();
-  const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!expected || !provided || !equal(expected, provided)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
