@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { facebookPages, postMedia, postNotes, posts, postVersions, queueSlots } from "@/db/schema";
+import { facebookPages, postMedia, posts, postVersions, queueSlots } from "@/db/schema";
 import { getSetting } from "./settings-store";
 import { currentActor, logAudit } from "./audit";
 import { nextFreeSlots } from "./queue-slots";
@@ -10,6 +10,7 @@ import { getPublishingRules } from "./rules-store";
 import { violation } from "./publishing-rules";
 import { type WorkspaceContext } from "./workspace-request";
 import { workspacePostDuplicateQuery, workspacePostPermissionPredicate } from "./workspace-posts";
+import { rejectPostQuery } from "./approval-queries";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -103,30 +104,33 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
   return { changed, skipped };
 }
 
-export async function submitForApproval(id: string) {
-  const [row] = await getDb().update(posts).set({ status: "pending_approval", updatedAt: new Date() }).where(and(eq(posts.id, id), eq(posts.status, "draft"), isNull(posts.deletedAt))).returning();
+export async function submitForApproval(id: string, workspace?: WorkspaceContext) {
+  const [row] = await getDb().update(posts).set({ status: "pending_approval", updatedAt: new Date() }).where(and(eq(posts.id, id), eq(posts.status, "draft"), isNull(posts.deletedAt), workspace ? workspacePostPermissionPredicate(workspace,["posts.edit"]) : undefined)).returning();
   if (!row) throw new Error("NOT_EDITABLE");
   await logAudit("post.submitted", "post", id);
   return row;
 }
-export async function approvePost(id: string) {
+export async function approvePost(id: string, workspace?: WorkspaceContext) {
   const db = getDb();
-  const [post] = await db.select().from(posts).where(and(eq(posts.id, id), isNull(posts.deletedAt))).limit(1);
+  const permission = workspace ? workspacePostPermissionPredicate(workspace,["posts.approve","posts.publish"]) : undefined;
+  const [post] = await db.select().from(posts).where(and(eq(posts.id, id), isNull(posts.deletedAt), permission)).limit(1);
   if (!post || post.status !== "pending_approval") throw new Error("NOT_PENDING");
   const future = post.scheduledAt && post.scheduledAt.getTime() > Date.now() + 60000;
-  const [row] = await db.update(posts).set({ status: future ? "scheduled" : "approved", updatedAt: new Date() }).where(and(eq(posts.id, id), eq(posts.status, "pending_approval"))).returning();
+  const [row] = await db.update(posts).set({ status: future ? "scheduled" : "approved", updatedAt: sql`greatest(clock_timestamp(),${posts.updatedAt}+interval '1 millisecond')` }).where(and(eq(posts.id, id), eq(posts.status, "pending_approval"), isNull(posts.deletedAt), permission, sql`date_trunc('milliseconds',${posts.updatedAt})=${post.updatedAt.toISOString()}::timestamptz`)).returning();
   if (!row) throw new Error("NOT_PENDING");
   await logAudit("post.approved", "post", id);
-  await sendAlert("approved", `تمت الموافقة على منشور (${id.slice(0, 8)})`, future ? "أصبح المنشور مجدولًا." : "الموعد مضى؛ حدّد موعدًا جديدًا لجدولته.", 0);
+  // Legacy alerts broadcast globally; never disclose workspace content through them.
+  if (!workspace) await sendAlert("approved", `تمت الموافقة على منشور (${id.slice(0, 8)})`, future ? "أصبح المنشور مجدولًا." : "الموعد مضى؛ حدّد موعدًا جديدًا لجدولته.", 0);
   return row;
 }
-export async function rejectPost(id: string, reason: string, kind: "rejected" | "changes" = "rejected") {
+export async function rejectPost(id: string, reason: string, kind: "rejected" | "changes" = "rejected", workspace?: WorkspaceContext) {
   const db = getDb();
-  const [row] = await db.update(posts).set({ status: "draft", updatedAt: new Date() }).where(and(eq(posts.id, id), eq(posts.status, "pending_approval"), isNull(posts.deletedAt))).returning();
+  const changed = await db.execute(rejectPostQuery(id, reason, kind, currentActor(), workspace));
+  if (!changed.rows.length) throw new Error("NOT_PENDING");
+  const [row] = await db.select().from(posts).where(and(eq(posts.id,id), isNull(posts.deletedAt), workspace ? workspacePostPermissionPredicate(workspace,["posts.approve"]) : undefined)).limit(1);
   if (!row) throw new Error("NOT_PENDING");
-  await db.insert(postNotes).values({ postId: id, body: `${kind === "changes" ? "طلب تعديل" : "رُفض"}: ${reason.trim() || "بدون سبب"}`, author: currentActor() });
   await logAudit(kind === "changes" ? "post.changes_requested" : "post.rejected", "post", id, { reason });
-  await sendAlert("rejected", `رُفض منشور (${id.slice(0, 8)})`, reason || "بدون سبب", 0);
+  if (!workspace) await sendAlert("rejected", `رُفض منشور (${id.slice(0, 8)})`, reason || "بدون سبب", 0);
   return row;
 }
 
