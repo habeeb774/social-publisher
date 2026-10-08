@@ -115,6 +115,15 @@ test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, asyn
     const historical = await make({ status: "failed", facebookPostId: "qa-already-published" });
     assert.deepEqual((await ops.bulkAction([historical.id], "change_page", destination.id)).changed, []);
     assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id, historical.id)))[0].pageId, page.id);
+    for (const status of ["started", "outcome_unknown", "success"]) {
+      const uncertain = await make({ status: "failed" });
+      await db.insert(schema.publicationAttempts).values({ postId: uncertain.id, attemptNumber: 1, status });
+      assert.deepEqual((await ops.bulkAction([uncertain.id], "change_page", destination.id)).changed, []);
+      assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id, uncertain.id)))[0].pageId, page.id);
+    }
+    const dryRun = await make();
+    await db.insert(schema.publicationAttempts).values({ postId: dryRun.id, attemptNumber: 1, status: "DRY_RUN_SUCCESS" });
+    assert.deepEqual((await ops.bulkAction([dryRun.id], "change_page", destination.id)).changed, [dryRun.id]);
     const unchanged = await make({ status: "approved" });
     assert.deepEqual((await ops.bulkAction([unchanged.id], "change_page", page.id)).changed, []);
     assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id, unchanged.id)))[0].status, "approved");

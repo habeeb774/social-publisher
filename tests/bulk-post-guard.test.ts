@@ -15,3 +15,12 @@ test("bulk writes gate the current revision and current tenant permission togeth
   assert.ok(!query.params.includes("viewer"));
   assert.ok(!query.sql.includes(post.id));
 });
+
+test("page changes reject successful or uncertain attempts in the actual write predicate", () => {
+  const post = { id: "58d38e8d-2f0f-4d60-bc11-5e9beddd994d", updatedAt: new Date() };
+  const predicate = bulkPostGuard(post, ["failed"], "change_page");
+  assert.ok(predicate);
+  const query = new PgDialect().sqlToQuery(predicate);
+  for (const fragment of ["NOT EXISTS", "publication_attempts", "post_id", "'started'", "'outcome_unknown'", "'success'", "facebook_post_id", "published_at"]) assert.ok(query.sql.includes(fragment), fragment);
+  assert.ok(!query.sql.includes("'DRY_RUN_SUCCESS'"));
+});
