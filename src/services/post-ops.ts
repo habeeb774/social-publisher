@@ -11,6 +11,7 @@ import { violation } from "./publishing-rules";
 import { type WorkspaceContext } from "./workspace-request";
 import { workspacePostDuplicateQuery, workspacePostPermissionPredicate } from "./workspace-posts";
 import { rejectPostQuery } from "./approval-queries";
+import { versionRestoreQuery } from "./version-restore-query";
 
 type Post = typeof posts.$inferSelect;
 /** Statuses whose internal copy may still change. Published/publishing records are immutable. */
@@ -46,21 +47,16 @@ export async function duplicatePost(id: string, workspace?: WorkspaceContext) {
   return copy;
 }
 
-export async function restoreVersion(postId: string, versionId: string) {
+export async function restoreVersion(postId: string, versionId: string, workspace?: WorkspaceContext) {
   const db = getDb();
   const [version] = await db.select().from(postVersions).where(and(eq(postVersions.id, versionId), eq(postVersions.postId, postId))).limit(1);
-  const [post] = await db.select().from(posts).where(and(eq(posts.id, postId), isNull(posts.deletedAt))).limit(1);
+  const [post] = await db.select().from(posts).where(and(eq(posts.id, postId), isNull(posts.deletedAt), workspace ? workspacePostPermissionPredicate(workspace,["posts.edit"]) : undefined)).limit(1);
   if (!version || !post) throw new Error("NOT_FOUND");
   if (!["draft", "scheduled", "pending_approval", "approved"].includes(post.status)) throw new Error("NOT_EDITABLE");
-  await snapshotPost(post, "before_restore");
-  // A restored past time would publish immediately, so fall back to draft without a time.
-  const future = version.scheduledAt && version.scheduledAt.getTime() > Date.now() + 60000;
-  const [updated] = await db.update(posts).set({ content: version.content, scheduledAt: future ? version.scheduledAt : null, status: post.status === "scheduled" && !future ? "draft" : post.status, inQueue: false, updatedAt: new Date() })
-    .where(and(eq(posts.id, postId), inArray(posts.status, ["draft", "scheduled", "pending_approval", "approved"]))).returning();
-  if (!updated) throw new Error("NOT_EDITABLE");
-  const snapshot = Array.isArray(version.mediaSnapshot) ? version.mediaSnapshot as Array<{ url: string; type: string; mimeType: string | null }> : [];
-  await db.delete(postMedia).where(eq(postMedia.postId, postId));
-  if (snapshot.length) await db.insert(postMedia).values(snapshot.map((item) => ({ postId, url: item.url, type: item.type, mimeType: item.mimeType })));
+  const result = await db.execute(versionRestoreQuery({postId,updatedAt:post.updatedAt,content:version.content,scheduledAt:version.scheduledAt,media:version.mediaSnapshot,actor:currentActor()},workspace));
+  if (!result.rows.length) throw new Error("NOT_EDITABLE");
+  const [updated] = await db.select().from(posts).where(and(eq(posts.id,postId),isNull(posts.deletedAt),workspace ? workspacePostPermissionPredicate(workspace,["posts.edit"]) : undefined)).limit(1);
+  if (!updated) throw new Error("NOT_FOUND");
   await logAudit("post.restored", "post", postId, { versionId });
   return updated;
 }

@@ -62,8 +62,8 @@ export function VersionHistory({ id, editable }: { id: string; editable: boolean
   const load = () => api<Version[]>(`/api/posts/${id}/versions`).then(setVersions).catch(() => setVersions([]));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   async function restore(versionId: string) {
-    if (!await confirmDialog({ title: "استرجاع هذه النسخة؟", message: "تُحفظ النسخة الحالية في السجل أولًا. لا يتغير أي منشور على Facebook." , confirmLabel: "استرجاع" })) return;
-    run(() => api(`/api/posts/${id}/versions/${versionId}`, { method: "POST" }), "تم الاسترجاع", () => { load(); location.reload(); });
+    if (!await confirmDialog({ title: "استرجاع هذه النسخة كمسودة؟", message: "تُحفظ النسخة الحالية في السجل أولًا، وتعود النسخة المسترجعة إلى مسودة تحتاج مراجعة أو جدولة جديدة. لا يتغير أي منشور على Facebook." , confirmLabel: "استرجاع كمسودة" })) return;
+    run(() => api(`/api/posts/${id}/versions/${versionId}`, { method: "POST" }), "تم الاسترجاع كمسودة", () => { load(); location.reload(); });
   }
   return <section className="card"><div className="card-header"><h2>سجل التعديلات</h2>{versions && <small>{versions.length} نسخة</small>}</div>
     {versions === null ? <Skeleton lines={2} /> : !versions.length ? <small>لا توجد نسخ سابقة. تُحفظ نسخة عند كل تعديل مهم.</small> : <ul className="timeline-list">{versions.map((v) => <li key={v.id}>

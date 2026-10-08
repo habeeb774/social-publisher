@@ -111,12 +111,25 @@ test("database workflows", { skip: !dbUrl && "TEST_DATABASE_URL not set" }, asyn
 
   await t.test("revision restore brings back old content and refuses published posts", async () => {
     const post = await make({ content: "النسخة الأولى" });
+    await db.insert(schema.postMedia).values({postId:post.id,type:"image",url:"https://example.test/old.png"});
     await ops.snapshotPost(post, "edit");
-    await db.update(schema.posts).set({ content: "النسخة الثانية" }).where(eq(schema.posts.id, post.id));
+    await db.update(schema.posts).set({ content: "النسخة الثانية",status:"approved",inQueue:true }).where(eq(schema.posts.id, post.id));
+    await db.delete(schema.postMedia).where(eq(schema.postMedia.postId,post.id));
+    await db.insert(schema.postMedia).values({postId:post.id,type:"image",url:"https://example.test/new.png"});
     const [version] = await db.select().from(schema.postVersions).where(eq(schema.postVersions.postId, post.id));
     const restored = await ops.restoreVersion(post.id, version.id);
     assert.equal(restored.content, "النسخة الأولى");
+    assert.equal(restored.status,"draft");
+    assert.equal(restored.inQueue,false);
+    assert.equal((await db.select().from(schema.postMedia).where(eq(schema.postMedia.postId,post.id)))[0].url,"https://example.test/old.png");
     assert.equal((await db.select().from(schema.postVersions).where(eq(schema.postVersions.postId, post.id))).length, 2, "current state saved before restore");
+    const beforeImage=(await db.select().from(schema.postVersions).where(eq(schema.postVersions.postId,post.id))).find(row=>row.reason==="before_restore");
+    assert.equal(beforeImage?.content,"النسخة الثانية");
+    assert.equal((beforeImage?.mediaSnapshot as Array<{url:string}>)[0].url,"https://example.test/new.png");
+    await db.update(schema.postVersions).set({mediaSnapshot:[{url:null,type:"image"}]}).where(eq(schema.postVersions.id,version.id));
+    await assert.rejects(ops.restoreVersion(post.id,version.id));
+    assert.equal((await db.select().from(schema.posts).where(eq(schema.posts.id,post.id)))[0].content,"النسخة الأولى");
+    assert.equal((await db.select().from(schema.postVersions).where(eq(schema.postVersions.postId,post.id))).length,2,"invalid snapshot does not save a partial revision");
     const pub = await make({ status: "published" });
     await ops.snapshotPost(pub, "edit");
     const [pv] = await db.select().from(schema.postVersions).where(eq(schema.postVersions.postId, pub.id));
