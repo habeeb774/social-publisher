@@ -13,6 +13,7 @@ import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
+import { enqueueHourlyTechNews } from "@/services/tech-news";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -143,6 +144,12 @@ async function run(request: Request) {
     }
   });
   try {
+    try {
+      const techNews = await enqueueHourlyTechNews(startedAt);
+      if (techNews.created) console.info("Hourly technology news queued", { postId: techNews.postId, source: techNews.source });
+    } catch (error) {
+      console.error("Hourly technology news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
     const results = await publishDuePosts();
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
