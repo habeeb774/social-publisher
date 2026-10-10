@@ -15,6 +15,13 @@ function normalizeLayout(node: ReactNode): ReactNode {
   if (typeof el.type === "function") return normalizeLayout((el.type as (p: StyledProps) => ReactNode)(el.props));
   const kids = Children.toArray(el.props.children).map(normalizeLayout);
   let style = el.props.style;
+  // Rasterized blur/shadow filters dominated CPU time. Keep the geometry and
+  // colors, but render lighting with gradients instead of expensive filters.
+  if (style && (style.boxShadow || style.filter)) {
+    const { boxShadow, filter, ...rest } = style;
+    void boxShadow; void filter;
+    style = rest;
+  }
   if (el.type === "div") {
     const display = style?.display;
     if (display === "grid") {
@@ -309,8 +316,8 @@ export async function GET(_request: Request, context: { params: Promise<{ index:
       background:"linear-gradient(155deg,#040b16 0%,#071525 52%,#081a2f 100%)",
     }}>
       <div style={{position:"absolute",inset:0,opacity:.34,backgroundImage:"linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px)",backgroundSize:"54px 54px"}}/>
-      <div style={{position:"absolute",width:620+(n%5)*34,height:620+(n%5)*34,borderRadius:999,top:-290+(n%7)*18,left:-250+(n%9)*22,background:palette.accent,opacity:.14,filter:"blur(18px)"}}/>
-      <div style={{position:"absolute",width:700+(n%4)*42,height:700+(n%4)*42,borderRadius:999,bottom:-380+(n%6)*16,right:-300+(n%8)*24,background:palette.accent2,opacity:.17,filter:"blur(18px)"}}/>
+      <div style={{position:"absolute",width:620+(n%5)*34,height:620+(n%5)*34,borderRadius:999,top:-290+(n%7)*18,left:-250+(n%9)*22,background:`radial-gradient(circle,${palette.accent},transparent 70%)`,opacity:.14}}/>
+      <div style={{position:"absolute",width:700+(n%4)*42,height:700+(n%4)*42,borderRadius:999,bottom:-380+(n%6)*16,right:-300+(n%8)*24,background:`radial-gradient(circle,${palette.accent2},transparent 70%)`,opacity:.17}}/>
       <div style={{position:"absolute",left:70+((n*47)%880),top:90+((n*83)%960),width:18+(n%4)*5,height:18+(n%4)*5,borderRadius:999,background:palette.accent,boxShadow:`0 0 46px ${palette.accent}`,opacity:.72}}/>
       <div style={{position:"absolute",left:90+((n*71)%820),top:120+((n*59)%900),width:12+(n%5)*4,height:12+(n%5)*4,borderRadius:999,background:palette.accent2,boxShadow:`0 0 38px ${palette.accent2}`,opacity:.62}}/>
       <Scene {...palette} n={n} evening={post.slot==="evening"} kind={kind}/>

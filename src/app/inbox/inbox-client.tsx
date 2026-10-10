@@ -51,7 +51,7 @@ export function InboxClient({ canReply }: { canReply: boolean }) {
   useEffect(() => {
     const timer = setInterval(() => {
       if (!document.hidden) void loadList();
-    }, 15000);
+    }, 60000);
     return () => clearInterval(timer);
   }, [loadList]);
   useEffect(() => { call<Caps>("?view=capabilities").then(setCaps).catch(() => setCaps({ connected: false, read: false, reply: false, reason: "COMMENTS_AUTH_REQUIRED" })); call<{ pages: Array<{ id: string; name: string; account_id?: string | null; account_name?: string | null }>; accounts: Array<{ id: string; name: string; status: string }> }>("?view=catalog").then((d) => { setPages(d.pages ?? []); setAccounts(d.accounts ?? []); }).catch(() => {}); call<Template[]>("?view=templates").then((t) => setTemplates(t.filter((x) => x.active))).catch(() => {}); }, []);

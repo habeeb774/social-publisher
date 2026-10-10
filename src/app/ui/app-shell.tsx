@@ -127,7 +127,7 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
   useEffect(() => {
     if (commentsOnly) return;
     const load = () => fetch("/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {});
-    load(); const timer = setInterval(load, 60000);
+    load(); const timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
     fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null));
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d) { setMe(d.user); setCounts(d.counts ?? {}); } }).catch(() => {});
     return () => clearInterval(timer);

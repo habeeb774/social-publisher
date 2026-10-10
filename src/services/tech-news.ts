@@ -57,6 +57,10 @@ export async function enqueueHourlyTechNews(now = new Date()) {
   const db = getDb();
   const hourKey = now.toISOString().slice(0, 13);
   const claimKey = `tech_news_hour:${hourKey}`;
+  // Most scheduler ticks revisit an hour already handled. Avoid fetching and
+  // parsing every feed; retain the atomic insert below for concurrent ticks.
+  const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
+  if (existingClaim) return { created: false, reason: "HOUR_ALREADY_CLAIMED" as const };
   const feedResults = await Promise.all(FEEDS.map(readFeed));
   const cutoff = now.getTime() - MAX_AGE_MS;
   const candidates = feedResults.flat().filter((item) => eligibleTechArticle(item) && item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());

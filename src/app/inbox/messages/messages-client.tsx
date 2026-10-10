@@ -48,7 +48,7 @@ export function MessagesClient({ canReply, canManage = false, canCreateLead = fa
   useEffect(() => {
     const timer = setInterval(() => {
       if (!document.hidden) void load();
-    }, 15000);
+    }, 60000);
     return () => clearInterval(timer);
   }, [load]);
   const open = async (id: string) => {

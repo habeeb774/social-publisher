@@ -97,7 +97,7 @@ export function UnifiedInboxClient({ canReply,canCreateLead=false,canManageInbox
   useEffect(() => {
     const timer = setInterval(() => {
       if (!document.hidden) void load();
-    }, 15000);
+    }, 60000);
     return () => clearInterval(timer);
   }, [load]);
 

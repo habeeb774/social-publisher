@@ -21,5 +21,5 @@ export async function renderTechNewsCard(title: string, source: string) {
       <CardText text={source} size={25} color="#cbd5e1" />
     </div>
     <div style={{display:"flex",fontSize:22,color:"#94a3b8",borderTop:"2px solid #29476d",paddingTop:28}}>sp.leanpix.site</div>
-  </div>, {width:1080,height:1080,fonts:[{name:"Tajawal",data:await readFile(join(process.cwd(),"public","Tajawal-Regular.ttf")),weight:400,style:"normal"}],headers:{"Cache-Control":"public, max-age=0, s-maxage=300", "Content-Type":"image/png"}});
+  </div>, {width:1080,height:1080,fonts:[{name:"Tajawal",data:await readFile(join(process.cwd(),"public","Tajawal-Regular.ttf")),weight:400,style:"normal"}],headers:{"Cache-Control":"public, max-age=0, s-maxage=86400, stale-while-revalidate=604800", "Content-Type":"image/png"}});
 }
