@@ -9,7 +9,7 @@ const HABEEB_FACEBOOK_PAGE_ID = "1330947143441946";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 type FeedSource = { name: string; url: string; topic: string };
-type FeedItem = { title: string; url: string; publishedAt: Date; source: string; topic: string };
+export type FeedItem = { title: string; url: string; publishedAt: Date; source: string; topic: string };
 
 const FEEDS: FeedSource[] = [
   { name: "البوابة العربية للأخبار التقنية", url: "https://aitnews.com/feed/", topic: "أدوات العمل" },
@@ -26,7 +26,7 @@ function tag(block: string, name: string) {
   const match = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, "i"));
   return match ? decodeXml(match[1]).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
 }
-function parseFeed(xml: string, source: FeedSource): FeedItem[] {
+export function parseFeed(xml: string, source: FeedSource): FeedItem[] {
   const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? xml.match(/<entry\b[\s\S]*?<\/entry>/gi) ?? [];
   const items: FeedItem[] = [];
   for (const block of blocks.slice(0, 30)) {
@@ -91,3 +91,15 @@ export async function enqueueHourlyTechNews(now = new Date()) {
 }
 
 export const techNewsSources = FEEDS.map(({ name, url, topic }) => ({ name, url, topic }));
+
+export async function readTechRadarFeeds() {
+  return Promise.all(FEEDS.map(async (source) => {
+    try {
+      const response = await fetch(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store" });
+      if (!response.ok) throw new Error("FEED_UNAVAILABLE");
+      return { source: source.name, available: true, items: parseFeed(await response.text(), source) };
+    } catch {
+      return { source: source.name, available: false, items: [] as FeedItem[] };
+    }
+  }));
+}

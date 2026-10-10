@@ -20,6 +20,7 @@ export const NAV: NavGroup[] = [
     { icon: "review", label: "المراجعة", href: "/reviews", badge: "reviews" }, { icon: "failed", label: "المتعثرة", href: "/failed", badge: "failed" },
   ] },
   { key: "calendar", title: "التقويم", links: [{ icon: "calendar", label: "التقويم", href: "/calendar" }] },
+  { key: "tech-radar", title: "رادار التقنية", links: [{ icon: "analytics", label: "رادار التقنية", href: "/tech-radar" }] },
   { key: "library", title: "المكتبة", links: [
     { icon: "library", label: "المكتبة", href: "/library" }, { icon: "media", label: "الوسائط", href: "/media" },
     { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },

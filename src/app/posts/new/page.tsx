@@ -9,7 +9,7 @@ import { allowedPageIds } from "@/services/access-scope";
 export const dynamic = "force-dynamic";
 
 /** Supports ?template=<id> and ?media=<id> to start from a template or a library image. */
-export default async function NewPost({ searchParams }: { searchParams: Promise<{ template?: string; media?: string }> }) {
+export default async function NewPost({ searchParams }: { searchParams: Promise<{ template?: string; media?: string; radarContent?: string }> }) {
   const params = await searchParams;
   const db = getDb();
   const session = await pageSession();
@@ -20,5 +20,6 @@ export default async function NewPost({ searchParams }: { searchParams: Promise<
     z.uuid().safeParse(params.media).success ? db.select().from(mediaAssets).where(and(eq(mediaAssets.id, params.media!), isNull(mediaAssets.deletedAt))).limit(1) : Promise.resolve([]),
   ]);
   const defaults = (template[0]?.defaultSettings ?? {}) as { category?: string; tags?: string[] };
-  return <PostEditor {...data} prefill={{ content: template[0]?.content, imageUrl: asset[0]?.url, category: defaults.category, tags: defaults.tags }} />;
+  const radarContent = typeof params.radarContent === "string" ? params.radarContent.slice(0, 5000) : undefined;
+  return <PostEditor {...data} prefill={{ content: template[0]?.content ?? radarContent, imageUrl: asset[0]?.url, category: defaults.category ?? (radarContent ? "أخبار" : undefined), tags: defaults.tags }} />;
 }
