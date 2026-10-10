@@ -199,7 +199,11 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
           </section>
 
           <section className="card composer-section"><header><h2>النشر</h2><small>توقيت الرياض (UTC+3)</small></header>
-            <div className="field-row"><label>التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>الوقت<input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label></div>
+            <div className="field-row"><label>التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><div><span>الوقت (24 ساعة)</span><div role="group" aria-label="وقت النشر بتوقيت الرياض" dir="ltr" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <select aria-label="ساعة النشر" value={time.slice(0, 2)} onChange={(e) => setTime(`${e.target.value}:${time.slice(3, 5)}`)}>{Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0")).map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
+              <span aria-hidden="true">:</span>
+              <select aria-label="دقيقة النشر" value={time.slice(3, 5)} onChange={(e) => setTime(`${time.slice(0, 2)}:${e.target.value}`)}>{Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0")).map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
+            </div></div></div>
             <BestTimesHint onPick={setTime} />
             {approvalRequired && <small><Icon name="review" width={12} /> الجدولة تمر بالمراجعة أولًا قبل النشر.</small>}
             {checks && <ul className="checklist" aria-label="فحص ما قبل النشر">{checks.map((c) => <li key={c.key} className={c.ok ? "ok" : c.critical ? "bad" : "warn"}>{c.ok ? "✓" : c.critical ? "✕" : "!"} {c.label}{c.detail && <small> · {c.detail}</small>}</li>)}</ul>}
