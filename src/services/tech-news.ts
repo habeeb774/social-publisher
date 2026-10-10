@@ -83,7 +83,7 @@ export async function enqueueHourlyTechNews(now = new Date()) {
 
   const [post] = await db.insert(posts).values({ pageId: page.id, content: editorialTechPost(selected), scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: "أخبار", tags: ["تقنية", "تكنولوجيا", "أخبار التقنية", selected.topic, `source:${selected.source}`] }).returning({ id: posts.id });
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
-  await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/tech-news-image/${post.id}`, mimeType: "image/png" });
+  await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/tech-news-image/${post.id}?v=2`, mimeType: "image/png" });
   await db.insert(settings).values({ key: `tech_news_seen:${articleHash(selected.url)}`, value: JSON.stringify({ url: selected.url, title: selected.title, source: selected.source, publishedAt: selected.publishedAt.toISOString(), postId: post.id, createdAt: now.toISOString() }) }).onConflictDoNothing();
 
   await logAudit("tech_news.enqueued", "post", post.id, { pageId: HABEEB_FACEBOOK_PAGE_ID, source: selected.source, sourceUrl: selected.url, publishedAt: selected.publishedAt.toISOString(), hourly: true });
