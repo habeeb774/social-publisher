@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isoToRiyadhInput, riyadhInputToIso } from "@/services/post-time";
 import { POST_CATEGORIES } from "@/services/catalog";
+import { prepublishBlockingMessage } from "@/services/prepublish-message";
 import { AppShell } from "../ui/app-shell";
 import { ago, api } from "../ui/api";
 import { confirmDialog, toast } from "../ui/feedback";
@@ -92,10 +93,10 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
     try {
       const scheduledAt = scheduledIso();
       if (intent === "scheduled") {
-        if (!scheduledAt || new Date(scheduledAt).getTime() <= Date.now()) throw new Error("حدد تاريخًا ووقتًا في المستقبل (توقيت الرياض)");
+        if (!scheduledAt || new Date(scheduledAt).getTime() <= Date.now() + 60000) throw new Error("حدد موعدًا بعد أكثر من دقيقة من الآن (توقيت الرياض)");
         const result = await api<{ items: Check[]; blocking: boolean }>("/api/posts/check", { method: "POST", body: { pageId, content: body, scheduledAt, imageUrl: imageUrl.trim() || null, postId: post?.id } });
         setChecks(result.items);
-        if (result.blocking) throw new Error("أصلح العناصر المعلّمة في قائمة الفحص قبل الجدولة");
+        if (result.blocking) throw new Error(prepublishBlockingMessage(result.items));
         const warnings = result.items.filter((i) => !i.ok);
         if (warnings.length && !await confirmDialog({ title: "متابعة الجدولة رغم التنبيهات؟", message: warnings.map((w) => `• ${w.label}${w.detail ? `: ${w.detail}` : ""}`).join("\n"), confirmLabel: "جدولة" })) return;
       }
