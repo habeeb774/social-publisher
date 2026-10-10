@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, settings } from "@/db/schema";
 import { logAudit } from "./audit";
+import { eligibleTechArticle, editorialTechPost } from "./tech-news-editorial";
 
 const HABEEB_FACEBOOK_PAGE_ID = "1330947143441946";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
@@ -11,6 +12,7 @@ type FeedSource = { name: string; url: string; topic: string };
 type FeedItem = { title: string; url: string; publishedAt: Date; source: string; topic: string };
 
 const FEEDS: FeedSource[] = [
+  { name: "البوابة العربية للأخبار التقنية", url: "https://aitnews.com/feed/", topic: "أدوات العمل" },
   { name: "WIRED", url: "https://www.wired.com/feed/rss", topic: "تقنية" },
   { name: "WIRED AI", url: "https://www.wired.com/feed/tag/ai/latest/rss", topic: "ذكاء اصطناعي" },
   { name: "WIRED Security", url: "https://www.wired.com/feed/category/security/latest/rss", topic: "أمن سيبراني" },
@@ -22,7 +24,7 @@ function decodeXml(value: string) {
 }
 function tag(block: string, name: string) {
   const match = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, "i"));
-  return match ? decodeXml(match[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")) : "";
+  return match ? decodeXml(match[1]).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
 }
 function parseFeed(xml: string, source: FeedSource): FeedItem[] {
   const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? xml.match(/<entry\b[\s\S]*?<\/entry>/gi) ?? [];
@@ -49,10 +51,6 @@ async function readFeed(source: FeedSource) {
     return [] as FeedItem[];
   }
 }
-function cleanHeadline(value: string) { return value.replace(/\s+/g, " ").trim().slice(0, 220); }
-function postText(item: FeedItem) {
-  return ["📡 آخر أخبار التكنولوجيا", "", cleanHeadline(item.title), "", "خبر تقني جديد ضمن أبرز المستجدات المتداولة الآن.", "", `🔗 التفاصيل من المصدر: ${item.url}`, `المصدر: ${item.source}`, "", "#تقنية #تكنولوجيا #أخبار_التقنية"].join("\n");
-}
 function articleHash(url: string) { return createHash("sha256").update(url).digest("hex").slice(0, 20); }
 
 export async function enqueueHourlyTechNews(now = new Date()) {
@@ -61,7 +59,7 @@ export async function enqueueHourlyTechNews(now = new Date()) {
   const claimKey = `tech_news_hour:${hourKey}`;
   const feedResults = await Promise.all(FEEDS.map(readFeed));
   const cutoff = now.getTime() - MAX_AGE_MS;
-  const candidates = feedResults.flat().filter((item) => item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+  const candidates = feedResults.flat().filter((item) => eligibleTechArticle(item) && item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
   if (!candidates.length) {
     await logAudit("tech_news.skipped", "post", null, { reason: "NO_FRESH_NEWS", hourKey });
     return { created: false, reason: "NO_FRESH_NEWS" as const };
@@ -83,7 +81,7 @@ export async function enqueueHourlyTechNews(now = new Date()) {
     return { created: false, reason: "HABEEB_PAGE_UNAVAILABLE" as const };
   }
 
-  const [post] = await db.insert(posts).values({ pageId: page.id, content: postText(selected), scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: "تقنية", tags: ["تقنية", "تكنولوجيا", "أخبار التقنية", selected.topic, `source:${selected.source}`] }).returning({ id: posts.id });
+  const [post] = await db.insert(posts).values({ pageId: page.id, content: editorialTechPost(selected), scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: "أخبار", tags: ["تقنية", "تكنولوجيا", "أخبار التقنية", selected.topic, `source:${selected.source}`] }).returning({ id: posts.id });
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
   await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/tech-news-image/${post.id}`, mimeType: "image/png" });
   await db.insert(settings).values({ key: `tech_news_seen:${articleHash(selected.url)}`, value: JSON.stringify({ url: selected.url, title: selected.title, source: selected.source, publishedAt: selected.publishedAt.toISOString(), postId: post.id, createdAt: now.toISOString() }) }).onConflictDoNothing();
