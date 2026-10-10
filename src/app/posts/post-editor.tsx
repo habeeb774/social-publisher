@@ -35,6 +35,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const [accountId, setAccountId] = useState(initialAccountId);
   const [pageId, setPageId] = useState(initialPageId);
   const [category, setCategory] = useState(initial?.category ?? prefill?.category ?? "");
+  const legacyCategory = initial?.category && !POST_CATEGORIES.some((value) => value === initial.category) ? initial.category : null;
   const [tags, setTags] = useState((initial?.tags ?? prefill?.tags ?? []).join(" "));
   const [campaignId, setCampaignId] = useState(initial?.campaignId ?? "");
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? prefill?.imageUrl ?? "");
@@ -99,7 +100,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
         if (warnings.length && !await confirmDialog({ title: "متابعة الجدولة رغم التنبيهات؟", message: warnings.map((w) => `• ${w.label}${w.detail ? `: ${w.detail}` : ""}`).join("\n"), confirmLabel: "جدولة" })) return;
       }
       if (intent === "now" && !await confirmDialog({ title: "نشر الآن؟", message: publishingEnabled ? `سيُنشر على «${page?.name ?? "الصفحة"}» خلال دقيقة.` : "وضع الاختبار مفعّل: سيمر المنشور بخطوات النشر دون أن يظهر على الصفحة.", confirmLabel: "نشر الآن" })) return;
-      const payload = { pageId, content: body, scheduledAt: intent === "scheduled" ? scheduledAt : scheduledAt, timezone: "Asia/Riyadh", status: intent === "scheduled" ? "scheduled" : "draft", category: category || null, tags: tags.split(/[\s,،]+/).filter(Boolean), campaignId: campaignId || null, imageUrl: imageUrl.trim() || null, updatedAt: post?.updatedAt };
+      const payload = { pageId, content: body, scheduledAt: intent === "scheduled" ? scheduledAt : scheduledAt, timezone: "Asia/Riyadh", status: intent === "scheduled" ? "scheduled" : "draft", category: legacyCategory && category === legacyCategory ? undefined : category || null, tags: tags.split(/[\s,،]+/).filter(Boolean), campaignId: campaignId || null, imageUrl: imageUrl.trim() || null, updatedAt: post?.updatedAt };
       const result = await api<{ id: string }>(post ? `/api/posts/${post.id}` : "/api/posts", { method: post ? "PATCH" : "POST", body: payload });
       if (intent === "queue") await api(`/api/posts/${result.id}/queue`, { method: "POST" });
       if (intent === "now") await api(`/api/posts/${result.id}/publish-now`, { method: "POST" });
@@ -192,7 +193,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
           <section className="card composer-section"><header><h2>الحملة والتصنيف</h2></header>
             <div className="field-row">
               <label>الحملة<select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}><option value="">بدون حملة</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-              <label>التصنيف<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">بدون</option>{POST_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
+              <label>التصنيف<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">بدون</option>{legacyCategory && <option value={legacyCategory}>{legacyCategory} (التصنيف الحالي)</option>}{POST_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
             </div>
             <label>وسوم داخلية <small>(للتنظيم فقط، لا تُنشر)</small><input placeholder="مثل: عروض أكتوبر" value={tags} onChange={(e) => setTags(e.target.value)} /></label>
             {hashtags.length > 0 && <div className="chips">{hashtags.slice(0, 8).map((h) => <button type="button" className="chip muted" key={h.tag} onClick={() => addTag(h.tag)}>+ {h.tag}</button>)}</div>}

@@ -6,7 +6,10 @@ export const postInputSchema = z.object({
   scheduledAt: z.coerce.date().optional(),
   timezone: z.literal("Asia/Riyadh").default("Asia/Riyadh"),
   status: z.enum(["draft","scheduled"]).default("draft"),
-  category: z.enum(POST_CATEGORIES).nullable().optional(),
+  category: z.preprocess(
+    (value) => typeof value === "string" ? value.trim() || null : value,
+    z.enum(POST_CATEGORIES, { error: "اختر تصنيفًا من القائمة أو اختر بدون تصنيف" }).nullable().optional(),
+  ),
   tags: z.array(z.string().max(40)).max(20).optional(),
   campaignId: z.uuid().nullable().optional(),
   imageUrl: z.url().refine((url)=>/^https:\/\//i.test(url),"رابط الصورة يجب أن يبدأ بـ https://").nullable().optional(),
