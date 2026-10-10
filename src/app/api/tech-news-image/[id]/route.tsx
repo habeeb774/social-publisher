@@ -2,6 +2,8 @@ import { ImageResponse } from "next/og";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { posts } from "@/db/schema";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export const runtime = "nodejs";
 
@@ -24,7 +26,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     <div style={{
       width:"100%",height:"100%",display:"flex",position:"relative",overflow:"hidden",
       background:"linear-gradient(145deg,#030712 0%,#071426 50%,#0b1f3a 100%)",
-      color:"#fff",fontFamily:"Arial, sans-serif",
+      color:"#fff",fontFamily:"Tajawal",
     }}>
       <div style={{position:"absolute",inset:0,opacity:.22,backgroundImage:"linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px)",backgroundSize:"54px 54px"}}/>
       <div style={{position:"absolute",width:520,height:520,borderRadius:999,top:-230,left:-170,background:accent,opacity:.18,filter:"blur(24px)"}}/>
@@ -52,6 +54,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     {
       width:1080,
       height:1080,
+      fonts: [{ name: "Tajawal", data: await readFile(join(process.cwd(), "public", "Tajawal-Regular.ttf")), weight: 400, style: "normal" }],
       headers:{
         "Cache-Control":"public, max-age=0, s-maxage=86400, stale-while-revalidate=604800",
         "Content-Type":"image/png",
