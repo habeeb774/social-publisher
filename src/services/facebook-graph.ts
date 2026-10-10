@@ -38,12 +38,21 @@ export async function checkGraphAccess(pageId: string) {
   return { id: String(page.body.id), name: String(page.body.name) };
 }
 
+function isPrivateImageHost(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === "localhost" || h === "::1" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
+  const octets = h.split(".").map(Number);
+  if (octets.length !== 4 || octets.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets;
+  return a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 192 && b === 168 || a === 172 && b >= 16 && b <= 31;
+}
+
 /** Validate external image URLs before attempting a Facebook photo write. */
 async function validateFacebookImage(url: string): Promise<void> {
   let parsed: URL;
   try { parsed = new URL(url); } catch { throw new Error("FACEBOOK_IMAGE_INVALID: رابط الصورة غير صالح"); }
   if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password ||
-      /^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(1[6-9]|2\\d|3[01])\\.|0\\.|::1|\\[)/i.test(parsed.hostname)) {
+      isPrivateImageHost(parsed.hostname)) {
     throw new Error("FACEBOOK_IMAGE_INVALID: يجب استخدام رابط HTTPS عام للصورة");
   }
   let response: Response;
