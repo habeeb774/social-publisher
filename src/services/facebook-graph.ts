@@ -38,17 +38,51 @@ export async function checkGraphAccess(pageId: string) {
   return { id: String(page.body.id), name: String(page.body.name) };
 }
 
+/** Validate external image URLs before attempting a Facebook photo write. */
+async function validateFacebookImage(url: string): Promise<void> {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new Error("FACEBOOK_IMAGE_INVALID: رابط الصورة غير صالح"); }
+  if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password ||
+      /^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(1[6-9]|2\\d|3[01])\\.|0\\.|::1|\\[)/i.test(parsed.hostname)) {
+    throw new Error("FACEBOOK_IMAGE_INVALID: يجب استخدام رابط HTTPS عام للصورة");
+  }
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "HEAD", redirect: "error", signal: AbortSignal.timeout(10000) });
+  } catch {
+    throw new Error("FACEBOOK_IMAGE_INVALID: تعذر الوصول إلى الصورة مباشرة");
+  }
+  if (!response.ok) throw new Error(`FACEBOOK_IMAGE_INVALID: الصورة غير متاحة (HTTP ${response.status})`);
+  const type = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (type !== "image/jpeg" && type !== "image/png") {
+    throw new Error("FACEBOOK_IMAGE_INVALID: يجب أن تكون الصورة JPEG أو PNG");
+  }
+  const size = Number(response.headers.get("content-length"));
+  if (Number.isFinite(size) && size > 0 && size > 10 * 1024 * 1024) {
+    throw new Error("FACEBOOK_IMAGE_INVALID: حجم الصورة أكبر من 10MB");
+  }
+}
+
 export async function publishGraphPost(input: { pageId: string; content: string; imageUrl?: string }, dryRun: boolean) {
   const token = await pageToken(input.pageId);
   if (dryRun) {
     await checkGraphAccess(input.pageId);
     return { id: "dry-run", dryRun: true, provider: "facebook_graph" as const };
   }
+  // Invalid media must not consume publish retries. Text-only fallback is opt-in.
+  let imageUrl = input.imageUrl;
+  if (imageUrl) {
+    try { await validateFacebookImage(imageUrl); }
+    catch (error) {
+      if (process.env.FACEBOOK_ALLOW_TEXT_FALLBACK === "true") imageUrl = undefined;
+      else throw error;
+    }
+  }
   const params = new URLSearchParams({ access_token: token });
-  if (input.imageUrl) { params.set("url", input.imageUrl); params.set("caption", input.content); } else params.set("message", input.content);
+  if (imageUrl) { params.set("url", imageUrl); params.set("caption", input.content); } else params.set("message", input.content);
   let result: Awaited<ReturnType<typeof graph>>;
   try {
-    result = await graph(`/${input.pageId}/${input.imageUrl ? "photos" : "feed"}`, { method: "POST", body: params });
+    result = await graph(`/${input.pageId}/${imageUrl ? "photos" : "feed"}`, { method: "POST", body: params });
   } catch (cause) {
     throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة (${cause instanceof Error ? cause.message : "network error"})`, { cause });
   }
