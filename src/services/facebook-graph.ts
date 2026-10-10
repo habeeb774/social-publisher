@@ -48,7 +48,7 @@ function isPrivateImageHost(host: string): boolean {
 }
 
 /** Validate external image URLs before attempting a Facebook photo write. */
-async function validateFacebookImage(url: string): Promise<void> {
+export async function validateFacebookImage(url: string): Promise<Blob> {
   let parsed: URL;
   try { parsed = new URL(url); } catch { throw new Error("FACEBOOK_IMAGE_INVALID: رابط الصورة غير صالح"); }
   if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password ||
@@ -57,7 +57,7 @@ async function validateFacebookImage(url: string): Promise<void> {
   }
   let response: Response;
   try {
-    response = await fetch(url, { method: "HEAD", redirect: "error", signal: AbortSignal.timeout(10000) });
+    response = await fetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(10000) });
   } catch {
     throw new Error("FACEBOOK_IMAGE_INVALID: تعذر الوصول إلى الصورة مباشرة");
   }
@@ -68,8 +68,29 @@ async function validateFacebookImage(url: string): Promise<void> {
   }
   const size = Number(response.headers.get("content-length"));
   if (Number.isFinite(size) && size > 0 && size > 10 * 1024 * 1024) {
+    await response.body?.cancel();
     throw new Error("FACEBOOK_IMAGE_INVALID: حجم الصورة أكبر من 10MB");
   }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("FACEBOOK_IMAGE_INVALID: ملف الصورة فارغ");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > 10 * 1024 * 1024) throw new Error("FACEBOOK_IMAGE_INVALID: حجم الصورة أكبر من 10MB");
+      chunks.push(value);
+    }
+  } finally { await reader.cancel(); reader.releaseLock(); }
+  const bytes = Buffer.concat(chunks);
+  const jpeg = bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+  const png = bytes.length >= 45 && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.subarray(12,16).toString() === "IHDR" && bytes.subarray(-8,-4).toString() === "IEND";
+  if (!(type === "image/jpeg" && jpeg || type === "image/png" && png)) {
+    throw new Error("FACEBOOK_IMAGE_INVALID: ملف الصورة غير صالح؛ أعد رفع صورة JPEG أو PNG");
+  }
+  return new Blob([bytes], { type });
 }
 
 export async function publishGraphPost(input: { pageId: string; content: string; imageUrl?: string }, dryRun: boolean) {
@@ -80,15 +101,20 @@ export async function publishGraphPost(input: { pageId: string; content: string;
   }
   // Invalid media must not consume publish retries. Text-only fallback is opt-in.
   let imageUrl = input.imageUrl;
+  let image: Blob | undefined;
   if (imageUrl) {
-    try { await validateFacebookImage(imageUrl); }
+    try { image = await validateFacebookImage(imageUrl); }
     catch (error) {
       if (process.env.FACEBOOK_ALLOW_TEXT_FALLBACK === "true") imageUrl = undefined;
       else throw error;
     }
   }
-  const params = new URLSearchParams({ access_token: token });
-  if (imageUrl) { params.set("url", imageUrl); params.set("caption", input.content); } else params.set("message", input.content);
+  const params = image ? new FormData() : new URLSearchParams();
+  params.set("access_token", token);
+  if (image && params instanceof FormData) {
+    params.set("source", image, image.type === "image/png" ? "image.png" : "image.jpg");
+    params.set("caption", input.content);
+  } else params.set("message", input.content);
   let result: Awaited<ReturnType<typeof graph>>;
   try {
     result = await graph(`/${input.pageId}/${imageUrl ? "photos" : "feed"}`, { method: "POST", body: params });
