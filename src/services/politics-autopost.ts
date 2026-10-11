@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, settings } from "@/db/schema";
 import { logAudit } from "./audit";
 import { rankRadar } from "./tech-radar-ranking";
-import { editorialPoliticsPost, eligiblePoliticsArticle, politicsRisk } from "./politics-editorial";
+import { editorialPoliticsPost, eligiblePoliticsArticle, isYemenNews, politicsRisk } from "./politics-editorial";
 import { readPoliticsFeeds } from "./politics-radar";
 
 /** Only stories this fresh are auto-posted, so a restart never floods the page with old news. */
@@ -46,7 +46,8 @@ export async function enqueuePoliticsNews(now = new Date()) {
   const feeds = await readPoliticsFeeds();
   const candidates = rankRadar(feeds.flatMap((f) => f.items), now, eligiblePoliticsArticle)
     .filter((g) => politicsRisk(g.title) === "normal" && now.getTime() - g.articles[0].publishedAt.getTime() <= MAX_AGE_MS)
-    .sort((a, b) => b.articles[0].publishedAt.getTime() - a.articles[0].publishedAt.getTime());
+    // Yemeni news first, then newest.
+    .sort((a, b) => Number(isYemenNews(b.title)) - Number(isYemenNews(a.title)) || b.articles[0].publishedAt.getTime() - a.articles[0].publishedAt.getTime());
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
   let created = 0;
   for (const group of candidates) {

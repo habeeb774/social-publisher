@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { editorialPoliticsPost, eligiblePoliticsArticle, extractPoliticsCard, politicsRisk } from "../src/services/politics-editorial";
+import { editorialPoliticsPost, eligiblePoliticsArticle, extractPoliticsCard, isYemenNews, politicsRisk } from "../src/services/politics-editorial";
 import { rankRadar } from "../src/services/tech-radar-ranking";
 
 const a = (title: string) => ({ title, url: "https://example.com/n", source: "BBC عربي" });
@@ -20,6 +20,15 @@ test("marks violent news as sensitive and keeps the draft neutral", () => {
   assert.match(post, /دون تبنٍّ لأي موقف/);
   assert.doesNotMatch(post, /شارك|🔥/);
   assert.throws(() => editorialPoliticsPost(a("صور مروعة لجثث")));
+});
+test("recognises Yemeni news without matching words that merely contain a city name", () => {
+  assert.equal(isYemenNews("الحوثيون يعلنون استهداف سفينة في البحر الأحمر"), true);
+  assert.equal(isYemenNews("انقطاع الكهرباء في عدن"), true);
+  assert.equal(isYemenNews("Houthis claim new attack"), true);
+  assert.equal(isYemenNews("أسعار المعادن ترتفع"), false);
+  assert.equal(isYemenNews("إبراهيم يفوز بالبطولة"), false);
+  assert.equal(eligiblePoliticsArticle(a("انقطاع الكهرباء في عدن")), true);
+  assert.equal(politicsRisk("هجوم الحوثيين على مطار الملك خالد بالرياض يودي بحياة أردني ويصيب 4 آخرين"), "sensitive");
 });
 test("image card reads the headline and source back from the post", () => {
   assert.deepEqual(extractPoliticsCard(editorialPoliticsPost(a("قمة خليجية في الرياض"))), { title: "قمة خليجية في الرياض", source: "BBC عربي" });

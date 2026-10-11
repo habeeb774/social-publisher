@@ -2,19 +2,20 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppShell } from "../ui/app-shell";
 import { politicsRadarSnapshot } from "@/services/politics-radar";
-import { editorialPoliticsPost, politicsRisk } from "@/services/politics-editorial";
+import { editorialPoliticsPost, isYemenNews, politicsRisk } from "@/services/politics-editorial";
 import { pageSession } from "@/services/session-server";
 import { filterRadarGroups, normalizeRadarFilters, radarLanguage, type RadarFilters } from "@/services/tech-radar-filters";
 import styles from "../tech-radar/radar.module.css";
 
 export const dynamic = "force-dynamic";
-export default async function PoliticsRadar({ searchParams }: { searchParams: Promise<RadarFilters & { risk?: string }> }) {
+export default async function PoliticsRadar({ searchParams }: { searchParams: Promise<RadarFilters & { risk?: string; region?: string }> }) {
   if (!await pageSession()) redirect("/login");
   const snapshot = await politicsRadarSnapshot();
   const params = await searchParams;
   const filters = normalizeRadarFilters({ ...params, topic: "" });
   const risk = params.risk === "normal" ? "normal" : "";
-  const groups = filterRadarGroups(snapshot.groups, filters).filter((g) => !risk || politicsRisk(g.title) === risk);
+  const region = params.region === "yemen" ? "yemen" : "";
+  const groups = filterRadarGroups(snapshot.groups, filters).filter((g) => (!risk || politicsRisk(g.title) === risk) && (!region || isYemenNews(g.title)));
   const unavailable = snapshot.feeds.filter((f) => !f.available);
   return <AppShell title="رادار الأخبار السياسية">
     <div className="page-intro"><div><h2>رادار الأخبار السياسية</h2><p>أخبار سياسية من مؤسسات إخبارية معروفة خلال آخر 48 ساعة، مرتبة بحسب الحداثة وتعدد المصادر. لا يوجد نشر تلقائي: كل خبر يمر بمراجعتك قبل النشر.</p></div></div>
@@ -27,10 +28,11 @@ export default async function PoliticsRadar({ searchParams }: { searchParams: Pr
       <li>الإعلانات الممولة لمحتوى سياسي تتطلب توثيق «الإعلانات السياسية» في Meta؛ لا تروّج هذه المنشورات قبله.</li>
     </ul></details>
     <p>آخر جلب: {new Date(snapshot.capturedAt).toLocaleString("ar-SA", { timeZone: "Asia/Riyadh" })} · تُجدّد البيانات بعد 30 دقيقة.</p>
-    <div className={styles.stats}><div><strong>{snapshot.groups.length}</strong>مواضيع مرصودة</div><div><strong>{snapshot.groups.filter((g) => politicsRisk(g.title) === "sensitive").length}</strong>أخبار حساسة</div><div><strong>{snapshot.feeds.length - unavailable.length}/{snapshot.feeds.length}</strong>مصادر متصلة</div><div><strong>{groups.length}</strong>نتائج الفلاتر</div></div>
+    <div className={styles.stats} style={{ gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))" }}><div><strong>{snapshot.groups.length}</strong>مواضيع مرصودة</div><div><strong>{snapshot.groups.filter((g) => isYemenNews(g.title)).length}</strong>أخبار اليمن</div><div><strong>{snapshot.groups.filter((g) => politicsRisk(g.title) === "sensitive").length}</strong>أخبار حساسة</div><div><strong>{snapshot.feeds.length - unavailable.length}/{snapshot.feeds.length}</strong>مصادر متصلة</div><div><strong>{groups.length}</strong>نتائج الفلاتر</div></div>
     {unavailable.length > 0 && <p role="status">النتائج جزئية: تعذر الاتصال بـ {unavailable.map((f) => f.source).join("، ")}.</p>}
     <form action="/politics-radar" className={styles.filters}>
       <label>بحث<input type="search" name="q" defaultValue={filters.q} maxLength={120} placeholder="قمة، مفاوضات…" /></label>
+      <label>المنطقة<select name="region" defaultValue={region}><option value="">كل الأخبار</option><option value="yemen">اليمن فقط</option></select></label>
       <label>الحساسية<select name="risk" defaultValue={risk}><option value="">الكل</option><option value="normal">غير الحساسة فقط</option></select></label>
       <label>اللغة<select name="language" defaultValue={filters.language}><option value="">العربية والإنجليزية</option><option value="ar">عربي</option><option value="en">إنجليزي</option></select></label>
       <label>عمر الخبر<select name="hours" defaultValue={filters.hours}>{[6, 12, 24, 48].map((h) => <option key={h} value={h}>آخر {h} ساعة</option>)}</select></label>
@@ -43,7 +45,7 @@ export default async function PoliticsRadar({ searchParams }: { searchParams: Pr
     <div className={styles.grid}>{groups.map((group) => {
       const sensitive = politicsRisk(group.title) === "sensitive";
       return <section key={group.articles[0].url} className={styles.card}>
-        <div className={styles.badges}><span>{sensitive ? "⚠️ حساس" : "سياسة"}</span><span>{radarLanguage(group.title) === "ar" ? "عربي" : "إنجليزي"}</span><span>{group.sourceCount > 1 ? "تغطية متعددة" : "مصدر واحد"}</span></div>
+        <div className={styles.badges}><span>{sensitive ? "⚠️ حساس" : "سياسة"}</span>{isYemenNews(group.title) && <span>🇾🇪 اليمن</span>}<span>{radarLanguage(group.title) === "ar" ? "عربي" : "إنجليزي"}</span><span>{group.sourceCount > 1 ? "تغطية متعددة" : "مصدر واحد"}</span></div>
         <h3 dir="auto">{group.title}</h3>
         <p>درجة أولوية: {group.score}/100 · {group.sourceCount} مواقع مصادر · {group.articles.length} أخبار متشابهة</p>
         {sensitive && <p role="note"><small>خبر حساس: تأكد من الصياغة المحايدة ولا ترفق صورًا أو مقاطع عنيفة.</small></p>}

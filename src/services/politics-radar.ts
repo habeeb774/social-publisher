@@ -12,12 +12,16 @@ const FEEDS = [
   { name: "الشرق الأوسط", url: "https://aawsat.com/feed", topic: "سياسة" },
   { name: "BBC World", url: "https://feeds.bbci.co.uk/news/world/rss.xml", topic: "سياسة" },
   { name: "Al Jazeera English", url: "https://www.aljazeera.com/xml/rss/all.xml", topic: "سياسة" },
+  { name: "الجزيرة نت", url: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9", topic: "سياسة" },
+  { name: "سكاي نيوز عربية", url: "https://www.skynewsarabia.com/rss.xml", topic: "سياسة" },
+  // Yemeni outlet, for closer coverage of Yemen.
+  { name: "يمن مونيتور", url: "https://yemenmonitor.com/feed", topic: "اليمن" },
 ];
 
 export async function readPoliticsFeeds() {
   return Promise.all(FEEDS.map(async (source) => {
     try {
-      const response = await fetch(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store" });
+      const response = await fetch(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; NewsReader/1.0)" } });
       if (!response.ok) throw new Error("FEED_UNAVAILABLE");
       return { source: source.name, available: true, items: parseFeed(await response.text(), source) };
     } catch {
