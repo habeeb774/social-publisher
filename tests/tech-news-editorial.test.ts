@@ -20,7 +20,7 @@ test("English technology news is accepted and keeps the original factual headlin
 test("Arabic work-tool news retains its factual headline and source without filler or invented benefits", () => {
   const item = article("مايكروسوفت تطلق تحديثًا لأدوات الإنتاجية");
   const text = editorialTechPost(item);
-  assert.match(text, /ما الذي يتغيّر في أدوات عملك/);
+  assert.match(text, /هل سمعت بهذا الخبر/);
   assert.ok(text.includes(item.title) && text.includes(item.url));
   assert.doesNotMatch(text, /ضمن أبرز المستجدات|وفّر|ضاعف/);
   assert.match(editorialTechPost(article("تسريب بيانات في تطبيقات العمل")), /انتبه لهذا الخبر/);

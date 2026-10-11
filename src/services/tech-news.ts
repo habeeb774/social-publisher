@@ -17,6 +17,10 @@ const FEEDS: FeedSource[] = [
   { name: "WIRED AI", url: "https://www.wired.com/feed/tag/ai/latest/rss", topic: "ذكاء اصطناعي" },
   { name: "WIRED Security", url: "https://www.wired.com/feed/category/security/latest/rss", topic: "أمن سيبراني" },
   { name: "Ars Technica", url: "https://feeds.arstechnica.com/arstechnica/index", topic: "تقنية" },
+  { name: "عالم التقنية", url: "https://www.tech-wd.com/wd/feed/", topic: "تقنية" },
+  { name: "عرب هاردوير", url: "https://arabhardware.net/feed", topic: "أجهزة" },
+  { name: "TechCrunch", url: "https://techcrunch.com/feed/", topic: "شركات التقنية" },
+  { name: "The Verge", url: "https://www.theverge.com/rss/index.xml", topic: "تقنية" },
 ];
 
 function decodeXml(value: string) {

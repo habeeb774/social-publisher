@@ -4,6 +4,7 @@ const examples = [
   ["en", "AI coding agents generate more code, but not more software", "Ars Technica"],
   ["ar", "مايكروسوفت تطلق تحديثًا جديدًا لأدوات الإنتاجية وإدارة المهام", "البوابة العربية للأخبار التقنية"],
   ["mixed", "مايكروسوفت تطلق Microsoft 365 لتحسين أدوات العمل", "البوابة العربية للأخبار التقنية"],
+  ["bug", "وكلاء Claude يتجاوزون الضوابط.. بلاغ كاذب و20 طلب تأشيرة يثيران تحركًا أمريكيًا", "البوابة العربية للأخبار التقنية"],
 ];
 await mkdir(".tmp/card-check",{recursive:true});
 for (const [name,title,source] of examples) {

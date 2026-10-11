@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { extractTechNewsCard, cardTextRows } from "../src/services/tech-news-card-text";
 test("uses the source headline, not current or legacy hooks", () => {
-  for (const hook of ["⚙️ ما الذي يتغيّر في أدوات عملك؟", "🔐 تستخدم هذه الأدوات في عملك؟ انتبه لهذا الخبر.", "📡 آخر أخبار التكنولوجيا"]) {
+  for (const hook of ["💡 هل سمعت بهذا الخبر؟", "⚙️ ما الذي يتغيّر في أدوات عملك؟", "🔐 تستخدم هذه الأدوات في عملك؟ انتبه لهذا الخبر.", "📡 آخر أخبار التكنولوجيا"]) {
     assert.equal(extractTechNewsCard(`${hook}\n\nAI coding agents generate more code, but not more software\n\n🔗 التفاصيل من المصدر: https://example.test\nالمصدر: Ars Technica\n#تقنية`).title, "AI coding agents generate more code, but not more software");
   }
 });

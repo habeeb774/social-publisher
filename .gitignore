@@ -9,3 +9,5 @@ drizzle/meta
 .vercel
 *.tsbuildinfo
 .tmp/card-check/
+.env*
+CRON_SECRET.local.txt

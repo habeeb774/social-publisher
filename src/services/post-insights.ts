@@ -24,6 +24,7 @@ async function pageToken(pageId: string) {
   // A token saved for this page (added from the accounts screen) wins over the global one.
   const stored = await storedPageToken(pageId);
   if (stored) return stored;
+  if (!isGraphConfigured()) return null;
   const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
   const lookup = await getJson(`${base()}/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`);
   return lookup.ok && typeof lookup.body.access_token === "string" ? lookup.body.access_token as string : token;
@@ -31,9 +32,11 @@ async function pageToken(pageId: string) {
 
 export async function getPostPerformance(facebookPostId: string, facebookPageId: string): Promise<PostPerformance> {
   const fetchedAt = new Date().toISOString();
-  if (!isGraphConfigured()) return { available: false, reason: "توكن Facebook غير مُعد", metrics: [], fetchedAt };
   try {
-    const token = encodeURIComponent(await pageToken(facebookPageId));
+    // Pages connected through OAuth carry their own token; the global one is only a fallback.
+    const resolved = await pageToken(facebookPageId);
+    if (!resolved) return { available: false, reason: "توكن Facebook غير مُعد", metrics: [], fetchedAt };
+    const token = encodeURIComponent(resolved);
     const metrics: PostPerformance["metrics"] = [];
     const counts = await getJson(`${base()}/${facebookPostId}?fields=shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)&access_token=${token}`);
     if (counts.ok) {
