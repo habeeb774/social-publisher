@@ -85,6 +85,21 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   }, [body, isDraft, editable, post, pageId]);
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
 
+  // A saved post can still move to another page while it is a draft; the server clears scheduling state.
+  const pageChangeable = !post || post.status === "draft";
+  async function changePage(next: string) {
+    if (!post) { setPageId(next); return; }
+    if (busy.current || next === pageId) return;
+    busy.current = true;
+    try {
+      const result = await api<{ changed: string[]; skipped: Array<{ reason: string }>; versions: Record<string, string> }>("/api/posts/bulk", { method: "POST", body: { ids: [post.id], action: "change_page", value: next } });
+      if (!result.changed.includes(post.id)) throw new Error(result.skipped[0]?.reason ?? "تعذر تغيير الصفحة");
+      setPageId(next); setPost({ ...post, status: "draft", updatedAt: result.versions[post.id] }); setError("");
+      toast("تم تغيير الصفحة");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر تغيير الصفحة"); }
+    finally { busy.current = false; }
+  }
+
   const scheduledIso = () => date && time ? riyadhInputToIso(`${date}T${time}`) : undefined;
 
   async function save(intent: Intent) {
@@ -153,15 +168,15 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
               </label>
               <label>الصفحة / القناة
                 <select aria-label="الصفحة" value={pageId} onChange={(e) => {
-                  setPageId(e.target.value);
                   const selected = pages.find((p) => p.id === e.target.value);
                   if (selected?.accountId) setAccountId(selected.accountId);
-                }} disabled={Boolean(post)}>
+                  void changePage(e.target.value);
+                }} disabled={!pageChangeable}>
                   {visiblePages.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.platform === "instagram" ? "Instagram" : "Facebook"}</option>)}
                 </select>
               </label>
             </div>}
-            {!showAccountSelect && <select aria-label="الصفحة" value={pageId} onChange={(e) => setPageId(e.target.value)} disabled={Boolean(post)}>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}{p.accountName ? ` · ${p.accountName}` : ""}</option>)}</select>}
+            {!showAccountSelect && <select aria-label="الصفحة" value={pageId} onChange={(e) => void changePage(e.target.value)} disabled={!pageChangeable}>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}{p.accountName ? ` · ${p.accountName}` : ""}</option>)}</select>}
             {page?.accountName && <small>حساب Meta: <b>{page.accountName}</b> · {page.platform === "instagram" ? "Instagram" : "Facebook"}</small>}
             {!pages.length && <small className="danger">لا توجد صفحة متصلة. <Link href="/pages">أضف حساب Meta أو اربط صفحة</Link></small>}
           </section>

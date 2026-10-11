@@ -72,6 +72,7 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
   const permission = workspace ? workspacePostPermissionPredicate(workspace, bulkPostPermissions(action)) : undefined;
   const rows = await db.select().from(posts).where(and(inArray(posts.id, ids), isNull(posts.deletedAt), permission));
   const changed: string[] = [];
+  const versions: Record<string, string> = {};
   const skipped: Array<{ id: string; reason: string }> = [];
   const now = Date.now();
   for (const post of rows) {
@@ -104,13 +105,13 @@ export async function bulkAction(ids: string[], action: BulkAction, value?: stri
     } else if (action === "assign_campaign") {
       result = await db.update(posts).set({ campaignId: value || null, updatedAt: new Date() }).where(guard([post.status])).returning();
     }
-    if (result.length) changed.push(post.id); else skipped.push({ id: post.id, reason: "الحالة الحالية لا تسمح بهذا الإجراء" });
+    if (result.length) { changed.push(post.id); versions[post.id] = new Date(result[0].updatedAt).toISOString(); } else skipped.push({ id: post.id, reason: "الحالة الحالية لا تسمح بهذا الإجراء" });
   }
   for (const id of ids) if (!rows.some((row) => row.id === id)) skipped.push({ id, reason: "غير موجود" });
   // Keep remaining tenant slots unchanged until queue configuration is workspace-owned.
   if (!workspace && (action === "to_draft" || action === "unschedule" || action === "archive")) await recomputeQueue();
   await logAudit(`post.bulk.${action}`, "post", null, { changed, skipped: skipped.length, value: value ?? null });
-  return { changed, skipped };
+  return { changed, skipped, versions };
 }
 
 export async function submitForApproval(id: string, workspace?: WorkspaceContext) {
