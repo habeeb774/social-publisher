@@ -16,7 +16,7 @@ const SPACING_MS = 10 * 60000;
 function articleHash(url: string) { return createHash("sha256").update(url).digest("hex").slice(0, 20); }
 
 /** Set POLITICS_FACEBOOK_PAGE_ID to the page's Facebook ID; until then the page is found by its current name. */
-async function targetPage() {
+export async function politicsTargetPage() {
   const pageId = process.env.POLITICS_FACEBOOK_PAGE_ID?.trim();
   // The page name may be stored with or without Arabic diacritics.
   const where = pageId ? eq(facebookPages.facebookPageId, pageId) : or(ilike(facebookPages.name, "%رَصْدُوق%"), ilike(facebookPages.name, "%رصدوق%"), ilike(facebookPages.name, "%منوع%"));
@@ -37,7 +37,7 @@ export async function enqueuePoliticsNews(now = new Date()) {
   const claim = await db.insert(settings).values({ key: claimKey, value: JSON.stringify({ claimedAt: now.toISOString() }) }).onConflictDoNothing().returning({ key: settings.key });
   if (!claim.length) return { created: 0, reason: "HOUR_ALREADY_CLAIMED" as const };
 
-  const page = await targetPage();
+  const page = await politicsTargetPage();
   if (!page) {
     await logAudit("politics_news.skipped", "post", null, { reason: "POLITICS_PAGE_UNAVAILABLE" });
     return { created: 0, reason: "POLITICS_PAGE_UNAVAILABLE" as const };

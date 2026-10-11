@@ -15,6 +15,7 @@ import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
 import { enqueuePoliticsNews } from "@/services/politics-autopost";
+import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -150,6 +151,12 @@ async function run(request: Request) {
       if (techNews.created) console.info("Hourly technology news queued", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
       console.error("Hourly technology news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const seeded = await seedRasdooqMessengerRules();
+      if (seeded.seeded) console.info("Rasdooq Messenger rules added", seeded);
+    } catch (error) {
+      console.error("Rasdooq Messenger rules failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
       const politicsNews = await enqueuePoliticsNews(startedAt);
