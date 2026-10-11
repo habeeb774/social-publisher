@@ -11,12 +11,13 @@ function similar(a: string, b: string) {
   const common = [...left].filter((word) => right.has(word)).length;
   return common >= 3 && common / (left.size + right.size - common) >= 0.5;
 }
-export function rankTechRadar(items: RadarArticle[], now = new Date()) {
+export function rankTechRadar(items: RadarArticle[], now = new Date()) { return rankRadar(items, now, eligibleTechArticle); }
+export function rankRadar(items: RadarArticle[], now: Date, eligible: (item: RadarArticle) => boolean) {
   const groups: { title: string; articles: RadarArticle[]; score: number; sourceCount: number }[] = [];
   const seen = new Set<string>();
   for (const item of [...items].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())) {
     const age = now.getTime() - item.publishedAt.getTime();
-    if (!eligibleTechArticle(item) || !Number.isFinite(age) || age < -600000 || age > 48 * 3600000) continue;
+    if (!eligible(item) || !Number.isFinite(age) || age < -600000 || age > 48 * 3600000) continue;
     let url: URL;
     try { url = new URL(item.url); } catch { continue; }
     if (url.protocol !== "https:") continue;

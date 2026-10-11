@@ -14,6 +14,7 @@ import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
+import { enqueuePoliticsNews } from "@/services/politics-autopost";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -149,6 +150,12 @@ async function run(request: Request) {
       if (techNews.created) console.info("Hourly technology news queued", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
       console.error("Hourly technology news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const politicsNews = await enqueuePoliticsNews(startedAt);
+      if (politicsNews.created) console.info("Politics news queued", { postId: politicsNews.postId, source: politicsNews.source });
+    } catch (error) {
+      console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const results = await publishDuePosts();
     const finishedAt = new Date();
