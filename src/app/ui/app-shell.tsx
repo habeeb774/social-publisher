@@ -20,7 +20,7 @@ export const NAV: NavGroup[] = [
     { icon: "review", label: "المراجعة", href: "/reviews", badge: "reviews" }, { icon: "failed", label: "المتعثرة", href: "/failed", badge: "failed" },
   ] },
   { key: "calendar", title: "التقويم", links: [{ icon: "calendar", label: "التقويم", href: "/calendar" }] },
-  { key: "tech-radar", title: "رادار التقنية", links: [{ icon: "analytics", label: "رادار التقنية", href: "/tech-radar" }, { icon: "analytics", label: "رادار السياسة", href: "/politics-radar" }] },
+  { key: "tech-radar", title: "الرادارات", links: [{ icon: "analytics", label: "رادار التقنية", href: "/tech-radar" }, { icon: "analytics", label: "رادار السياسة", href: "/politics-radar" }] },
   { key: "library", title: "المكتبة", links: [
     { icon: "library", label: "المكتبة", href: "/library" }, { icon: "media", label: "الوسائط", href: "/media" },
     { icon: "template", label: "القوالب", href: "/templates" }, { icon: "campaign", label: "الحملات", href: "/campaigns" },
@@ -78,7 +78,7 @@ function sectionOf(pathname: string, groups: NavGroup[]) {
 function SideNav({ pathname, counts, onNavigate, commentsOnly = false }: { pathname: string; counts: Record<string, number>; onNavigate?: () => void; commentsOnly?: boolean }) {
   const groups = commentsOnly ? COMMENT_NAV : NAV;
   const current = sectionOf(pathname, groups);
-  const items = commentsOnly ? groups[0].links.map((l) => ({ key: l.href, link: l, badges: l.badge ? [l.badge] : [] })) : groups.map((g) => ({ key: g.key, link: g.links[0], badges: g.links.flatMap((l) => l.badge ? [l.badge] : []) }));
+  const items = commentsOnly ? groups[0].links.map((l) => ({ key: l.href, link: l, badges: l.badge ? [l.badge] : [] })) : groups.map((g) => ({ key: g.key, link: { ...g.links[0], label: g.title }, badges: g.links.flatMap((l) => l.badge ? [l.badge] : []) }));
   const main = items.filter((i) => i.key !== "system"), bottom = items.filter((i) => i.key === "system");
   const row = ({ key, link, badges }: typeof items[number]) => {
     const active = commentsOnly ? isActive(pathname, link.href) : current?.key === key;
