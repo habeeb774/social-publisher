@@ -13,6 +13,8 @@ test("blocks headlines that risk Facebook enforcement", () => {
 });
 test("marks violent news as sensitive and keeps the draft neutral", () => {
   assert.equal(politicsRisk("مقتل خمسة في غارة"), "sensitive");
+  assert.equal(politicsRisk("Trump calls for Ukraine election, says Zelenskyy failed to end war"), "normal");
+  assert.equal(eligiblePoliticsArticle(a("«آقورديانو» يتوّج بالكأس الملكي السعودي")), false);
   assert.equal(politicsRisk("قمة خليجية في الدوحة"), "normal");
   const post = editorialPoliticsPost(a("مقتل خمسة في غارة على الحدود"));
   assert.match(post, /دون تبنٍّ لأي موقف/);

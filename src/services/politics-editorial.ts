@@ -8,8 +8,9 @@ type Article = { title: string; url: string; source: string };
  * warning and drafted in a strictly neutral, attributed format.
  */
 const blocked = /أشلاء|جثث|جثة|مقطع مروع|صور مروعة|ذبح|قطع رأس|إعدام ميداني|تمثيل بالجث|بايعوا|مبايعة|شائعة|شائعات|غير مؤكد|لم يتسن التحقق|فيديو مسرب|تسريب صوتي|كفار|روافض|نواصب|صهاينة الخنازير|\b(?:graphic|gore|beheading|beheaded|corpses?|mutilat\w*|unverified|rumou?rs?|leaked video|sponsored|promo codes?)\b/i;
-const sensitive = /قتلى|قتيل|شهداء|شهيد|مقتل|جرحى|قصف|غارة|غارات|انفجار|تفجير|هجوم|اشتباكات|حرب|إرهاب|اغتيال|رهائن|أسرى|مجزرة|اعتقال|\b(?:killed|dead|deaths?|casualties|wounded|strikes?|airstrikes?|bomb\w*|explosion|attack\w*|clashes|war|terror\w*|assassinat\w*|hostages?|massacre|arrest\w*)\b/i;
-const political = /رئيس|الرئيس|وزير|وزارة|حكومة|الحكومة|برلمان|مجلس|انتخابات|قمة|مفاوضات|اتفاق|اتفاقية|هدنة|وقف إطلاق|عقوبات|سفير|دبلوماسي|الأمم المتحدة|مجلس الأمن|جامعة الدول|الخليج|ولي العهد|الملك|أمير|زيارة رسمية|محادثات|البيت الأبيض|الكرملين|الاتحاد الأوروبي|الناتو|حرب|غارة|قصف|هجوم|اشتباكات|مقتل|\b(?:president|minister|government|parliament|election\w*|summit|talks|negotiat\w*|agreement|deal|ceasefire|truce|sanctions?|ambassador|diplomat\w*|United Nations|UN|Security Council|NATO|EU|White House|Kremlin|Congress|Senate|prime minister|foreign policy|war|strikes?|attack\w*|killed)\b/i;
+// Only casualty reports are held back from auto-posting; neutral war/politics headlines are allowed.
+const sensitive = /قتلى|قتيل|شهداء|شهيد|مقتل|جرحى|مصابين|إصابة \d|حصيلة|مجزرة|رهائن|\b(?:killed|dead|deaths?|death toll|casualties|wounded|injured|massacre|hostages?)\b/i;
+const political = /رئيس|الرئيس|وزير|وزارة|حكومة|الحكومة|برلمان|مجلس|انتخابات|قمة|مفاوضات|اتفاق|اتفاقية|هدنة|وقف إطلاق|عقوبات|سفير|دبلوماسي|الأمم المتحدة|مجلس الأمن|جامعة الدول|الخليج|ولي العهد|الملك سلمان|خادم الحرمين|أمير|زيارة رسمية|محادثات|البيت الأبيض|الكرملين|الاتحاد الأوروبي|الناتو|حرب|غارة|قصف|هجوم|اشتباكات|مقتل|\b(?:president|minister|government|parliament|election\w*|summit|talks|negotiat\w*|agreement|deal|ceasefire|truce|sanctions?|ambassador|diplomat\w*|United Nations|UN|Security Council|NATO|EU|White House|Kremlin|Congress|Senate|prime minister|foreign policy|war|strikes?|attack\w*|killed)\b/i;
 
 export type PoliticsRisk = "normal" | "sensitive";
 
