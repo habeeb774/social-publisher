@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { facebookPages, posts, settings } from "@/db/schema";
+import { facebookPages, postMedia, posts, settings } from "@/db/schema";
 import { logAudit } from "./audit";
 import { rankRadar } from "./tech-radar-ranking";
 import { editorialPoliticsPost, eligiblePoliticsArticle, politicsRisk } from "./politics-editorial";
@@ -51,6 +51,8 @@ export async function enqueuePoliticsNews(now = new Date()) {
     return { created: false, reason: "POLITICS_PAGE_UNAVAILABLE" as const };
   }
   const [post] = await db.insert(posts).values({ pageId: page.id, content: editorialPoliticsPost(selected), scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: "أخبار", tags: ["سياسة", "أخبار", `source:${selected.source}`] }).returning({ id: posts.id });
+  const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
+  await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/politics-news-image/${post.id}`, mimeType: "image/png" });
   await logAudit("politics_news.enqueued", "post", post.id, { pageId: page.facebookPageId, source: selected.source, sourceUrl: selected.url });
   return { created: true, postId: post.id, source: selected.source, title: selected.title };
 }

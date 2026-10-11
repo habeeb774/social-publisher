@@ -19,6 +19,13 @@ export function eligiblePoliticsArticle(article: Article) {
 }
 export function politicsRisk(title: string): PoliticsRisk { return sensitive.test(title) ? "sensitive" : "normal"; }
 
+export function extractPoliticsCard(content: string) {
+  const lines = content.split("\n").map((line) => line.trim());
+  const title = (lines.find((line) => line.startsWith("📰")) ?? "📰 أخبار").replace(/^📰\s*/, "");
+  const source = (lines.find((line) => line.startsWith("المصدر:")) ?? "المصدر: أخبار").slice("المصدر:".length).trim();
+  return { title: title.length > 180 ? `${title.slice(0, 177).trimEnd()}…` : title, source: source.slice(0, 80) };
+}
+
 /** Neutral, attributed text only: no opinion, no emoji hype, no "share if you agree" bait, no source images. */
 export function editorialPoliticsPost(article: Article) {
   if (!eligiblePoliticsArticle(article)) throw new Error("POLITICS_EDITORIAL_REJECTED");

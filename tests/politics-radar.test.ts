@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { editorialPoliticsPost, eligiblePoliticsArticle, politicsRisk } from "../src/services/politics-editorial";
+import { editorialPoliticsPost, eligiblePoliticsArticle, extractPoliticsCard, politicsRisk } from "../src/services/politics-editorial";
 import { rankRadar } from "../src/services/tech-radar-ranking";
 
 const a = (title: string) => ({ title, url: "https://example.com/n", source: "BBC عربي" });
@@ -18,6 +18,9 @@ test("marks violent news as sensitive and keeps the draft neutral", () => {
   assert.match(post, /دون تبنٍّ لأي موقف/);
   assert.doesNotMatch(post, /شارك|🔥/);
   assert.throws(() => editorialPoliticsPost(a("صور مروعة لجثث")));
+});
+test("image card reads the headline and source back from the post", () => {
+  assert.deepEqual(extractPoliticsCard(editorialPoliticsPost(a("قمة خليجية في الرياض"))), { title: "قمة خليجية في الرياض", source: "BBC عربي" });
 });
 test("radar ranking uses the supplied eligibility rule", () => {
   const now = new Date("2026-10-10T09:00:00Z");
