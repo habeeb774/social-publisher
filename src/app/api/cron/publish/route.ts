@@ -153,7 +153,7 @@ async function run(request: Request) {
     }
     try {
       const politicsNews = await enqueuePoliticsNews(startedAt);
-      if (politicsNews.created) console.info("Politics news queued", { postId: politicsNews.postId, source: politicsNews.source });
+      if (politicsNews.created) console.info("Politics news scheduled", { count: politicsNews.created });
     } catch (error) {
       console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
     }
