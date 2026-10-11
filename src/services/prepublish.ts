@@ -25,12 +25,14 @@ export async function nearbyScheduled(at: Date, excludeId?: string, workspace?:W
 export async function prePublishChecks(input: { pageId: string; content: string; scheduledAt?: Date | null; imageUrl?: string | null; postId?: string; workspace?:WorkspaceContext }): Promise<{ items: CheckItem[]; blocking: boolean }> {
   const db = getDb();
   const items: CheckItem[] = [];
-  const [page] = await db.select({ isActive: facebookPages.isActive, name: facebookPages.name, accessTokenEnc: facebookPages.accessTokenEnc }).from(facebookPages).where(eq(facebookPages.id, input.pageId)).limit(1);
+  const [page] = await db.select({ isActive: facebookPages.isActive, name: facebookPages.name, accessTokenEnc: facebookPages.accessTokenEnc, platform: facebookPages.platform }).from(facebookPages).where(eq(facebookPages.id, input.pageId)).limit(1);
   items.push({ key: "page", label: "الصفحة متصلة", ok: Boolean(page?.isActive), critical: true, detail: page ? page.name : "الصفحة غير موجودة" });
   const text = input.content.trim();
   items.push({ key: "content", label: "النص صالح", ok: text.length > 0 && text.length <= 63206, critical: true, detail: text.length ? `${text.length} حرفًا` : "النص فارغ" });
   const future = Boolean(input.scheduledAt && input.scheduledAt.getTime() > Date.now() + 60000);
   items.push({ key: "time", label: "الوقت صالح", ok: future, critical: true, detail: input.scheduledAt ? (future ? undefined : "الموعد في الماضي أو خلال أقل من دقيقة") : "لم يُحدد موعد" });
+  // Instagram has no text-only posts; catch it here instead of at publish time.
+  if (page?.platform === "instagram") items.push({ key: "instagram_image", label: "صورة إنستجرام", ok: Boolean(input.imageUrl), critical: true, detail: input.imageUrl ? undefined : "إنستجرام لا يقبل منشورًا بدون صورة — أضف صورة" });
   if (input.imageUrl) {
     const probe = await probeImageUrl(input.imageUrl);
     items.push({ key: "image", label: "الصورة متاحة", ok: probe.ok, critical: true, detail: probe.ok ? probe.mimeType : probe.reason });
