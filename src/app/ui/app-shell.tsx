@@ -124,11 +124,14 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
   const paletteRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => afterRender(() => { const t = readTheme(); setTheme(t); setRootData("theme", t); }), []);
+  // Publishing status is shown on every page, including the comments-only screens.
+  useEffect(() => {
+    fetch("/api/health").then((r) => r.json()).then((d) => setLive(typeof d.publishingEnabled === "boolean" ? d.publishingEnabled : null)).catch(() => setLive(null));
+  }, []);
   useEffect(() => {
     if (commentsOnly) return;
     const load = () => fetch("/api/notifications").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setAlerts(d); }).catch(() => {});
     load(); const timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
-    fetch("/api/health").then((r) => r.json()).then((d) => setLive(Boolean(d.publishingEnabled))).catch(() => setLive(null));
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d) { setMe(d.user); setCounts(d.counts ?? {}); } }).catch(() => {});
     return () => clearInterval(timer);
   }, [commentsOnly]);
@@ -189,7 +192,7 @@ export function AppShell({ children, title, parent, commentsOnly = false }: { ch
           <div className="search-wrap"><button className="search-trigger" onClick={openPalette} aria-label="بحث شامل (Ctrl+K)"><Icon name="search" width={16} />ابحث أو نفّذ أمرًا<kbd>Ctrl K</kbd></button></div>
           <button className="top-icon mobile-only" aria-label="بحث" onClick={openPalette}><Icon name="search" /></button>
           <Link className="btn btn-primary btn-sm top-create" href="/posts/new"><Icon name="plus" width={15} />منشور جديد</Link>
-          <span className={`safe-indicator ${live ? "live" : "test"}`} tabIndex={0} data-tooltip={live ? "النشر الحقيقي مفعّل: المنشورات المجدولة تُنشر على صفحتك." : "النشر الحقيقي غير مفعّل: لا يُنشر أي محتوى فعليًا."}><i className="dot" /><span>{live === null ? "…" : live ? "النشر مفعّل" : "وضع الاختبار"}</span></span>
+          <span className={`safe-indicator ${live ? "live" : "test"}`} tabIndex={0} data-tooltip={live === null ? "جارٍ التحقق من حالة النشر…" : live ? "النشر الحقيقي مفعّل: المنشورات المجدولة تُنشر على صفحتك." : "النشر الحقيقي غير مفعّل: لا يُنشر أي محتوى فعليًا."}><i className="dot" /><span>{live === null ? "…" : live ? "النشر مفعّل" : "وضع الاختبار"}</span></span>
           <div className="notification-wrap">
             <button className="top-icon" aria-label={`الإشعارات${alerts.unread ? ` (${alerts.unread} غير مقروء)` : ""}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((v) => !v); if (alerts.unread) fetch("/api/notifications", { method: "POST" }).then(() => setAlerts((a) => ({ ...a, unread: 0 }))).catch(() => {}); }}><Icon name="bell" />{alerts.unread > 0 && <b className="notification-count">{alerts.unread}</b>}</button>
             {notificationsOpen && <div className="notification-panel menu" role="dialog" aria-label="الإشعارات"><header>الإشعارات<Link href="/settings/notifications">الإعدادات</Link></header>
