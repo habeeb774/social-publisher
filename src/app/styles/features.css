@@ -16,6 +16,7 @@
 .composer-aside { position: sticky; top: calc(var(--topbar-h) + var(--s-4)); display: grid; gap: var(--s-3); }
 .media-slot { display: grid; grid-template-columns: 96px 1fr; gap: var(--s-3); align-items: center; padding: var(--s-3); border: 1px solid var(--border); border-radius: var(--r-panel); background: var(--subtle); }
 .media-slot img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
+.media-slot video { width: 160px; max-height: 200px; border-radius: 8px; background: #000; }
 @media (max-width: 1023px) { .composer { grid-template-columns: 1fr; } .composer-aside { position: static; } }
 
 /* ---------- Facebook-like preview ---------- */
@@ -421,3 +422,4 @@
 :root:not([data-theme="dark"]) th, :root[data-theme="light"] th { color: var(--muted); font-weight: 600; }
 :root:not([data-theme="dark"]) td strong, :root:not([data-theme="dark"]) .metric-value, :root:not([data-theme="dark"]) .stat-value,
 :root[data-theme="light"] td strong, :root[data-theme="light"] .metric-value, :root[data-theme="light"] .stat-value { color: var(--heading); }
+.fb-preview video.fb-image { object-fit: contain; background: #000; }

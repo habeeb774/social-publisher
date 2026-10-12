@@ -1,8 +1,8 @@
 import { isPublishingEnabled } from "@/services/publishing-mode";
 import { publishWindsorPost, testWindsorMcp } from "./windsor-mcp";
-import { isGraphConfigured, publishGraphPost, publishInstagramGraph } from "./facebook-graph";
+import { isGraphConfigured, publishGraphPost, publishGraphVideo, publishInstagramGraph } from "./facebook-graph";
 import { storedInstagramToken, storedPageToken } from "./page-tokens";
-export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string; platform?: string };
+export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string; videoUrl?: string; platform?: string };
 export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" | "facebook_graph" };
 export type FacebookCapabilities = { connected: boolean; readAccount: boolean; listPages: boolean; readPosts: boolean; publishText: boolean; publishImage: boolean };
 export type FacebookRuntimeStatus = "connected" | "blocked" | "not_configured";
@@ -28,10 +28,15 @@ export async function publishToFacebook(input: FacebookPublishInput): Promise<Fa
   if (input.platform === "instagram") {
     const saved = await storedInstagramToken(input.pageId);
     if (!saved && !isGraphConfigured()) throw new Error("INSTAGRAM_AUTH_REQUIRED: يتطلب ربط Meta");
-    return publishInstagramGraph({ igUserId: input.pageId, content: input.content, imageUrl: input.imageUrl }, !isPublishingEnabled());
+    return publishInstagramGraph({ igUserId: input.pageId, content: input.content, imageUrl: input.imageUrl, videoUrl: input.videoUrl }, !isPublishingEnabled());
   }
   if (input.platform && input.platform !== "facebook") throw new Error(`PLATFORM_UNSUPPORTED: ${input.platform}`);
   const saved = await storedPageToken(input.pageId);
+  if (input.videoUrl) {
+    // Windsor cannot post videos, so video needs a page token (saved or global).
+    if (!saved && !isGraphConfigured()) throw new Error("FACEBOOK_VIDEO_AUTH_REQUIRED: نشر الفيديو يتطلب ربط الصفحة عبر Meta");
+    return publishGraphVideo({ pageId: input.pageId, content: input.content, videoUrl: input.videoUrl }, !isPublishingEnabled());
+  }
   if (saved || isGraphConfigured()) return publishGraphPost(input, !isPublishingEnabled());
   return facebookProvider.publish(input);
 }

@@ -12,9 +12,9 @@ export function isGraphConfigured() {
   return Boolean(process.env.META_PAGE_ACCESS_TOKEN?.trim());
 }
 
-async function graph(path: string, init?: RequestInit) {
+async function graph(path: string, init?: RequestInit, timeoutMs = 20000) {
   // Paging links from Graph are absolute URLs; everything else is a path under the versioned base.
-  const response = await fetch(path.startsWith("https://") ? path : `${base()}${path}`, { ...init, signal: AbortSignal.timeout(20000) });
+  const response = await fetch(path.startsWith("https://") ? path : `${base()}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   const body = await response.json().catch(() => ({})) as GraphError & Record<string, unknown>;
   return { ok: response.ok && !body.error, body };
 }
@@ -129,6 +129,31 @@ export async function publishGraphPost(input: { pageId: string; content: string;
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
 }
 
+/**
+ * Posts a Page video from a public URL; Facebook downloads and processes it in the background.
+ * Any network error after the request is sent is reported as uncertain, never retried blindly.
+ */
+export async function publishGraphVideo(input: { pageId: string; content: string; videoUrl: string }, dryRun: boolean) {
+  const token = await pageToken(input.pageId);
+  if (dryRun) {
+    await checkGraphAccess(input.pageId);
+    return { id: "dry-run", dryRun: true, provider: "facebook_graph" as const };
+  }
+  let result: Awaited<ReturnType<typeof graph>>;
+  try {
+    result = await graph(`/${input.pageId}/videos`, { method: "POST", body: new URLSearchParams({ file_url: input.videoUrl, description: input.content, access_token: token }) }, 40000);
+  } catch (cause) {
+    throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة (${cause instanceof Error ? cause.message : "network error"})`, { cause });
+  }
+  if (result.body.error) throw new Error(graphError(result.body));
+  const id = result.body.id as string | undefined;
+  if (!id) throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من الصفحة قبل أي إعادة محاولة (${JSON.stringify(result.body).slice(0, 300)})`);
+  const link = await graph(`/${id}?fields=permalink_url&access_token=${encodeURIComponent(token)}`).catch(() => null);
+  const raw = link?.ok && typeof link.body.permalink_url === "string" ? link.body.permalink_url : undefined;
+  const permalink = raw && raw.startsWith("/") ? `https://www.facebook.com${raw}` : raw;
+  return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
+}
+
 /** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
 export async function replyToCommentGraph(pageId: string, commentId: string, message: string) {
   const token = await pageToken(pageId);
@@ -205,8 +230,8 @@ export async function linkedInstagramAccount(pageId: string) {
  * Instagram has no text-only posts. Container creation is safe to fail; once media_publish
  * is called, network errors are reported as uncertain and never retried blindly.
  */
-export async function publishInstagramGraph(input: { igUserId: string; content: string; imageUrl?: string }, dryRun: boolean) {
-  if (!input.imageUrl) throw new Error("INSTAGRAM_IMAGE_REQUIRED: انستجرام لا يقبل منشورًا بدون صورة");
+export async function publishInstagramGraph(input: { igUserId: string; content: string; imageUrl?: string; videoUrl?: string }, dryRun: boolean) {
+  if (!input.imageUrl && !input.videoUrl) throw new Error("INSTAGRAM_IMAGE_REQUIRED: انستجرام لا يقبل منشورًا بدون صورة أو فيديو");
   if (input.content.length > 2200) throw new Error("INSTAGRAM_CAPTION_TOO_LONG: الحد 2200 حرف");
   // Use the token of the Facebook page this account is linked to; fall back to the global token.
   const token = (await storedInstagramToken(input.igUserId)) ?? process.env.META_PAGE_ACCESS_TOKEN!.trim();
@@ -215,16 +240,22 @@ export async function publishInstagramGraph(input: { igUserId: string; content: 
     if (!check.ok) throw new Error(graphError(check.body));
     return { id: "dry-run", dryRun: true, provider: "facebook_graph" as const };
   }
-  const container = await graph(`/${input.igUserId}/media`, { method: "POST", body: new URLSearchParams({ image_url: input.imageUrl, caption: input.content, access_token: token }) });
+  // Instagram only accepts video as a Reel.
+  const media: Record<string, string> = input.videoUrl ? { media_type: "REELS", video_url: input.videoUrl } : { image_url: input.imageUrl! };
+  const container = await graph(`/${input.igUserId}/media`, { method: "POST", body: new URLSearchParams({ ...media, caption: input.content, access_token: token }) });
   if (!container.ok || typeof container.body.id !== "string") throw new Error(graphError(container.body));
-  // Instagram fetches the image asynchronously; wait until the container is ready.
-  for (let i = 0; i < 10; i++) {
+  // Instagram fetches media asynchronously; wait until the container is ready. Videos take longer,
+  // but the whole publishing run is capped at 60s, so give up after ~40s instead of timing out.
+  let ready = false;
+  for (let i = 0; i < (input.videoUrl ? 13 : 10); i++) {
     const status = await graph(`/${container.body.id}?fields=status_code&access_token=${encodeURIComponent(token)}`);
     const code = status.body.status_code;
-    if (code === "FINISHED") break;
-    if (code === "ERROR" || code === "EXPIRED") throw new Error(`INSTAGRAM_MEDIA_FAILED: تعذر تجهيز الصورة (${String(code)})`);
-    await new Promise((r) => setTimeout(r, 2000));
+    if (code === "FINISHED") { ready = true; break; }
+    if (code === "ERROR" || code === "EXPIRED") throw new Error(`INSTAGRAM_MEDIA_FAILED: تعذر تجهيز ${input.videoUrl ? "الفيديو" : "الصورة"} (${String(code)})`);
+    await new Promise((r) => setTimeout(r, input.videoUrl ? 3000 : 2000));
   }
+  // Nothing has been published yet, so a later retry is safe (it creates a fresh container).
+  if (input.videoUrl && !ready) throw new Error("INSTAGRAM_VIDEO_PROCESSING: إنستجرام لم ينتهِ من تجهيز الفيديو بعد — أعد المحاولة بعد دقائق، أو استخدم فيديو أقصر وأصغر حجمًا");
   let published: Awaited<ReturnType<typeof graph>>;
   try {
     published = await graph(`/${input.igUserId}/media_publish`, { method: "POST", body: new URLSearchParams({ creation_id: container.body.id, access_token: token }) });

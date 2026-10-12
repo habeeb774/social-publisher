@@ -35,8 +35,9 @@ export async function publishDuePosts(limit = 10) {
       if (!page?.isActive) throw new Error("FACEBOOK_ORGANIC_AUTH_REQUIRED: target page is unavailable");
       const media = await db.select().from(postMedia).where(eq(postMedia.postId, post.id));
       if (media.length > 1) throw new Error("MCP_MEDIA_UNSUPPORTED: multiple attachments cannot be published by this action");
-      if (media.some(item => item.type !== "image")) throw new Error("MCP_MEDIA_UNSUPPORTED: only images are supported");
-      result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content, imageUrl: media[0]?.url, platform: page.platform });
+      if (media.some(item => item.type !== "image" && item.type !== "video")) throw new Error("MCP_MEDIA_UNSUPPORTED: only images and videos are supported");
+      const attachment = media[0];
+      result = await publishToFacebook({ pageId: page.facebookPageId, content: post.content, imageUrl: attachment?.type === "image" ? attachment.url : undefined, videoUrl: attachment?.type === "video" ? attachment.url : undefined, platform: page.platform });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown publication error";
       const unknown = message.startsWith("MCP_PUBLISH_OUTCOME_UNKNOWN");

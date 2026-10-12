@@ -13,6 +13,7 @@ import { HelpTip, HELP } from "../ui/help-tip";
 import { Icon } from "../ui/icons";
 import { AiAssist } from "./ai-assist";
 import { TEXT_HOOK_POSTS } from "@/content/text-hook-posts";
+import { isVideoUrl, VIDEO_MAX_BYTES, VIDEO_TYPES } from "@/services/media-kind";
 
 export type EditorPost = { id: string; pageId: string; content: string; scheduledAt: string | null; updatedAt: string; status: string; category?: string | null; tags?: string[]; campaignId?: string | null; imageUrl?: string | null };
 type Option = { id: string; name: string };
@@ -46,6 +47,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<Intent | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [, tick] = useState(0);
   const busy = useRef(false);
@@ -127,11 +129,26 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   }
 
   async function upload(file: File) {
+    if (file.type.startsWith("video/")) return uploadVideo(file);
     setUploading(true); setError("");
     const form = new FormData(); form.append("file", file);
     try { const asset = await api<{ url: string; name: string; size: number; mimeType: string }>("/api/media", { method: "POST", body: form }); setImageUrl(asset.url); setImageInfo({ name: asset.name, size: asset.size, type: asset.mimeType }); toast("تم رفع الصورة"); }
     catch (e) { setError(e instanceof Error ? e.message : "تعذر رفع الصورة"); } finally { setUploading(false); }
   }
+  // Videos go straight from the browser to storage; the server only issues a short-lived upload token.
+  async function uploadVideo(file: File) {
+    if (!VIDEO_TYPES.includes(file.type)) { setError("صيغة الفيديو غير مدعومة — استخدم MP4 أو MOV"); return; }
+    if (file.size > VIDEO_MAX_BYTES) { setError("حجم الفيديو يتجاوز 1GB"); return; }
+    setUploading(true); setUploadProgress(0); setError("");
+    try {
+      const { upload: uploadToBlob } = await import("@vercel/blob/client");
+      const safeName = file.name.replace(/[^\w.-]+/g, "-").slice(-80) || "video.mp4";
+      const blob = await uploadToBlob(`media/videos/${safeName}`, file, { access: "public", handleUploadUrl: "/api/media/video-upload", multipart: file.size > 50 * 1024 * 1024, contentType: file.type, onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)) });
+      setImageUrl(blob.url); setImageInfo({ name: file.name, size: file.size, type: file.type }); toast("تم رفع الفيديو");
+    } catch (e) { setError(e instanceof Error ? e.message : "تعذر رفع الفيديو"); }
+    finally { setUploading(false); setUploadProgress(null); }
+  }
+  const isVideo = isVideoUrl(imageUrl);
   const insertAtCursor = (text: string) => {
     const el = textarea.current; if (!el) { setBody((b) => `${b}${text}`); return; }
     const start = el.selectionStart ?? body.length, end = el.selectionEnd ?? body.length;
@@ -197,12 +214,12 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
           </section>
 
           <section className="card composer-section"><header><h2>الوسائط</h2>{imageUrl && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setImageUrl(""); setImageInfo(null); }}><Icon name="trash" width={14} />إزالة</button>}</header>
-            {/^https:\/\//i.test(imageUrl) ? <div className="media-slot">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={imageUrl} alt="الصورة المرفقة" /><div className="stack" style={{ gap: 4 }}><b style={{ color: "var(--heading)", fontWeight: 500, overflowWrap: "anywhere" }}>{imageInfo?.name ?? imageUrl.split("/").pop()?.split("?")[0]}</b>{imageInfo?.size && <small>{Math.round(imageInfo.size / 1024)} KB · {imageInfo.type}</small>}<div className="row"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPicker(true)}>استبدال</button></div></div></div>
+            {/^https:\/\//i.test(imageUrl) ? <div className="media-slot">{isVideo ? <video src={imageUrl} controls preload="metadata" aria-label="الفيديو المرفق" /> : <>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={imageUrl} alt="الصورة المرفقة" /></>}<div className="stack" style={{ gap: 4 }}><b style={{ color: "var(--heading)", fontWeight: 500, overflowWrap: "anywhere" }}>{imageInfo?.name ?? imageUrl.split("/").pop()?.split("?")[0]}</b>{imageInfo?.size && <small>{Math.round(imageInfo.size / 1024)} KB · {imageInfo.type}</small>}<div className="row"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPicker(true)}>استبدال</button></div></div></div>
               : <label className="dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && uploadEnabled) upload(f); }}>
-                  <span><Icon name="image" width={22} /></span><strong>{uploading ? "جارٍ الرفع…" : uploadEnabled ? "اسحب صورة هنا أو اختر من جهازك" : "أضف صورة من المكتبة أو برابط مباشر"}</strong><small>JPG، PNG، WebP · حتى 10MB</small>
-                  {uploadEnabled && <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />}
+                  <span><Icon name="image" width={22} /></span><strong>{uploading ? `جارٍ الرفع…${uploadProgress !== null ? ` ${uploadProgress}%` : ""}` : uploadEnabled ? "اسحب صورة أو فيديو هنا أو اختر من جهازك" : "أضف صورة من المكتبة أو برابط مباشر"}</strong><small>صور JPG، PNG، WebP حتى 10MB · فيديو MP4، MOV حتى 1GB</small>
+                  {uploadEnabled && <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" disabled={uploading} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />}
                 </label>}
-            <div className="inline-field"><input aria-label="رابط الصورة" type="url" inputMode="url" dir="ltr" placeholder="https://… رابط صورة مباشر" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); setImageInfo(null); }} /><button type="button" className="btn btn-secondary" onClick={() => setPicker((v) => !v)}><Icon name="media" width={15} />من المكتبة</button></div>
+            <div className="inline-field"><input aria-label="رابط الصورة أو الفيديو" type="url" inputMode="url" dir="ltr" placeholder="https://… رابط صورة أو فيديو مباشر" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); setImageInfo(null); }} /><button type="button" className="btn btn-secondary" onClick={() => setPicker((v) => !v)}><Icon name="media" width={15} />من المكتبة</button></div>
             {picker && <div className="media-picker">{media.length ? media.map((m) => <button type="button" key={m.id} onClick={() => { setImageUrl(m.url); setImageInfo({ name: m.name }); setPicker(false); }} title={m.name}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={m.url} alt={m.name} loading="lazy" /></button>) : <small>المكتبة فارغة. <Link href="/media">أضف صورًا</Link></small>}</div>}
           </section>
 
@@ -242,7 +259,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
           <div className="fb-head"><span className="fb-avatar">{(page?.name ?? "ص").replace(/^م\.\s*/, "").slice(0, 1)}</span><div><div className="fb-name">{page?.name ?? "الصفحة"}</div><div className="fb-time">{previewTime} · 🌐</div></div></div>
           <div className={`fb-text ${body ? "" : "empty"}`}>{body || "ستظهر معاينة النص هنا"}</div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {/^https:\/\//i.test(imageUrl) && <img className="fb-image" src={imageUrl} alt="" />}
+          {/^https:\/\//i.test(imageUrl) && (isVideo ? <video className="fb-image" src={imageUrl} controls preload="metadata" /> : <img className="fb-image" src={imageUrl} alt="" />)}
           <div className="fb-actions"><span>👍 أعجبني</span><span>💬 تعليق</span><span>↗ مشاركة</span></div>
         </article>
       </aside>

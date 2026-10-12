@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mediaAssets, postMedia } from "@/db/schema";
 import { normalizeTags } from "./catalog";
+import { isVideoUrl } from "./media-kind";
 import { approvalRequired } from "./post-ops";
 import { getPublishingRules } from "./rules-store";
 import { nextAllowed, violation } from "./publishing-rules";
@@ -33,7 +34,8 @@ export async function syncImage(postId: string, imageUrl: string | null | undefi
   const db = getDb();
   await db.delete(postMedia).where(eq(postMedia.postId, postId));
   if (!imageUrl) return;
-  await db.insert(postMedia).values({ postId, type: "image", url: imageUrl });
-  // Every image used in a post is registered in the media library for reuse.
-  await db.insert(mediaAssets).values({ name: imageUrl.split("/").pop()!.split("?")[0].slice(0, 160) || "image", url: imageUrl, source: "post" }).onConflictDoNothing();
+  const video = isVideoUrl(imageUrl);
+  await db.insert(postMedia).values({ postId, type: video ? "video" : "image", url: imageUrl });
+  // Every image used in a post is registered in the media library for reuse; the library shows images only.
+  if (!video) await db.insert(mediaAssets).values({ name: imageUrl.split("/").pop()!.split("?")[0].slice(0, 160) || "image", url: imageUrl, source: "post" }).onConflictDoNothing();
 }

@@ -2,7 +2,8 @@ import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, posts, schedulerRuns } from "@/db/schema";
 import { isGraphConfigured } from "./facebook-graph";
-import { probeImageUrl } from "./storage";
+import { probeMediaUrl } from "./storage";
+import { isVideoUrl } from "./media-kind";
 import { getPublishingRules } from "./rules-store";
 import { violation } from "./publishing-rules";
 import type { WorkspaceContext } from "./workspace-request";
@@ -32,10 +33,10 @@ export async function prePublishChecks(input: { pageId: string; content: string;
   const future = Boolean(input.scheduledAt && input.scheduledAt.getTime() > Date.now() + 60000);
   items.push({ key: "time", label: "الوقت صالح", ok: future, critical: true, detail: input.scheduledAt ? (future ? undefined : "الموعد في الماضي أو خلال أقل من دقيقة") : "لم يُحدد موعد" });
   // Instagram has no text-only posts; catch it here instead of at publish time.
-  if (page?.platform === "instagram") items.push({ key: "instagram_image", label: "صورة إنستجرام", ok: Boolean(input.imageUrl), critical: true, detail: input.imageUrl ? undefined : "إنستجرام لا يقبل منشورًا بدون صورة — أضف صورة" });
+  if (page?.platform === "instagram") items.push({ key: "instagram_image", label: "صورة أو فيديو إنستجرام", ok: Boolean(input.imageUrl), critical: true, detail: input.imageUrl ? undefined : "إنستجرام لا يقبل منشورًا بدون صورة أو فيديو — أضف واحدًا" });
   if (input.imageUrl) {
-    const probe = await probeImageUrl(input.imageUrl);
-    items.push({ key: "image", label: "الصورة متاحة", ok: probe.ok, critical: true, detail: probe.ok ? probe.mimeType : probe.reason });
+    const probe = await probeMediaUrl(input.imageUrl);
+    items.push({ key: "image", label: isVideoUrl(input.imageUrl) ? "الفيديو متاح" : "الصورة متاحة", ok: probe.ok, critical: true, detail: probe.ok ? probe.mimeType : probe.reason });
   }
   const connected = Boolean(page?.accessTokenEnc) || isGraphConfigured() || Boolean(process.env.WINDSOR_API_KEY);
   items.push({ key: "facebook", label: "اتصال Facebook مُعد", ok: connected, critical: true, detail: page?.accessTokenEnc ? "توكن مشفّر خاص بالصفحة" : isGraphConfigured() ? "توكن Meta احتياطي" : connected ? "Windsor MCP" : "لا يوجد اتصال نشر" });

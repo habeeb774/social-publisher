@@ -1,4 +1,5 @@
 import { del, put } from "@vercel/blob";
+import { isVideoUrl, VIDEO_TYPES } from "./media-kind";
 
 export type StoredMedia = { url: string; storageKey: string; mimeType: string; size: number };
 export interface StorageProvider { configured(): boolean; upload(file: File): Promise<StoredMedia>; remove(storageKey: string): Promise<void>; }
@@ -25,6 +26,21 @@ export const storageProvider: StorageProvider = {
     if (this.configured() && storageKey) await del(storageKey);
   },
 };
+
+/** Same probe for a post attachment, which may be an image or a video. */
+export async function probeMediaUrl(url: string) {
+  if (!isVideoUrl(url)) return probeImageUrl(url);
+  if (!/^https:\/\//i.test(url)) return { ok: false, reason: "يجب أن يبدأ الرابط بـ https://" };
+  try {
+    const response = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(8000) });
+    const type = (response.headers.get("content-type") ?? "").split(";")[0];
+    if (!response.ok) return { ok: false, reason: `الرابط يرجع ${response.status}` };
+    if (!VIDEO_TYPES.includes(type)) return { ok: false, reason: "الرابط ليس فيديو MP4 أو MOV مباشر" };
+    return { ok: true, mimeType: type, size: Number(response.headers.get("content-length")) || null };
+  } catch {
+    return { ok: false, reason: "تعذر الوصول للرابط" };
+  }
+}
 
 /** Lightweight availability probe for an image URL (no download of the body). */
 export async function probeImageUrl(url: string) {
