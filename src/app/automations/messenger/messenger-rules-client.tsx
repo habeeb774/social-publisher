@@ -45,7 +45,7 @@ export function MessengerRulesClient() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => setData(await api<Payload>());
-  useEffect(() => { void load().catch((e) => toast(e instanceof Error ? e.message : "تعذر تحميل الأتمتة", "error")); }, []);
+  useEffect(() => { api<Payload>().then(setData).catch((e) => toast(e instanceof Error ? e.message : "تعذر تحميل الأتمتة", "error")); }, []);
 
   async function toggle(enabled: boolean) {
     setBusy(true);

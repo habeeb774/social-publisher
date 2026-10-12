@@ -78,6 +78,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
         const active = account.status === "active";
         return <div key={account.id} className="integration">
           {account.pictureUrl
+            // eslint-disable-next-line @next/next/no-img-element -- Facebook profile picture URL
             ? <img src={account.pictureUrl} alt="" width={48} height={48} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
             : <span className="logo" style={{ background: "var(--surface-2)", fontWeight: 700 }}>{account.name.slice(0, 1)}</span>}
           <div>

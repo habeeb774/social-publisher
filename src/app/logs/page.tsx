@@ -45,7 +45,7 @@ export default async function Logs({ searchParams }: { searchParams: Promise<{ t
   const fmt = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Riyadh", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(iso));
 
   return <AppShell title="السجلات">
-    <PageHeader title="السجلات" description="سجل موحد للنشر والجدولة والتعليقات وعمليات النظام. الأوقات بتوقيت الرياض." actions={<a className="btn btn-secondary" href="/api/export/activity">تصدير CSV</a>} />
+    <PageHeader title="السجلات" description="سجل موحد للنشر والجدولة والتعليقات وعمليات النظام. الأوقات بتوقيت الرياض." actions={/* eslint-disable-line @next/next/no-html-link-for-pages -- file download, not page navigation */ <a className="btn btn-secondary" href="/api/export/activity">تصدير CSV</a>} />
     <nav className="tabs">{(Object.keys(FILTERS) as Filter[]).map((f) => <Link key={f} href={href({ type: f, before: "" })} className={type === f ? "active" : ""}>{FILTERS[f]}</Link>)}</nav>
     <form className="toolbar" method="get">{type !== "all" && <input type="hidden" name="type" value={type} />}<input name="q" type="search" defaultValue={q} placeholder="ابحث في الأحداث أو رقم المنشور…" aria-label="بحث في السجلات" /><button className="btn btn-secondary">بحث</button></form>
     <section className="card card-flush log-console">

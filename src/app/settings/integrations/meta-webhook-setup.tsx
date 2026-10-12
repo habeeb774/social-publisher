@@ -14,13 +14,14 @@ export function MetaWebhookSetup() {
   const [health, setHealth] = useState<Health | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const readHealth = async (): Promise<Health> => {
     const response = await fetch("/api/meta/webhook/setup", { cache: "no-store" });
     if (!response.ok) throw new Error("تعذر قراءة حالة Webhook");
-    setHealth(await response.json());
+    return response.json();
   };
+  const load = async () => setHealth(await readHealth());
 
-  useEffect(() => { void load().catch(() => {}); }, []);
+  useEffect(() => { readHealth().then(setHealth).catch(() => {}); }, []);
 
   async function setup() {
     setBusy(true);
