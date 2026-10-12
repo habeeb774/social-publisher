@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { facebookPages, postMedia, posts, settings } from "@/db/schema";
 import { logAudit } from "./audit";
 import { eligibleTechArticle, editorialTechPost } from "./tech-news-editorial";
+import { politicsTargetPage } from "./politics-autopost";
 
 const HABEEB_FACEBOOK_PAGE_ID = "1330947143441946";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
@@ -58,16 +59,17 @@ async function readFeed(source: FeedSource) {
 }
 function articleHash(url: string) { return createHash("sha256").update(url).digest("hex").slice(0, 20); }
 
-export async function enqueueHourlyTechNews(now = new Date()) {
+export async function enqueueHourlyTechNews(now = new Date(), destination: "habeeb" | "former-politics" = "habeeb") {
   const db = getDb();
   const hourKey = now.toISOString().slice(0, 13);
-  const claimKey = `tech_news_hour:${hourKey}`;
+  const namespace = destination === "former-politics" ? "tech_news_former_politics" : "tech_news";
+  const claimKey = `${namespace}_hour:${hourKey}`;
   // Most scheduler ticks revisit an hour already handled. Avoid fetching and
   // parsing every feed; retain the atomic insert below for concurrent ticks.
   const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
   if (existingClaim) return { created: false, reason: "HOUR_ALREADY_CLAIMED" as const };
   // At most one feed scan per 15-minute window until this hour has a post.
-  const attemptKey = `tech_news_attempt:${hourKey}:${Math.floor(now.getUTCMinutes() / 15)}`;
+  const attemptKey = `${namespace}_attempt:${hourKey}:${Math.floor(now.getUTCMinutes() / 15)}`;
   const attempt = await db.insert(settings).values({ key: attemptKey, value: now.toISOString() }).onConflictDoNothing().returning({ key: settings.key });
   if (!attempt.length) return { created: false, reason: "ATTEMPT_ALREADY_RUN" as const };
   const feedResults = await Promise.all(FEEDS.map(readFeed));
@@ -80,7 +82,7 @@ export async function enqueueHourlyTechNews(now = new Date()) {
 
   let selected: FeedItem | null = null;
   for (const candidate of candidates) {
-    const [seen] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, `tech_news_seen:${articleHash(candidate.url)}`)).limit(1);
+    const [seen] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, `${namespace}_seen:${articleHash(candidate.url)}`)).limit(1);
     if (!seen) { selected = candidate; break; }
   }
   if (!selected) return { created: false, reason: "NO_UNSEEN_NEWS" as const };
@@ -88,9 +90,11 @@ export async function enqueueHourlyTechNews(now = new Date()) {
   const claim = await db.insert(settings).values({ key: claimKey, value: JSON.stringify({ claimedAt: now.toISOString(), url: selected.url }) }).onConflictDoNothing().returning({ key: settings.key });
   if (!claim.length) return { created: false, reason: "HOUR_ALREADY_CLAIMED" as const };
 
-  const [page] = await db.select({ id: facebookPages.id }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, HABEEB_FACEBOOK_PAGE_ID), eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true))).limit(1);
+  const page = destination === "former-politics"
+    ? await politicsTargetPage()
+    : (await db.select({ id: facebookPages.id, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, HABEEB_FACEBOOK_PAGE_ID), eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true))).limit(1))[0];
   if (!page) {
-    await logAudit("tech_news.skipped", "post", null, { reason: "HABEEB_PAGE_UNAVAILABLE", hourKey });
+    await logAudit("tech_news.skipped", "post", null, { reason: "TECH_DESTINATION_PAGE_UNAVAILABLE", hourKey, destination });
     return { created: false, reason: "HABEEB_PAGE_UNAVAILABLE" as const };
   }
 
@@ -99,7 +103,7 @@ export async function enqueueHourlyTechNews(now = new Date()) {
   await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/tech-news-image/${post.id}?v=2`, mimeType: "image/png" });
   await db.insert(settings).values({ key: `tech_news_seen:${articleHash(selected.url)}`, value: JSON.stringify({ url: selected.url, title: selected.title, source: selected.source, publishedAt: selected.publishedAt.toISOString(), postId: post.id, createdAt: now.toISOString() }) }).onConflictDoNothing();
 
-  await logAudit("tech_news.enqueued", "post", post.id, { pageId: HABEEB_FACEBOOK_PAGE_ID, source: selected.source, sourceUrl: selected.url, publishedAt: selected.publishedAt.toISOString(), hourly: true });
+  await logAudit("tech_news.enqueued", "post", post.id, { pageId: page.facebookPageId, destination, source: selected.source, sourceUrl: selected.url, publishedAt: selected.publishedAt.toISOString(), hourly: true });
   return { created: true, postId: post.id, source: selected.source, title: selected.title };
 }
 
