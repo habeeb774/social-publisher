@@ -2,18 +2,20 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { api, riyadh } from "../ui/api";
+import { resolveMediaUrl } from "@/services/media-url";
 
 type Asset = { id: string; name: string; url: string; mimeType: string | null; size: number | null; source: string; createdAt: string };
 const kb = (n: number | null) => n ? n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB` : "—";
 
 export function MediaClient({ initial, uploadEnabled, initialQuery }: { initial: Asset[]; uploadEnabled: boolean; initialQuery: string }) {
+  initial = initial.map((asset) => ({ ...asset, url: resolveMediaUrl(asset.url) }));
   const [items, setItems] = useState(initial);
   const [q, setQ] = useState(initialQuery);
   const [url, setUrl] = useState("");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  async function search(e?: FormEvent) { e?.preventDefault(); const r = await api<{ items: Asset[] }>(`/api/media?q=${encodeURIComponent(q)}`); setItems(r.items); }
+  async function search(e?: FormEvent) { e?.preventDefault(); const r = await api<{ items: Asset[] }>(`/api/media?q=${encodeURIComponent(q)}`); setItems(r.items.map((asset) => ({ ...asset, url: resolveMediaUrl(asset.url) }))); }
   async function add(e: FormEvent) {
     e.preventDefault(); setBusy(true); setMessage("");
     try { const a = await api<Asset>("/api/media", { method: "POST", body: { url } }); setItems([a, ...items]); setUrl(""); setMessage("أُضيفت الصورة"); } catch (err) { setMessage(err instanceof Error ? err.message : "تعذرت الإضافة"); } finally { setBusy(false); }

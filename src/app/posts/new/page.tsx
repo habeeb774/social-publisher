@@ -6,6 +6,7 @@ import PostEditor from "../post-editor";
 import { editorData } from "../editor-data";
 import { pageSession } from "@/services/session-server";
 import { allowedPageIds } from "@/services/access-scope";
+import { resolveMediaUrl } from "@/services/media-url";
 export const dynamic = "force-dynamic";
 
 /** Supports ?template=<id> and ?media=<id> to start from a template or a library image. */
@@ -21,5 +22,5 @@ export default async function NewPost({ searchParams }: { searchParams: Promise<
   ]);
   const defaults = (template[0]?.defaultSettings ?? {}) as { category?: string; tags?: string[] };
   const radarContent = typeof params.radarContent === "string" ? params.radarContent.slice(0, 5000) : undefined;
-  return <PostEditor {...data} prefill={{ content: template[0]?.content ?? radarContent, imageUrl: asset[0]?.url, category: defaults.category ?? (radarContent ? "أخبار" : undefined), tags: defaults.tags }} />;
+  return <PostEditor {...data} prefill={{ content: template[0]?.content ?? radarContent, imageUrl: asset[0]?.url ? resolveMediaUrl(asset[0].url) : undefined, category: defaults.category ?? (radarContent ? "أخبار" : undefined), tags: defaults.tags }} />;
 }

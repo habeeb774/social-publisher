@@ -1,5 +1,6 @@
 "use client";
 import { BestTimesHint } from "./best-times-hint";
+import { resolveMediaUrl } from "@/services/media-url";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -27,6 +28,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   templates?: Array<{ id: string; name: string; content: string }>; approvalRequired?: boolean; aiEnabled?: boolean; uploadEnabled?: boolean; prefill?: { content?: string; imageUrl?: string; category?: string; tags?: string[] };
 }) {
   const router = useRouter();
+  media = media.map((asset) => ({ ...asset, url: resolveMediaUrl(asset.url) }));
   const [post, setPost] = useState<{ id: string; updatedAt: string; status: string } | null>(initial ? { id: initial.id, updatedAt: initial.updatedAt, status: initial.status } : null);
   const [body, setBody] = useState(initial?.content ?? prefill?.content ?? "");
   const initialLocal = isoToRiyadhInput(initial?.scheduledAt || null);
@@ -40,7 +42,7 @@ export default function PostEditor({ initial, pages, publishingEnabled, campaign
   const legacyCategory = initial?.category && !POST_CATEGORIES.some((value) => value === initial.category) ? initial.category : null;
   const [tags, setTags] = useState((initial?.tags ?? prefill?.tags ?? []).join(" "));
   const [campaignId, setCampaignId] = useState(initial?.campaignId ?? "");
-  const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? prefill?.imageUrl ?? "");
+  const [imageUrl, setImageUrl] = useState(() => resolveMediaUrl(initial?.imageUrl ?? prefill?.imageUrl ?? ""));
   const [imageInfo, setImageInfo] = useState<{ name?: string; size?: number; type?: string } | null>(null);
   const [picker, setPicker] = useState(false);
   const [checks, setChecks] = useState<Check[] | null>(null);

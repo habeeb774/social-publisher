@@ -2,6 +2,7 @@ import { isPublishingEnabled } from "@/services/publishing-mode";
 import { publishWindsorPost, testWindsorMcp } from "./windsor-mcp";
 import { isGraphConfigured, publishGraphPost, publishGraphVideo, publishInstagramGraph } from "./facebook-graph";
 import { storedInstagramToken, storedPageToken } from "./page-tokens";
+import { resolveMediaUrl } from "./media-url";
 export type FacebookPublishInput = { pageId: string; content: string; imageUrl?: string; videoUrl?: string; platform?: string };
 export type FacebookResult = { id: string; permalink?: string; dryRun: boolean; provider: "facebook_mcp" | "facebook_graph" };
 export type FacebookCapabilities = { connected: boolean; readAccount: boolean; listPages: boolean; readPosts: boolean; publishText: boolean; publishImage: boolean };
@@ -24,6 +25,7 @@ export class FacebookMcpProvider implements FacebookProvider {
 
 export const facebookProvider = new FacebookMcpProvider();
 export async function publishToFacebook(input: FacebookPublishInput): Promise<FacebookResult> {
+  input = { ...input, imageUrl: input.imageUrl ? resolveMediaUrl(input.imageUrl) : undefined };
   // A page access token takes precedence: Windsor's Facebook connection lacks pages_manage_posts.
   if (input.platform === "instagram") {
     const saved = await storedInstagramToken(input.pageId);

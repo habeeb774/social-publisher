@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { resolveMediaUrl } from "@/services/media-url";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -79,7 +80,7 @@ export default async function PostDetails({ params }: { params: Promise<{ id: st
           <div className="fb-head"><span className="fb-avatar">{page.name.replace(/^م\.\s*/, "").slice(0, 1)}</span><div><div className="fb-name">{page.name}</div><div className="fb-time">{riyadh(post.publishedAt ?? post.scheduledAt)} · 🌐</div></div></div>
           <div className="fb-text">{post.content}</div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {media.filter((m) => /^https:\/\//i.test(m.url)).map((m) => <img key={m.id} className="fb-image" src={m.url} alt="صورة المنشور" loading="lazy" />)}
+          {media.filter((m) => /^https:\/\//i.test(m.url)).map((m) => <img key={m.id} className="fb-image" src={resolveMediaUrl(m.url)} alt="صورة المنشور" loading="lazy" />)}
           <div className="fb-actions"><span>👍 أعجبني</span><span>💬 تعليق</span><span>↗ مشاركة</span></div>
         </article>
         {(post.category || post.tags.length > 0) && <div className="chips">{post.category && <span className="chip">{post.category}</span>}{post.tags.map((t) => <span key={t} className="chip muted">#{t}</span>)}</div>}

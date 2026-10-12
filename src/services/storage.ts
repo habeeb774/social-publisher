@@ -1,4 +1,5 @@
 import { del, put } from "@vercel/blob";
+import { resolveMediaUrl } from "./media-url";
 import { isVideoUrl, VIDEO_TYPES } from "./media-kind";
 
 export type StoredMedia = { url: string; storageKey: string; mimeType: string; size: number };
@@ -44,6 +45,7 @@ export async function probeMediaUrl(url: string) {
 
 /** Lightweight availability probe for an image URL (no download of the body). */
 export async function probeImageUrl(url: string) {
+  url = resolveMediaUrl(url);
   if (!/^https:\/\//i.test(url)) return { ok: false, reason: "يجب أن يبدأ الرابط بـ https://" };
   try {
     const response = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(8000) });
