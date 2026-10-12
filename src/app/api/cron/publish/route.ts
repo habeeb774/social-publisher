@@ -14,11 +14,8 @@ import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
-import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
-import { publishPoliticsStory } from "@/services/politics-story";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
-import { publishPoliticsReel } from "@/services/politics-reel";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -162,12 +159,6 @@ async function run(request: Request) {
       console.error("Rasdooq Messenger rules failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
-      const politicsNews = await enqueuePoliticsNews(startedAt);
-      if (politicsNews.created) console.info("Politics news scheduled", { count: politicsNews.created });
-    } catch (error) {
-      console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
-    }
-    try {
       const remembrance = await ensureDailyRemembrance(startedAt);
       if (remembrance.created) console.info("Daily remembrance queued", remembrance);
       const textPages = await enqueueTextPagePosts(startedAt);
@@ -176,20 +167,6 @@ async function run(request: Request) {
       console.error("Text-only page queue failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const results = await publishDuePosts();
-    try {
-      const story = await publishPoliticsStory(startedAt);
-      if (story.published) console.info("Politics story published", { postId: story.postId });
-      else if (story.reason === "STORY_FAILED") console.error("Politics story failed", { error: story.error });
-    } catch (error) {
-      console.error("Politics story failed", { error: error instanceof Error ? error.message : String(error) });
-    }
-    try {
-      const reel = await publishPoliticsReel(startedAt);
-      if (reel.published) console.info("Politics reel published", { postId: reel.postId });
-      else if (reel.reason === "REEL_FAILED") console.error("Politics reel failed", { error: reel.error });
-    } catch (error) {
-      console.error("Politics reel failed", { error: error instanceof Error ? error.message : String(error) });
-    }
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     await getDb().insert(schedulerRuns).values({ finishedAt, processedCount: results.length, publishedCount: results.filter((item) => item.status === "published").length, failedCount: results.filter((item) => item.status === "failed").length, durationMs, status: "success" });
