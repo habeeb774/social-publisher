@@ -181,6 +181,36 @@ async function planAutomation(comment:Row){
     await commentsAudit("comment.automation_matched",String(comment.id),{ruleId:match.rule.id,action:match.action});
   }
 }
+/** Re-evaluate recent unanswered comments after rules are enabled or changed.
+ * Only comments with an identified author and no previous reply/match are eligible.
+ * The reply worker retains all approval, feature-flag and Graph API safeguards.
+ */
+export async function reconcileRecentCommentAutomation(limit=30) {
+  if (!flags().automation) return { checked: 0, planned: 0 };
+  const db = database();
+  const rows = await db`SELECT c.* FROM facebook_comments c
+    WHERE c.created_time >= now() - interval '48 hours'
+      AND c.needs_reply = true AND c.is_from_page = false
+      AND c.is_hidden = false AND c.author_id IS NOT NULL
+      AND c.status NOT IN ('replied','spam','resolved','hidden')
+      AND NOT EXISTS (SELECT 1 FROM comment_replies r WHERE r.comment_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM comment_automation_events e
+        WHERE e.comment_id = c.id AND e.status = 'matched')
+    ORDER BY c.created_time DESC LIMIT ${limit}`;
+  let planned = 0;
+  for (const row of rows) {
+    try {
+      await planAutomation(row as Row);
+      planned++;
+    } catch (error) {
+      console.error("Comment automation reconciliation failed", {
+        commentId: String(row.id),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { checked: rows.length, planned };
+}
 /** Sends due automation replies only. Unknown outcomes are never retried automatically. */
 export async function processDueAutomationReplies(limit=20){
   if(!flags().automation||!flags().autoReplies||!flags().replies)return {processed:0,sent:0,failed:0};
