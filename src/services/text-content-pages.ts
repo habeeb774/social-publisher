@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, posts, settings } from "@/db/schema";
 
@@ -52,6 +52,30 @@ export async function enqueueTextPagePosts(now = new Date()) {
     const content = texts[(epochDay * profile.daily + slotIndex) % texts.length];
     await db.insert(posts).values({ pageId: page.id, content, scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: profile.label, tags: ["نصوص", profile.id as ProfileId] });
     created++;
+  }
+  return { created };
+}
+
+/** Maintain a rolling 30-day horizon for approved morning/evening remembrance. */
+export async function ensureDailyRemembrance(now = new Date()) {
+  const db = getDb();
+  const page = await db.select({ id: facebookPages.id }).from(facebookPages)
+    .where(and(eq(facebookPages.facebookPageId, "1384766158050164"), eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true))).limit(1);
+  if (!page.length) return { created: 0 };
+  const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const morning = "أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد، وهو على كل شيء قدير.\\n\\nمن أذكار الصباح الواردة في صحيح مسلم، وهو مقتطف من الذكر الأطول.";
+  const evening = "أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد، وهو على كل شيء قدير.\\n\\nمن أذكار المساء الواردة في صحيح مسلم، وهو مقتطف من الذكر الأطول.";
+  let created = 0;
+  for (let offset = 0; offset < 30; offset++) {
+    const day = new Date(Date.parse(localDay + "T00:00:00Z") + offset * 86400000).toISOString().slice(0, 10);
+    for (const [slot, content] of [["09:00", morning], ["17:00", evening]]) {
+      const scheduledAt = new Date(day + "T" + slot + ":00+03:00");
+      if (scheduledAt <= now) continue;
+      const existing = await db.select({ id: posts.id }).from(posts).where(and(eq(posts.pageId, page[0].id), gte(posts.scheduledAt, scheduledAt), lt(posts.scheduledAt, new Date(scheduledAt.getTime() + 60000)))).limit(1);
+      if (existing.length) continue;
+      await db.insert(posts).values({ pageId: page[0].id, content, scheduledAt, timezone: "Asia/Riyadh", status: "scheduled", category: "آية وسكن", tags: ["آية وسكن", "أذكار يومية"] });
+      created++;
+    }
   }
   return { created };
 }
