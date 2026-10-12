@@ -17,6 +17,7 @@ import { enqueueHourlyTechNews } from "@/services/tech-news";
 import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { publishPoliticsStory } from "@/services/politics-story";
+import { enqueueTextPagePosts } from "@/services/text-content-pages";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -164,6 +165,12 @@ async function run(request: Request) {
       if (politicsNews.created) console.info("Politics news scheduled", { count: politicsNews.created });
     } catch (error) {
       console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const textPages = await enqueueTextPagePosts(startedAt);
+      if (textPages.created) console.info("Text-only posts queued", textPages);
+    } catch (error) {
+      console.error("Text-only page queue failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const results = await publishDuePosts();
     try {
