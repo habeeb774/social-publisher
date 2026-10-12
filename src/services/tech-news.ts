@@ -66,6 +66,10 @@ export async function enqueueHourlyTechNews(now = new Date()) {
   // parsing every feed; retain the atomic insert below for concurrent ticks.
   const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
   if (existingClaim) return { created: false, reason: "HOUR_ALREADY_CLAIMED" as const };
+  // At most one feed scan per 15-minute window until this hour has a post.
+  const attemptKey = `tech_news_attempt:${hourKey}:${Math.floor(now.getUTCMinutes() / 15)}`;
+  const attempt = await db.insert(settings).values({ key: attemptKey, value: now.toISOString() }).onConflictDoNothing().returning({ key: settings.key });
+  if (!attempt.length) return { created: false, reason: "ATTEMPT_ALREADY_RUN" as const };
   const feedResults = await Promise.all(FEEDS.map(readFeed));
   const cutoff = now.getTime() - MAX_AGE_MS;
   const candidates = feedResults.flat().filter((item) => eligibleTechArticle(item) && item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
