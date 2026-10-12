@@ -45,7 +45,7 @@ export async function enqueuePoliticsNews(now = new Date()) {
 
   const feeds = await readPoliticsFeeds();
   const candidates = rankRadar(feeds.flatMap((f) => f.items), now, eligiblePoliticsArticle)
-    .filter((g) => politicsRisk(g.title) === "normal" && now.getTime() - g.articles[0].publishedAt.getTime() <= MAX_AGE_MS)
+    .filter((g) => politicsRisk(`${g.title} ${g.articles[0].summary ?? ""}`) === "normal" && now.getTime() - g.articles[0].publishedAt.getTime() <= MAX_AGE_MS)
     // Yemeni news first, then newest.
     .sort((a, b) => Number(isYemenNews(b.title)) - Number(isYemenNews(a.title)) || b.articles[0].publishedAt.getTime() - a.articles[0].publishedAt.getTime());
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");

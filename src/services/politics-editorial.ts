@@ -23,18 +23,61 @@ export function isYemenNews(title: string) { return yemen.test(title); }
 export function politicsRisk(title: string): PoliticsRisk { return sensitive.test(title) ? "sensitive" : "normal"; }
 
 export function extractPoliticsCard(content: string) {
-  const lines = content.split("\n").map((line) => line.trim());
-  const title = (lines.find((line) => line.startsWith("📰")) ?? "📰 أخبار").replace(/^📰\s*/, "");
-  const source = (lines.find((line) => line.startsWith("المصدر:")) ?? "المصدر: أخبار").slice("المصدر:".length).trim();
+  const lines = content.split("\n").map((line) => line.trim()).filter(Boolean);
+  // The headline is the first line; older posts prefixed it with 📰, newer ones with a topic emoji.
+  const title = (lines[0] ?? "أخبار").replace(/^[^\p{L}\p{N}«"(]+/u, "") || "أخبار";
+  const sourceLine = lines.find((line) => line.includes("المصدر:"));
+  const source = sourceLine ? sourceLine.slice(sourceLine.indexOf("المصدر:") + "المصدر:".length).trim() : "أخبار";
   return { title: title.length > 180 ? `${title.slice(0, 177).trimEnd()}…` : title, source: source.slice(0, 80) };
 }
 
-/** Neutral, attributed text only: no opinion, no emoji hype, no "share if you agree" bait, no source images. */
-export function editorialPoliticsPost(article: Article) {
+const diplomacy = /قمة|مفاوضات|محادثات|اتفاق|اتفاقية|هدنة|وقف إطلاق|زيارة|يلتقي|لقاء|وساطة|\b(?:summit|talks|deal|agreement|ceasefire|truce|visit|meets?)\b/i;
+const economy = /نفط|اقتصاد|أسعار|عملة|الريال|البنك المركزي|عقوبات|ميزانية|\b(?:oil|economy|prices?|sanctions?|currency|budget)\b/i;
+
+/** The opening emoji tells readers at a glance what kind of story it is. */
+function opener(text: string) {
+  if (politicsRisk(text) === "sensitive") return "⚠️";
+  if (yemen.test(text)) return "🇾🇪";
+  if (diplomacy.test(text)) return "🤝";
+  if (economy.test(text)) return "📊";
+  return "🔴";
+}
+
+// Varied follow invitations: identical text on every post looks automated. Asking to follow is not
+// one of the engagement-bait patterns Facebook demotes (asking for likes, shares, tags or comments is).
+const followLines = [
+  "تابع رَصْدُوق ليصلك الخبر أولًا بأول.",
+  "للمزيد من المستجدات تابع صفحة رَصْدُوق.",
+  "رَصْدُوق… أخبار اليمن والمنطقة لحظة بلحظة. تابعنا.",
+  "فعّل المتابعة ليصلك كل جديد من رَصْدُوق.",
+];
+
+/** First sentence of the feed summary, skipped when it only repeats the headline or is itself unsafe. */
+function summarySentence(summary: string | undefined, title: string) {
+  const text = (summary ?? "").replace(/\s+/g, " ").trim();
+  if (!text || blocked.test(text)) return "";
+  const sentence = (text.match(/^.{40,}?[.!؟?](?=\s|$)/u)?.[0] ?? text).trim();
+  const clipped = sentence.length > 240 ? `${sentence.slice(0, 237).trimEnd()}…` : sentence;
+  const norm = (value: string) => value.replace(/[^\p{L}\p{N}]+/gu, "");
+  return norm(clipped).startsWith(norm(title).slice(0, 40)) ? "" : clipped;
+}
+
+/**
+ * Neutral, attributed text: headline, a one-sentence summary and the source name.
+ * No opinion and no like/share/comment bait. The external link is left out because Facebook
+ * shows link posts to fewer people; readers can find the story by the outlet's name.
+ */
+export function editorialPoliticsPost(article: Article & { summary?: string }) {
   if (!eligiblePoliticsArticle(article)) throw new Error("POLITICS_EDITORIAL_REJECTED");
   const title = article.title.replace(/\s+/g, " ").trim().slice(0, 220);
-  const lines = [`📰 ${title}`, "", `المصدر: ${article.source}`, `التفاصيل: ${article.url}`];
-  if (politicsRisk(title) === "sensitive") lines.push("", "ننقل الخبر كما ورد في مصدره دون تبنٍّ لأي موقف.");
-  lines.push("", "#أخبار");
+  const summary = summarySentence(article.summary, title);
+  const sensitive = politicsRisk(`${title} ${summary}`) === "sensitive";
+  const seed = [...article.url].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const lines = [`${opener(`${title} ${summary}`)} ${title}`];
+  if (summary) lines.push("", summary);
+  lines.push("", `📌 المصدر: ${article.source}`);
+  if (sensitive) lines.push("ننقل الخبر كما ورد في مصدره دون تبنٍّ لأي موقف.");
+  lines.push("", followLines[seed % followLines.length]);
+  lines.push("", ["#رصدوق", "#أخبار", ...(yemen.test(`${title} ${summary}`) ? ["#اليمن"] : [])].join(" "));
   return lines.join("\n");
 }

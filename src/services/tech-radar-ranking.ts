@@ -1,6 +1,6 @@
 import { eligibleTechArticle } from "./tech-news-editorial";
 
-export type RadarArticle = { title: string; url: string; source: string; publishedAt: Date };
+export type RadarArticle = { title: string; url: string; source: string; publishedAt: Date; summary?: string };
 const stopWords = new Set("the a an to of for in on and with is new how what this that من في على إلى عن مع هذا هذه جديد جديدة التي الذي".split(" "));
 function tokens(title: string) {
   return new Set(title.toLowerCase().normalize("NFKC").replace(/[\u064b-\u065f]/g, "").split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2 && !stopWords.has(word)));

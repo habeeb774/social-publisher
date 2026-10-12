@@ -9,7 +9,7 @@ const HABEEB_FACEBOOK_PAGE_ID = "1330947143441946";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 type FeedSource = { name: string; url: string; topic: string };
-export type FeedItem = { title: string; url: string; publishedAt: Date; source: string; topic: string };
+export type FeedItem = { title: string; url: string; publishedAt: Date; source: string; topic: string; summary?: string };
 
 const FEEDS: FeedSource[] = [
   { name: "البوابة العربية للأخبار التقنية", url: "https://aitnews.com/feed/", topic: "أدوات العمل" },
@@ -41,7 +41,8 @@ export function parseFeed(xml: string, source: FeedSource): FeedItem[] {
     const dateText = tag(block, "pubDate") || tag(block, "published") || tag(block, "updated") || tag(block, "dc:date");
     const publishedAt = dateText ? new Date(dateText) : new Date(0);
     if (!title || !/^https?:\/\//i.test(url) || Number.isNaN(publishedAt.getTime())) continue;
-    items.push({ title, url, publishedAt, source: source.name, topic: source.topic });
+    const summary = (tag(block, "description") || tag(block, "summary")).slice(0, 600);
+    items.push({ title, url, publishedAt, source: source.name, topic: source.topic, ...(summary ? { summary } : {}) });
   }
   return items;
 }
