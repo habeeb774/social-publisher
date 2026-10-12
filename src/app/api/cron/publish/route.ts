@@ -153,6 +153,12 @@ async function run(request: Request) {
       console.error("Hourly technology news failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
+      const techNews = await enqueueHourlyTechNews(startedAt, "former-politics");
+      if (techNews.created) console.info("Technology news queued for former politics page", { postId: techNews.postId, source: techNews.source });
+    } catch (error) {
+      console.error("Former politics page technology news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
       const seeded = await seedRasdooqMessengerRules();
       if (seeded.seeded) console.info("Rasdooq Messenger rules added", seeded);
     } catch (error) {
