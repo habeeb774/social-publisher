@@ -34,8 +34,10 @@ export async function enqueuePoliticsNews(now = new Date()) {
   const claimKey = `politics_news_hour:${now.toISOString().slice(0, 13)}`;
   const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
   if (existingClaim) return { created: 0, reason: "HOUR_ALREADY_CLAIMED" as const };
-  const claim = await db.insert(settings).values({ key: claimKey, value: JSON.stringify({ claimedAt: now.toISOString() }) }).onConflictDoNothing().returning({ key: settings.key });
-  if (!claim.length) return { created: 0, reason: "HOUR_ALREADY_CLAIMED" as const };
+  // Retry empty searches once per 15-minute window; stop once news is queued.
+  const attemptKey = `politics_news_attempt:${now.toISOString().slice(0, 13)}:${Math.floor(now.getUTCMinutes() / 15)}`;
+  const attempt = await db.insert(settings).values({ key: attemptKey, value: now.toISOString() }).onConflictDoNothing().returning({ key: settings.key });
+  if (!attempt.length) return { created: 0, reason: "ATTEMPT_ALREADY_RUN" as const };
 
   const page = await politicsTargetPage();
   if (!page) {
@@ -67,5 +69,6 @@ export async function enqueuePoliticsNews(now = new Date()) {
     await logAudit("politics_news.enqueued", "post", post.id, { pageId: page.facebookPageId, source: article.source, sourceUrl: article.url, scheduledAt: scheduledAt.toISOString() });
     created++;
   }
+  if (created) await db.insert(settings).values({ key: claimKey, value: JSON.stringify({ claimedAt: now.toISOString(), created }) }).onConflictDoNothing();
   return created ? { created, reason: "SCHEDULED" as const } : { created: 0, reason: "NO_NEW_SAFE_NEWS" as const };
 }
