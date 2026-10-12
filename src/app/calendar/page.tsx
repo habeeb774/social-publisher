@@ -30,7 +30,8 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
   const session = await pageSession();
   const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const today = String((await db.execute(sql`select to_char(now() at time zone 'Asia/Riyadh','YYYY-MM-DD') as today`)).rows[0].today);
-  const view: View = params.view && params.view in VIEWS ? params.view as View : "month";
+  const dayOnly = params.view === "day";
+  const view: View = dayOnly ? "agenda" : params.view && params.view in VIEWS ? params.view as View : "month";
   const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : params.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(params.month) ? `${params.month}-01` : today;
   const pageFilter = params.page && /^[0-9a-f-]{36}$/i.test(params.page) ? params.page : "";
   const campaignFilter = params.campaign && /^[0-9a-f-]{36}$/i.test(params.campaign) ? params.campaign : "";
@@ -42,10 +43,10 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
   const [y, m] = month.split("-").map(Number);
   const weekStart = addDays(anchor, -new Date(`${anchor}T00:00:00Z`).getUTCDay());
   const rangeStart = view === "month" ? `${month}-01` : view === "week" ? weekStart : anchor;
-  const rangeEnd = view === "month" ? iso(new Date(Date.UTC(y, m, 1))) : view === "week" ? addDays(weekStart, 7) : addDays(anchor, 30);
+  const rangeEnd = view === "month" ? iso(new Date(Date.UTC(y, m, 1))) : view === "week" ? addDays(weekStart, 7) : addDays(anchor, dayOnly ? 1 : 30);
   const from = new Date(`${rangeStart}T00:00:00+03:00`), to = new Date(`${rangeEnd}T00:00:00+03:00`);
-  const prev = view === "month" ? iso(new Date(Date.UTC(y, m - 2, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? -7 : -30);
-  const next = view === "month" ? iso(new Date(Date.UTC(y, m, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? 7 : 30);
+  const prev = view === "month" ? iso(new Date(Date.UTC(y, m - 2, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? -7 : dayOnly ? -1 : -30);
+  const next = view === "month" ? iso(new Date(Date.UTC(y, m, 1))) : addDays(view === "week" ? weekStart : anchor, view === "week" ? 7 : dayOnly ? 1 : 30);
 
   const [entries, pages, campaignList, rawClusters] = await Promise.all([
     db.select({ id: posts.id, content: posts.content, status: posts.status, scheduledAt: posts.scheduledAt, page: facebookPages.name }).from(posts).leftJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(
@@ -77,7 +78,7 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
   const agendaDays = view === "agenda" ? Array.from(new Set(entries.map((e) => localDate(e.scheduledAt!)))) : [];
   const title = view === "month" ? new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("ar-SA-u-ca-gregory", { month: "long", year: "numeric", timeZone: "UTC" }) : view === "week" ? `${weekStart} ← ${addDays(weekStart, 6)}` : `من ${anchor} لمدة 30 يومًا`;
   const filters = { page: pageFilter, campaign: campaignFilter, status: statusFilter, category: categoryFilter };
-  const keep = (extra: Record<string, string>) => `/calendar?${new URLSearchParams(Object.entries({ view, date: anchor, ...filters, ...extra }).filter(([k, v]) => v && !(k === "view" && v === "month")))}`;
+  const keep = (extra: Record<string, string>) => `/calendar?${new URLSearchParams(Object.entries({ view: dayOnly ? "day" : view, date: anchor, ...filters, ...extra }).filter(([k, v]) => v && !(k === "view" && v === "month")))}`;
   const filterQuery = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
 
   return <AppShell title="التقويم">
@@ -85,12 +86,12 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
     <div className="calendar-toolbar">
       <div className="segmented" role="tablist" aria-label="طريقة العرض">{(Object.keys(VIEWS) as View[]).map((v) => <Link key={v} role="tab" aria-selected={view === v} className={view === v ? "active" : ""} href={keep({ view: v })}>{VIEWS[v]}</Link>)}</div>
       <Link className="btn btn-icon" aria-label="السابق" href={keep({ date: prev })}>›</Link>
-      <strong>{title}</strong>
+      <strong>{dayOnly ? anchor : title}</strong>
       <Link className="btn btn-icon" aria-label="التالي" href={keep({ date: next })}>‹</Link>
-      <Link className="btn btn-ghost btn-sm" href={keep({ date: today })}>اليوم</Link>
+      <Link className="btn btn-ghost btn-sm" aria-current={dayOnly && anchor === today ? "date" : undefined} href={keep({ view: "day", date: today })}>اليوم</Link>
       {clusters.length > 0 && <span className="badge badge-warning">{clusters.length} منشور متقارب خلال 5 دقائق</span>}
     </div>
-    <form className="toolbar" method="get"><input type="hidden" name="view" value={view} /><input type="hidden" name="date" value={anchor} />
+    <form className="toolbar" method="get"><input type="hidden" name="view" value={dayOnly ? "day" : view} /><input type="hidden" name="date" value={anchor} />
       <FilterToggle active={Object.values(filters).filter(Boolean).length}>
       <select name="page" aria-label="الصفحة" defaultValue={pageFilter}><option value="">كل الصفحات</option>{pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
       <select name="campaign" aria-label="الحملة" defaultValue={campaignFilter}><option value="">كل الحملات</option>{campaignList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
