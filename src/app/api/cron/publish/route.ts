@@ -8,7 +8,7 @@ import { resolveAlerts, sendAlert } from "@/services/alerts";
 import { inspectGraphToken, isGraphConfigured } from "@/services/facebook-graph";
 import { purgeExpiredTrash } from "@/services/trash";
 import { materializeRecurrences } from "@/services/recurrence";
-import { processDueAutomationReplies, syncComments } from "@/services/comments/store";
+import { processDueAutomationReplies, reconcileRecentCommentAutomation, syncComments } from "@/services/comments/store";
 import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
@@ -124,6 +124,7 @@ async function run(request: Request) {
     }
 
     try {
+      await reconcileRecentCommentAutomation();
       const autoReplies = await processDueAutomationReplies();
       if (autoReplies.failed > 0) {
         await sendAlert("comments_sync_failed", "بعض الردود التلقائية لم تُرسل", `فشل ${autoReplies.failed} من أصل ${autoReplies.processed} رد تلقائي مستحق.`, 1);
