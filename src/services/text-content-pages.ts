@@ -48,7 +48,7 @@ export async function enqueueTextPagePosts(now = new Date()) {
     if (!claimed) continue;
     // Deterministic rotation without replacement until the approved list wraps.
     const epochDay = Math.floor(Date.UTC(Number(part("year")), Number(part("month")) - 1, Number(part("day"))) / 86400000);
-    const slotIndex = profile.times.indexOf(slot);
+    const slotIndex = (profile.times as readonly string[]).indexOf(slot);
     const content = texts[(epochDay * profile.daily + slotIndex) % texts.length];
     await db.insert(posts).values({ pageId: page.id, content, scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: profile.label, tags: ["نصوص", profile.id as ProfileId] });
     created++;
