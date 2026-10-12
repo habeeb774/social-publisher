@@ -16,6 +16,7 @@ import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
 import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
+import { publishPoliticsStory } from "@/services/politics-story";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -165,6 +166,13 @@ async function run(request: Request) {
       console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const results = await publishDuePosts();
+    try {
+      const story = await publishPoliticsStory(startedAt);
+      if (story.published) console.info("Politics story published", { postId: story.postId });
+      else if (story.reason === "STORY_FAILED") console.error("Politics story failed", { error: story.error });
+    } catch (error) {
+      console.error("Politics story failed", { error: error instanceof Error ? error.message : String(error) });
+    }
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     await getDb().insert(schedulerRuns).values({ finishedAt, processedCount: results.length, publishedCount: results.filter((item) => item.status === "published").length, failedCount: results.filter((item) => item.status === "failed").length, durationMs, status: "success" });

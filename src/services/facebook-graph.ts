@@ -154,6 +154,24 @@ export async function publishGraphVideo(input: { pageId: string; content: string
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
 }
 
+/**
+ * Publishes a Page photo story: upload the image unpublished, then attach it to a story.
+ * Stories carry no caption or clickable link; they disappear after 24 hours.
+ */
+export async function publishGraphPhotoStory(pageId: string, imageUrl: string) {
+  const token = await pageToken(pageId);
+  const photo = await graph(`/${pageId}/photos`, { method: "POST", body: new URLSearchParams({ url: imageUrl, published: "false", access_token: token }) }, 30000);
+  if (!photo.ok || typeof photo.body.id !== "string") throw new Error(graphError(photo.body));
+  let story: Awaited<ReturnType<typeof graph>>;
+  try {
+    story = await graph(`/${pageId}/photo_stories`, { method: "POST", body: new URLSearchParams({ photo_id: photo.body.id, access_token: token }) });
+  } catch (cause) {
+    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من قصص الصفحة قبل أي إعادة محاولة", { cause });
+  }
+  if (story.body.error) throw new Error(graphError(story.body));
+  return { id: String(story.body.post_id ?? story.body.id ?? photo.body.id) };
+}
+
 /** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
 export async function replyToCommentGraph(pageId: string, commentId: string, message: string) {
   const token = await pageToken(pageId);
