@@ -14,6 +14,7 @@ import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
+import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
 
@@ -157,6 +158,12 @@ async function run(request: Request) {
       if (techNews.created) console.info("Technology news queued for former politics page", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
       console.error("Former politics page technology news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const mixed = await enqueueMixedFacts(startedAt);
+      if (mixed.created) console.info("Mixed facts and tips queued", mixed);
+    } catch (error) {
+      console.error("Mixed facts queue failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
       const seeded = await seedRasdooqMessengerRules();
