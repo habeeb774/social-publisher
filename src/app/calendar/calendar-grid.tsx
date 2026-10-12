@@ -16,6 +16,8 @@ export function CalendarGrid({ days, cells, today, variant = "month" }: { days: 
   const [drag, setDrag] = useState<Entry | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [moving, setMoving] = useState<Entry | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(today);
+  const selectedCell = cells.find((cell) => cell.date === selectedDate);
 
   async function move(entry: Entry, date: string) {
     if (!MOVABLE.includes(entry.status)) return;
@@ -44,11 +46,12 @@ export function CalendarGrid({ days, cells, today, variant = "month" }: { days: 
     <div className={variant === "week" ? "calendar-week" : "calendar-grid"}>{variant === "month" && days.map((d) => <b key={d}>{d}</b>)}
       {cells.map((cell, index) => cell.day === null ? <div className="calendar-day outside" key={index} /> :
         <div key={index}
-          className={`calendar-day ${cell.date === today ? "today" : ""} ${over === cell.date ? "drop-target" : ""} ${moving && cell.date ? "move-target" : ""}`}
+          className={`calendar-day ${cell.date === selectedDate ? "mobile-selected" : ""} ${cell.date === today ? "today" : ""} ${over === cell.date ? "drop-target" : ""} ${moving && cell.date ? "move-target" : ""}`}
           onClick={(e) => { if (moving && cell.date && e.target === e.currentTarget) void move(moving, cell.date); }}
           onDragOver={(e) => { if (drag) { e.preventDefault(); setOver(cell.date); } }}
           onDragLeave={() => setOver(null)} onDrop={() => drop(cell.date!)}>
-          <button type="button" className="calendar-day-label" onClick={() => moving && cell.date ? void move(moving, cell.date) : undefined}>{cell.label ?? cell.day}</button>
+          <button type="button" className="calendar-day-label" onClick={() => { if (moving && cell.date) void move(moving, cell.date); else setSelectedDate(cell.date); }}>{cell.label ?? cell.day}</button>
+          <button type="button" className="calendar-mobile-count" onClick={() => setSelectedDate(cell.date)}>{cell.items.length || "·"}</button>
           {cell.items.map((item) => <div key={item.id} className="calendar-entry-wrap">
             <Link href={moving ? "#" : `/posts/${item.id}`} draggable={!moving && MOVABLE.includes(item.status)}
               onClick={(e) => { if (moving) e.preventDefault(); }}
@@ -61,5 +64,7 @@ export function CalendarGrid({ days, cells, today, variant = "month" }: { days: 
           </div>)}
         </div>)}
     </div>
+    <div className="calendar-mobile-details"><strong>{selectedDate ? `منشورات ${selectedDate}` : "اختر يومًا"}</strong>{selectedCell?.items.length ? selectedCell.items.map((item) => <Link key={item.id} href={`/posts/${item.id}`} className="calendar-mobile-post"><span className="num">{time(item.scheduledAt)}</span><span>{item.content.slice(0, 110)}</span><small>{STATUS_LABELS[item.status]}</small></Link>) : <p>لا توجد منشورات مجدولة لهذا اليوم.</p>}</div>
+    <style jsx global>{".calendar-mobile-count,.calendar-mobile-details{display:none}@media(max-width:700px){.calendar-toolbar{display:flex;flex-wrap:wrap;gap:8px}.calendar-toolbar .segmented{width:100%;justify-content:space-between}.calendar-toolbar strong{flex:1;text-align:center;min-width:100px;font-size:14px}.calendar-card{overflow:hidden}.calendar-grid{grid-template-columns:repeat(7,minmax(0,1fr))!important}.calendar-grid>.calendar-day{min-width:0!important;min-height:68px!important;height:68px!important;overflow:hidden;padding:5px 2px!important;display:flex;flex-direction:column;align-items:center;gap:4px}.calendar-grid>.calendar-day.outside{min-height:68px!important}.calendar-grid>.calendar-day>b{font-size:10px;overflow:hidden;white-space:nowrap;text-align:center;width:100%}.calendar-grid .calendar-day-label{font-size:13px;padding:2px!important;min-height:24px}.calendar-grid .calendar-entry-wrap{display:none!important}.calendar-grid .calendar-mobile-count{display:flex;align-items:center;justify-content:center;min-width:24px;height:22px;border:0;border-radius:7px;background:rgba(59,130,246,.12);color:var(--heading);font-size:12px;font-weight:700}.calendar-grid .mobile-selected{outline:2px solid #3b82f6;outline-offset:-2px}.calendar-mobile-details{display:flex;flex-direction:column;gap:9px;padding:14px}.calendar-mobile-details>strong{font-size:15px}.calendar-mobile-details>p{font-size:13px;opacity:.7}.calendar-mobile-post{display:flex;flex-direction:column;gap:4px;padding:11px;border:1px solid rgba(128,128,128,.25);border-radius:10px;color:var(--heading);text-decoration:none;overflow-wrap:anywhere}.calendar-mobile-post>small{opacity:.75}}"}</style>
   </section>;
 }
