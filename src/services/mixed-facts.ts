@@ -55,14 +55,14 @@ const ITEMS: ReadonlyArray<readonly [string, string]> = [
   ]
 ];
 
-/** Queue up to ten one-minute slots ahead; publishing cadence depends on external cron. */
+/** Queue one five-minute slot per cron run; publishing cadence depends on external cron. */
 export async function enqueueMixedFacts(now = new Date()) {
   const db = getDb();
   const page = await politicsTargetPage();
   if (!page) return { created: 0, reason: "PAGE_UNAVAILABLE" };
-  const base = Math.floor(now.getTime() / 60000);
+  const base = Math.floor(now.getTime() / 300000);
   let created = 0;
-  for (let offset = 0; offset < 10; offset++) {
+  for (let offset = 0; offset < 1; offset++) {
     const slot = base + offset;
     const slotKey = `mixed_facts_slot:${page.facebookPageId}:${slot}`;
     const [claimed] = await db.insert(settings).values({ key: slotKey, value: now.toISOString() }).onConflictDoNothing().returning({ key: settings.key });
@@ -74,7 +74,7 @@ export async function enqueueMixedFacts(now = new Date()) {
     const index = slot - Number(saved?.value ?? slot);
     if (index < 0 || index >= ITEMS.length) return { created, reason: "CONTENT_EXHAUSTED" };
     const [category, fact] = ITEMS[index];
-    await db.insert(posts).values({ pageId: page.id, content: `💡 ${category}\n\n${fact}\n\n#معلومات #نصائح #تقنية`, scheduledAt: new Date(slot * 60000), timezone: "Asia/Riyadh", status: "scheduled", category, tags: ["معلومات", category] });
+    await db.insert(posts).values({ pageId: page.id, content: `💡 ${category}\n\n${fact}\n\n#معلومات #نصائح #تقنية`, scheduledAt: new Date(slot * 300000), timezone: "Asia/Riyadh", status: "scheduled", category, tags: ["معلومات", category] });
     created++;
   }
   return { created, reason: "QUEUED" };
