@@ -172,6 +172,31 @@ export async function publishGraphPhotoStory(pageId: string, imageUrl: string) {
   return { id: String(story.body.post_id ?? story.body.id ?? photo.body.id) };
 }
 
+/**
+ * Publishes a Facebook Reel from video bytes: start an upload session, send the file to
+ * rupload.facebook.com, then finish with the caption. Facebook processes the Reel afterwards.
+ */
+export async function publishGraphReel(pageId: string, video: Buffer, description: string) {
+  const token = await pageToken(pageId);
+  const start = await graph(`/${pageId}/video_reels`, { method: "POST", body: new URLSearchParams({ upload_phase: "start", access_token: token }) });
+  if (!start.ok || typeof start.body.video_id !== "string") throw new Error(graphError(start.body));
+  const videoId = start.body.video_id;
+  const upload = await fetch(`https://rupload.facebook.com/video-upload/${version()}/${videoId}`, {
+    method: "POST", body: new Uint8Array(video), signal: AbortSignal.timeout(30000),
+    headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(video.length), "Content-Type": "application/octet-stream" },
+  });
+  const uploaded = await upload.json().catch(() => ({})) as GraphError & { success?: boolean };
+  if (!upload.ok || uploaded.error || uploaded.success === false) throw new Error(graphError(uploaded));
+  let finish: Awaited<ReturnType<typeof graph>>;
+  try {
+    finish = await graph(`/${pageId}/video_reels`, { method: "POST", body: new URLSearchParams({ upload_phase: "finish", video_id: videoId, video_state: "PUBLISHED", description, access_token: token }) });
+  } catch (cause) {
+    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من ريلز الصفحة قبل أي إعادة محاولة", { cause });
+  }
+  if (finish.body.error) throw new Error(graphError(finish.body));
+  return { id: videoId };
+}
+
 /** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
 export async function replyToCommentGraph(pageId: string, commentId: string, message: string) {
   const token = await pageToken(pageId);

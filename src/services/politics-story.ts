@@ -7,6 +7,14 @@ import { isPublishingEnabled } from "./publishing-mode";
 import { isYemenNews } from "./politics-editorial";
 import { politicsTargetPage } from "./politics-autopost";
 
+/** The most important politics post published on the page since `since`: Yemeni news first, then the newest. */
+export async function topRecentPoliticsPost(pageId: string, since: Date) {
+  const recent = await getDb().select({ id: posts.id, content: posts.content }).from(posts)
+    .where(and(eq(posts.pageId, pageId), eq(posts.status, "published"), isNull(posts.deletedAt), arrayContains(posts.tags, ["سياسة"]), gte(posts.publishedAt, since)))
+    .orderBy(desc(posts.publishedAt)).limit(20);
+  return recent.find((post) => isYemenNews(post.content.split("\n")[0] ?? "")) ?? recent[0] ?? null;
+}
+
 /** One story every few hours: a story per post would flood followers' story tray. */
 const INTERVAL_MS = 3 * 3600000;
 
@@ -23,11 +31,8 @@ export async function publishPoliticsStory(now = new Date()) {
 
   const page = await politicsTargetPage();
   if (!page) return { published: false as const, reason: "POLITICS_PAGE_UNAVAILABLE" };
-  const recent = await db.select({ id: posts.id, content: posts.content }).from(posts)
-    .where(and(eq(posts.pageId, page.id), eq(posts.status, "published"), isNull(posts.deletedAt), arrayContains(posts.tags, ["سياسة"]), gte(posts.publishedAt, new Date(now.getTime() - INTERVAL_MS))))
-    .orderBy(desc(posts.publishedAt)).limit(20);
-  if (!recent.length) return { published: false as const, reason: "NO_RECENT_POST" };
-  const chosen = recent.find((post) => isYemenNews(post.content.split("\n")[0] ?? "")) ?? recent[0];
+  const chosen = await topRecentPoliticsPost(page.id, new Date(now.getTime() - INTERVAL_MS));
+  if (!chosen) return { published: false as const, reason: "NO_RECENT_POST" };
 
   // Claim the slot before the external call so concurrent ticks cannot post two stories.
   const claim = await db.insert(settings).values({ key: slotKey, value: JSON.stringify({ postId: chosen.id, claimedAt: now.toISOString() }) }).onConflictDoNothing().returning({ key: settings.key });

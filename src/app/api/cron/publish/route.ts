@@ -18,6 +18,7 @@ import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { publishPoliticsStory } from "@/services/politics-story";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
+import { publishPoliticsReel } from "@/services/politics-reel";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -181,6 +182,13 @@ async function run(request: Request) {
       else if (story.reason === "STORY_FAILED") console.error("Politics story failed", { error: story.error });
     } catch (error) {
       console.error("Politics story failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const reel = await publishPoliticsReel(startedAt);
+      if (reel.published) console.info("Politics reel published", { postId: reel.postId });
+      else if (reel.reason === "REEL_FAILED") console.error("Politics reel failed", { error: reel.error });
+    } catch (error) {
+      console.error("Politics reel failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();

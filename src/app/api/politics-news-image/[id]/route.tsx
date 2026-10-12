@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { posts } from "@/db/schema";
 import { extractPoliticsCard } from "@/services/politics-editorial";
 import { renderTechNewsCard } from "@/services/tech-news-card";
+import { RASDOOQ_CARD } from "@/services/rasdooq-card";
 
 export const runtime = "nodejs";
 // A generated headline card, never the outlet's photo: avoids copyright claims and graphic imagery.
@@ -14,5 +15,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const [post] = await getDb().select({ content: posts.content }).from(posts).where(eq(posts.id, id)).limit(1);
   if (!post) return new Response("Not found", { status: 404 });
   const { title, source } = extractPoliticsCard(post.content);
-  return renderTechNewsCard(title, source, { kicker: "NEWS", label: "أخبار سياسية", page: "رَصْدُوق", accent: "#fbbf24", bar: "#f59e0b", background: "linear-gradient(145deg,#1a1206,#3b2a0e)", line: "#5b4520" }, new URL(request.url).searchParams.get("format") === "story" ? "story" : "post");
+  return renderTechNewsCard(title, source, RASDOOQ_CARD, new URL(request.url).searchParams.get("format") === "story" ? "story" : "post");
 }
