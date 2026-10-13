@@ -25,6 +25,13 @@ Requires the `MOVIE_WORKER_SECRET` (≥32 chars) to match the Vercel environment
 | `MOVIE_FONT` | `/worker/fonts/Tajawal-Regular.ttf` | |
 | `MOVIE_WHISPER_MODEL_DIR` | unset | offline faster-whisper model; see `download_model.py` (small/medium) |
 | `MOVIE_POLL_SECONDS` | `30` | |
+| `MOVIE_CLIP_SELECTION` | `highlights` | New plans use visual highlight selection; `sequential` explicitly enables legacy splitting. Existing saved plans are never rewritten. |
+| `MOVIE_HIGHLIGHT_MODEL` | required for highlights | Pre-provisioned Ollama vision model; no automatic downloads. |
+| `MOVIE_HIGHLIGHT_URL` | `http://localhost:11434` | Trusted private Ollama endpoint. Docker host: `http://host.docker.internal:11434`. Other hosts require HTTPS. |
+| `MOVIE_HIGHLIGHT_MAX_CLIPS` | `20` | Maximum selected clips per movie, not publishing quota. |
+| `MOVIE_HIGHLIGHT_MIN_SCORE` | `6` | Minimum estimated visual excitement score (0–10). |
+
+Highlight selection scans the whole movie in overlapping 30-second windows every 15 seconds, including its tail, using five chronological frames per window. A configured local vision model scores action, danger, confrontation and suspense; low scores and overlapping intervals are excluded. Selected clips retain chronological order and remain review-required. Ranking caches are source-bound and resume after interruption. Missing configuration, invalid model responses and no confident highlights fail visibly; they never silently fall back to sequential splitting. Sampling can miss brief events and cannot understand audio, dialogue or full narrative context. This is estimated visual ranking, not guaranteed cinematic understanding. Provision and test the model on a rights-cleared fixture before enabling production; inference performance/quality have not yet been verified. No model or endpoint is provisioned by this code change. The worker sends sampled frames only to the explicitly configured analyzer; do not use an untrusted/public service.
 
 Local stack: `docker-compose.movies.yml` (profile `worker`) and `docs/movie-reels-local-dev.md`.
 
@@ -51,7 +58,7 @@ The renderer creates 30-second, 1080x1920 padded previews and labels outputs for
 - Before production, add a durable queue, private object storage, explicit license verification, authenticated job submission, resource limits, and atomic five-per-day publishing limits.
 - Each output directory is bound to the source SHA-256 and saved clip plan. Complete H.264 1080x1920 30-second outputs are verified and reused on resume; partial output is never treated as complete. Invalid existing outputs require inspection rather than silent replacement.
 - An exclusive `.render.lock` prevents concurrent writers. A process crash can leave this lock; remove only after confirming no process owns the directory. Automated lease recovery remains pending.
-- FFmpeg scene detection prefers nearby scene starts where a full 30-second clip still fits. This may omit short gaps; it is not semantic highlight selection. Framing remains non-distorting letterboxing, not subject tracking.
+- Legacy `sequential` mode uses FFmpeg scene boundaries, not semantic selection. Highlight mode uses sampled visual model ranking as described above. Framing remains non-distorting letterboxing, not subject tracking.
 - Local fixture rendering and resume were verified on 2026-10-13; Docker execution and cloud integration are not yet verified.
 
 ## Local timed subtitles
@@ -76,6 +83,10 @@ Editable `.captions.json` files are authoritative on render resume; transcriptio
 
 
 ## Windows production worker setup (private R2)
+
+### Local highlight analyzer
+
+Run `windows/setup-highlights.ps1` to create a localhost-only Ollama Docker service and download `qwen2.5vl:3b` (approximately 3.2 GB). Persistent model files live in the `movie-highlights_vision-models` Docker volume; do not delete this volume unless deliberately uninstalling the model. The service uses CPU by default and can be slow. It is independent of the application deployment and never publishes. Configure the highlight variables shown in `worker.env.example`; preserve the existing secret and API URL. Let active jobs finish before rebuilding/restarting the worker. Previously saved clip plans remain unchanged; highlight selection applies to new movie plans. Verify a sample from inside the worker container before starting production jobs. Reference: https://ollama.com/library/qwen2.5vl
 
 The container polls `https://sp.leanpix.site` over outbound HTTPS. The worker needs **only**
 `MOVIE_API_URL` and a shared `MOVIE_WORKER_SECRET`; R2 access credentials belong to

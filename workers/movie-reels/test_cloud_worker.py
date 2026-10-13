@@ -3,6 +3,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from cloud_worker import Api, LeaseLost, run_once
 
@@ -46,6 +47,7 @@ def synthetic(path: Path, seconds: int):
                     "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(path)], check=True, timeout=300)
 
 @unittest.skipUnless(FONT.is_file(), "Tajawal font required")
+@patch.dict('os.environ', {'MOVIE_CLIP_SELECTION': 'sequential'})
 class CloudWorkerTests(unittest.TestCase):
     def test_process_uploads_base_and_captioned_then_rerender_uses_revision(self):
         with tempfile.TemporaryDirectory() as directory:

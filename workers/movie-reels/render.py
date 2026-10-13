@@ -11,6 +11,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 from plan_clips import plan, scene_boundaries
+from highlights import highlight_plan
 from subtitles import clip_cues, to_srt, transcribe, validate_cues, write_atomic
 from plan_clips import duration_seconds
 
@@ -82,15 +83,26 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
     # Bind cached previews to their source and immutable scene-aware plan.
     manifest = output_dir / "manifest.json"
     digest = source_hash(source)
+    if manifest.exists() and json.loads(manifest.read_text(encoding='utf-8'))['source_sha256'] != digest:
+        raise ValueError('Output directory belongs to another source')
+    binding = output_dir / 'highlight-source.json'
+    if binding.exists():
+        if json.loads(binding.read_text(encoding='utf-8'))['source_sha256'] != digest:
+            raise ValueError('Highlight cache belongs to another source')
+    else:
+        write_atomic(binding, json.dumps({'source_sha256': digest}))
     if manifest.exists():
         saved = json.loads(manifest.read_text(encoding="utf-8"))
         if saved["source_sha256"] != digest:
             raise ValueError("Output directory belongs to another source")
         clips = saved["clips"]
     else:
-        clips = plan(source, scene_boundaries(source))
+        mode = os.environ.get('MOVIE_CLIP_SELECTION', 'highlights')
+        if mode not in ('highlights', 'sequential'):
+            raise ValueError('MOVIE_CLIP_SELECTION_INVALID')
+        clips = highlight_plan(source, output_dir, check) if mode == 'highlights' else plan(source, scene_boundaries(source))
         temporary = output_dir / "manifest.partial.json"
-        temporary.write_text(json.dumps({"source_sha256": digest, "clips": clips}), encoding="utf-8")
+        temporary.write_text(json.dumps({"source_sha256": digest, "selection": mode, "clips": clips}), encoding="utf-8")
         temporary.replace(manifest)
     transcript = output_dir / "transcript.json"
     cues = None
