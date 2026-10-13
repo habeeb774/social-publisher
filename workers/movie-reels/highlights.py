@@ -99,7 +99,25 @@ def highlight_plan(source, cache_dir, check=None):
                 raw = response.read(1024 * 1024 + 1)
                 if len(raw) > 1024 * 1024:
                     raise ValueError('HIGHLIGHT_RESPONSE_TOO_LARGE')
-                rating = validate_rating(json.loads(json.loads(raw)['message']['content']))
+                if not raw.strip():
+                    raise ValueError('HIGHLIGHT_MODEL_EMPTY_RESPONSE')
+                try:
+                    envelope = json.loads(raw)
+                except (ValueError, UnicodeDecodeError) as error:
+                    raise ValueError('HIGHLIGHT_MODEL_INVALID_RESPONSE_JSON') from error
+                if not isinstance(envelope, dict):
+                    raise ValueError('HIGHLIGHT_MODEL_INVALID_RESPONSE_FORMAT')
+                if envelope.get('error'):
+                    raise ValueError('HIGHLIGHT_MODEL_API_ERROR: ' + str(envelope['error'])[:200])
+                message = envelope.get('message')
+                content = message.get('content') if isinstance(message, dict) else None
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError('HIGHLIGHT_MODEL_EMPTY_CONTENT')
+                try:
+                    rating_data = json.loads(content)
+                except ValueError as error:
+                    raise ValueError('HIGHLIGHT_MODEL_INVALID_RATING_JSON') from error
+                rating = validate_rating(rating_data)
             temporary = cache.with_suffix('.partial')
             temporary.write_text(json.dumps({'version': 2, 'model': model, 'rating': rating}, ensure_ascii=False), encoding='utf-8')
             temporary.replace(cache)
