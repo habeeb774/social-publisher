@@ -1,4 +1,4 @@
-import {S3Client,CreateMultipartUploadCommand,UploadPartCommand,ListPartsCommand,CompleteMultipartUploadCommand,AbortMultipartUploadCommand,HeadObjectCommand,GetObjectCommand} from "@aws-sdk/client-s3";
+import {S3Client,CreateMultipartUploadCommand,UploadPartCommand,ListPartsCommand,CompleteMultipartUploadCommand,AbortMultipartUploadCommand,HeadObjectCommand,GetObjectCommand,ListObjectsV2Command,DeleteObjectsCommand} from "@aws-sdk/client-s3";
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
 import {isIsoVideoHeader,movieFileSchema,privateMovieKey,uploadPartPlan,validateClipKey,validateMovieKey} from "./upload-policy";
 import {PutObjectCommand} from "@aws-sdk/client-s3";
@@ -85,6 +85,27 @@ export class PrivateMovieStorage implements MovieStorage {
     validateMovieKey(session.key);
     await this.client.send(new AbortMultipartUploadCommand({Bucket:this.bucket,Key:session.key,UploadId:session.uploadId}));
   }
+  /**
+   * Delete only objects under a single movie's private prefix. Repeat first-page listing
+   * after each batch so deleting objects cannot skip keys during pagination.
+   * This is retryable: a partial failure leaves remaining keys discoverable.
+   */
+  async deleteMovieFiles(movieId:string):Promise<number>{
+    const prefix=movieObjectPrefix(movieId);
+    let removed=0;
+    for(let batch=0;batch<100;batch++){
+      const listed=await this.client.send(new ListObjectsV2Command({Bucket:this.bucket,Prefix:prefix,MaxKeys:1000}));
+      const keys=(listed.Contents??[]).flatMap(item=>item.Key?.startsWith(prefix)?[item.Key]:[]);
+      if(!keys.length){
+        if(listed.IsTruncated)throw new Error("MOVIE_STORAGE_LIST_INCOMPLETE");
+        return removed;
+      }
+      const response=await this.client.send(new DeleteObjectsCommand({Bucket:this.bucket,Delete:{Objects:keys.map(Key=>({Key})),Quiet:true}}));
+      if(response.Errors?.length)throw new Error("MOVIE_STORAGE_DELETE_FAILED");
+      removed+=keys.length;
+    }
+    throw new Error("MOVIE_STORAGE_DELETE_LIMIT");
+  }
 }
 
 export function s3MovieStorage(env:NodeJS.ProcessEnv=process.env){
@@ -104,4 +125,17 @@ export function configuredMovieStorage(env:NodeJS.ProcessEnv=process.env):MovieS
   if(driver==="s3")return s3MovieStorage(env);
   if(driver==="local")return localMovieStorage(env);
   throw new Error("MOVIE_STORAGE_DRIVER_INVALID");
+}
+
+/** Never accept a free-form storage prefix from an API client. */
+export function movieObjectPrefix(movieId:string):string{
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(movieId))throw new Error("MOVIE_ID_INVALID");
+  return `movies/${movieId.toLowerCase()}/`;
+}
+
+/** Production deletion is limited to S3-compatible private storage (Cloudflare R2). */
+export async function deleteMovieFiles(movieId:string):Promise<number>{
+  const storage=configuredMovieStorage();
+  if(!(storage instanceof PrivateMovieStorage))throw new Error("MOVIE_STORAGE_DELETE_UNSUPPORTED");
+  return storage.deleteMovieFiles(movieId);
 }
