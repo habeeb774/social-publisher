@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {api,riyadh} from "../ui/api";
+import {confirmDialog} from "../ui/feedback";
 import {directMovieUpload,putMoviePart,UploadCompletionUnknown,type UploadProgress} from "./direct-upload";
 
 type Cue={start:number;end:number;text:string};
@@ -80,9 +81,39 @@ export function MovieDetail({movieId,pages,canWrite,canReview,canPublish,onChang
   const job=jobs.find(item=>item.kind==="process");
   const reviewable=clips.filter(clip=>["pending_approval","rejected","excluded"].includes(clip.status));
   const approved=clips.filter(clip=>clip.status==="approved");
-  const chosen=clips.filter(clip=>selected.has(clip.id));
-  const review=(decision:"approved"|"rejected"|"excluded",items:Clip[])=>act(()=>api(`/api/movies/${movieId}/clips/review`,{method:"POST",body:{decision,items:items.map(clip=>({clipId:clip.id,revision:clip.revision})),subtitlesReviewed:decision==="approved"?subtitlesChecked:false}}).then(()=>setSelected(new Set())),
-    decision==="approved"?`اعتُمد ${items.length} مقطع`:decision==="rejected"?"رُفضت المقاطع المختارة":"استُبعدت المقاطع المختارة");
+  const reviewableIds=new Set(reviewable.map(clip=>clip.id));
+  const chosen=clips.filter(clip=>selected.has(clip.id)&&reviewableIds.has(clip.id));
+  const withoutCaptions=reviewable.filter(clip=>!(clip.captions??[]).length).length;
+
+  async function review(decision:"approved"|"rejected"|"excluded",items:Clip[]){
+    if(busy||!items.length)return;
+    if(decision==="approved"){
+      if(!subtitlesChecked){
+        setError("راجع المقاطع وترجمتها أولًا، ثم فعّل إقرار المراجعة.");
+        return;
+      }
+      if(items.length>1){
+        const missing=items.filter(clip=>!(clip.captions??[]).length).length;
+        const ok=await confirmDialog({
+          title:`اعتماد ${items.length} مقطع؟`,
+          message:`أنت تؤكد أنك شاهدت جميع المقاطع المحددة وراجعت عناوينها والترجمة. ${missing?`تنبيه: ${missing} مقطع بلا نصوص ترجمة؛ تحقق من عدم حاجتها إلى ترجمة قبل المتابعة. `:""}الاعتماد لا يعني نشرها تلقائيًا؛ توثيق الحقوق والجدولة خطوات منفصلة.`,
+          confirmLabel:`اعتماد ${items.length} مقطع`,
+        });
+        if(!ok)return;
+      }
+    }
+    await act(async()=>{
+      const result=await api<{changed:number}>(`/api/movies/${movieId}/clips/review`,{
+        method:"POST",
+        body:{decision,items:items.map(clip=>({clipId:clip.id,revision:clip.revision})),subtitlesReviewed:decision==="approved"?subtitlesChecked:false}
+      });
+      setSelected(new Set());
+      if(result.changed!==items.length){
+        await load();
+        throw new Error(`تم تحديث ${result.changed} من أصل ${items.length} مقطع. حدّث القائمة وراجع المقاطع المتبقية.`);
+      }
+    },decision==="approved"?`اعتُمد ${items.length} مقطع`:decision==="rejected"?"رُفضت المقاطع المختارة":"استُبعدت المقاطع المختارة");
+  }
 
   return <section className="stack">
     <div className="card stack" style={{padding:24}}>
@@ -119,11 +150,17 @@ export function MovieDetail({movieId,pages,canWrite,canReview,canPublish,onChang
     {clips.length>0&&<div className="card stack" style={{padding:24}}>
       <div className="row-between"><h3>المقاطع ({clips.length})</h3>
         <span className="hint">بانتظار المراجعة {clips.filter(clip=>clip.status==="pending_approval").length} · معتمد {approved.length} · مجدول {clips.filter(clip=>clip.status==="scheduled").length} · منشور {clips.filter(clip=>clip.status==="published").length}</span></div>
-      {canReview&&<div className="bulk-bar stack" style={{gap:8}}>
-        <label><input type="checkbox" checked={subtitlesChecked} onChange={event=>setSubtitlesChecked(event.currentTarget.checked)}/> شاهدتُ المقاطع وراجعت الترجمة والعنوان قبل الاعتماد</label>
-        <div className="row-actions">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={()=>setSelected(new Set(reviewable.map(clip=>clip.id)))}>تحديد كل غير المعتمد</button>
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy||!chosen.length||!subtitlesChecked} onClick={()=>void review("approved",chosen)}>اعتماد المحدد ({chosen.length})</button>
+      {canReview&&<div className="bulk-bar stack" style={{gap:10}}>
+        <div className="row-actions" style={{flexWrap:"wrap"}}>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy||!reviewable.length} onClick={()=>setSelected(new Set(reviewable.map(clip=>clip.id)))}>تحديد الكل ({reviewable.length})</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy||!selected.size} onClick={()=>setSelected(new Set())}>إلغاء التحديد</button>
+          <span className="hint" role="status">تم تحديد {chosen.length} من {reviewable.length} مقطع قابل للمراجعة</span>
+        </div>
+        {withoutCaptions>0&&<p className="banner" role="status">تنبيه: {withoutCaptions} مقطع لا يحتوي على نصوص ترجمة مسجلة. شاهد المقاطع وتحقق من الحاجة إلى ترجمتها قبل الاعتماد الجماعي.</p>}
+        <label><input type="checkbox" checked={subtitlesChecked} onChange={event=>setSubtitlesChecked(event.currentTarget.checked)}/> أؤكد أنني شاهدت جميع المقاطع التي سأعتمدها وراجعت عناوينها وترجمتها أو تحققت من عدم الحاجة للترجمة.</label>
+        <div className="row-actions" style={{flexWrap:"wrap"}}>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy||!reviewable.length||!subtitlesChecked} onClick={()=>void review("approved",reviewable)}>اعتماد الكل ({reviewable.length})</button>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy||!chosen.length||!subtitlesChecked} onClick={()=>void review("approved",chosen)}>اعتماد المحدد ({chosen.length})</button>
           <button type="button" className="btn btn-secondary btn-sm" disabled={busy||!chosen.length} onClick={()=>void review("rejected",chosen)}>رفض المحدد</button>
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy||!chosen.length} onClick={()=>void review("excluded",chosen)}>استبعاد المحدد</button>
         </div></div>}
