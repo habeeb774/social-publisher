@@ -145,6 +145,12 @@ export async function sendReply(id:string,replyId:string){
 }
 export async function ingestComment(pageId:string,remote:RemoteComment,pageRemoteId:string){
   const db=database();const fromPage=remote.authorId===pageRemoteId;const sentiment=classify(remote.message);
+  // A verified Page reply already answers its parent, including replies sent
+  // outside this app. Never leave the parent eligible for a duplicate auto reply.
+  if(fromPage && remote.parentId && !remote.hidden) {
+    await db`UPDATE facebook_comments SET needs_reply=false,status=CASE WHEN status IN ('resolved','hidden','spam') THEN status ELSE 'replied' END,updated_at=now()
+      WHERE page_id=${pageId}::uuid AND facebook_comment_id=${remote.parentId} AND is_from_page=false`;
+  }
   const [row]=await db`INSERT INTO facebook_comments(page_id,post_id,facebook_comment_id,parent_facebook_comment_id,author_id,author_name,author_avatar,message,created_time,permalink,sentiment,is_from_page,is_hidden,needs_reply,status) VALUES(${pageId}::uuid,${remote.postId},${remote.id},${remote.parentId},${remote.authorId},${remote.authorName},${remote.authorAvatar},${remote.message},${remote.createdTime.toISOString()},${remote.permalink},${sentiment},${fromPage},${remote.hidden},${!fromPage&&!remote.hidden},${remote.hidden?"hidden":fromPage?"resolved":"unread"}) ON CONFLICT(facebook_comment_id) DO UPDATE SET message=excluded.message,is_hidden=excluded.is_hidden,last_synced_at=now(),updated_at=now() RETURNING *, (xmax=0) AS inserted`;
   if(!row.inserted)return false;
   await commentsAudit("comment.received",String(row.id),{remoteId:remote.id});
@@ -188,6 +194,12 @@ async function planAutomation(comment:Row){
 export async function reconcileRecentCommentAutomation(limit=30) {
   if (!flags().automation) return { checked: 0, planned: 0 };
   const db = database();
+  // Repair older imports too, independent of the order replies arrived in.
+  await db`UPDATE facebook_comments c SET needs_reply=false,status='replied',updated_at=now()
+    WHERE c.needs_reply=true AND c.is_from_page=false AND c.status NOT IN ('resolved','hidden','spam')
+      AND EXISTS (SELECT 1 FROM facebook_comments reply JOIN facebook_pages p ON p.id=reply.page_id
+        WHERE reply.page_id=c.page_id AND reply.parent_facebook_comment_id=c.facebook_comment_id
+          AND reply.is_from_page=true AND reply.author_id=p.facebook_page_id AND reply.is_hidden=false)`;
   const rows = await db`SELECT c.* FROM facebook_comments c
     WHERE c.created_time >= now() - interval '48 hours'
       AND c.needs_reply = true AND c.is_from_page = false
