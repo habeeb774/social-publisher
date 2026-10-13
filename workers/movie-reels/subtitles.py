@@ -65,5 +65,6 @@ if __name__ == "__main__":
     parser.add_argument("--language")
     args = parser.parse_args()
     from plan_clips import duration_seconds
+    from render import source_hash
     cues = transcribe(args.source, args.model_dir, duration_seconds(args.source), args.language)
-    write_atomic(args.output, json.dumps({"cues": cues, "review_required": True}, ensure_ascii=False))
+    write_atomic(args.output, json.dumps({"source_sha256":source_hash(args.source),"cues": cues, "review_required": True}, ensure_ascii=False))

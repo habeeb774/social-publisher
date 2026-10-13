@@ -26,6 +26,25 @@ def source_hash(source: Path) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
+def prepare_captions(caption_path: Path, cues: list[dict] | None, clip: dict, digest: str) -> bool:
+    editable = caption_path.with_suffix(".captions.json")
+    if editable.exists():
+        # The source-bound directory manifest also binds legacy caption files.
+        # Do not rewrite editable JSON on resume: it may contain human edits.
+        saved = json.loads(editable.read_text(encoding="utf-8"))
+        if saved.get("source_sha256", digest) != digest:
+            raise ValueError("Caption edits belong to another source")
+        if saved.get("start_seconds", clip["start_seconds"]) != clip["start_seconds"]:
+            raise ValueError("Caption edits belong to another clip interval")
+        local_cues = validate_cues(saved["cues"], 30)
+    elif cues is not None:
+        local_cues = validate_cues(clip_cues(cues, clip["start_seconds"]), 30)
+        write_atomic(editable, json.dumps({"source_sha256":digest,"start_seconds":clip["start_seconds"],"cues":local_cues,"review_required":True}, ensure_ascii=False))
+    else:
+        return False
+    write_atomic(caption_path, to_srt(local_cues))
+    return True
+
 def render(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None):
     output_dir.mkdir(parents=True, exist_ok=True)
     lock = output_dir / ".render.lock"
@@ -67,11 +86,8 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
     for clip in clips[:limit]:
         target = output_dir / f"part-{clip['part']:03d}.mp4"
         caption_path = output_dir / f"part-{clip['part']:03d}.srt"
-        if cues is not None:
-            local_cues = clip_cues(cues, clip["start_seconds"])
-            write_atomic(caption_path, to_srt(local_cues))
-            write_atomic(caption_path.with_suffix(".captions.json"), json.dumps({"cues":local_cues,"review_required":True}, ensure_ascii=False))
-        entry = {"part": clip["part"], "path": str(target), "status": "review_required", "subtitle_path": str(caption_path) if cues is not None else None, "subtitle_status": "review_required" if cues is not None else "transcription_required"}
+        has_captions = prepare_captions(caption_path, cues, clip, digest)
+        entry = {"part": clip["part"], "path": str(target), "status": "review_required", "subtitle_path": str(caption_path) if has_captions else None, "subtitle_status": "review_required" if has_captions else "transcription_required"}
         if target.exists():
             if not validate_output(target):
                 raise ValueError(f"Invalid existing output: {target.name}")

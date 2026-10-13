@@ -45,3 +45,5 @@ python burn_subtitles.py /private/review-clips/part-001.mp4 /private/review-clip
 ```
 
 This creates a new revision-addressed MP4 with Arabic subtitles and part number; it never approves or publishes. Every changed caption/timing/input/font produces a new revision requiring review. Mount the licensed Tajawal font from the application's `public` directory and preserve its OFL notice. The current web UI is not wired to this command yet.
+
+Editable `.captions.json` files are authoritative on render resume; transcription cannot overwrite human edits. The derived SRT is regenerated from validated edited cues. New caption files include source hash and start interval, and mismatched bindings are refused. Legacy caption files remain accepted only inside their already source-bound output directory. Edits still require a new burn-in revision and human approval; JSON `review_required` is not publishing authorization.
