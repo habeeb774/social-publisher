@@ -27,7 +27,7 @@ Requires the `MOVIE_WORKER_SECRET` (≥32 chars) to match the Vercel environment
 | `MOVIE_POLL_SECONDS` | `30` | |
 | `MOVIE_CLIP_SELECTION` | `highlights` | New plans use visual highlight selection; `sequential` explicitly enables legacy splitting. Existing saved plans are never rewritten. |
 | `MOVIE_HIGHLIGHT_MODEL` | required for highlights | Pre-provisioned Ollama vision model; no automatic downloads. |
-| `MOVIE_HIGHLIGHT_URL` | `http://localhost:11434` | Trusted private Ollama endpoint. Docker host: `http://host.docker.internal:11434`. Other hosts require HTTPS. |
+| `MOVIE_HIGHLIGHT_URL` | `http://localhost:11434` | Trusted private Ollama endpoint. Windows setup uses `http://vision:11434` on the `movie-highlights_default` Docker network. Other remote hosts require HTTPS. |
 | `MOVIE_HIGHLIGHT_MAX_CLIPS` | `20` | Maximum selected clips per movie, not publishing quota. |
 | `MOVIE_HIGHLIGHT_MIN_SCORE` | `6` | Minimum estimated visual excitement score (0–10). |
 
@@ -87,6 +87,12 @@ Editable `.captions.json` files are authoritative on render resume; transcriptio
 ### Local highlight analyzer
 
 Run `windows/setup-highlights.ps1` to create a localhost-only Ollama Docker service and download `qwen2.5vl:3b` (approximately 3.2 GB). Persistent model files live in the `movie-highlights_vision-models` Docker volume; do not delete this volume unless deliberately uninstalling the model. The compose setup requests an NVIDIA GPU supported by Docker Desktop/WSL2; remove `gpus: all` for CPU-only hosts (much slower). It is independent of the application deployment and never publishes. Configure the highlight variables shown in `worker.env.example`; preserve the existing secret and API URL. Let active jobs finish before rebuilding/restarting the worker. Previously saved clip plans remain unchanged; highlight selection applies to new movie plans. Run `/worker/verify_highlights.py` inside a one-off worker container with the model settings; it exercises real inference, rendering and resume without accessing the application or publishing. Reference: https://ollama.com/library/qwen2.5vl
+
+The service disables cloud inference and Vulkan probing, uses CUDA GPU 0, and waits for a successful health check before downloading the model. The Windows worker launcher joins the private model network when its URL is `http://vision:11434`; no new firewall rule or public endpoint is needed. Example smoke test (no uploads, no application mutations):
+
+```powershell
+docker run --rm --network movie-highlights_default --env-file workers/movie-reels/windows/worker.env --entrypoint python social-publisher-reels /worker/verify_highlights.py
+```
 
 The container polls `https://sp.leanpix.site` over outbound HTTPS. The worker needs **only**
 `MOVIE_API_URL` and a shared `MOVIE_WORKER_SECRET`; R2 access credentials belong to

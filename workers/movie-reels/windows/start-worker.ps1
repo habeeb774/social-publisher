@@ -32,6 +32,9 @@ docker rm -f movie-reels-worker *> $null
 
 $arguments = @("run", "-d", "--name", "movie-reels-worker", "--restart", "unless-stopped",
   "--cpus", "$Cpus", "--memory", "${MemoryGB}g", "--env-file", $envFile, "-v", "${WorkDir}:/work")
+if (Get-Content $envFile | Where-Object { $_ -match '^MOVIE_HIGHLIGHT_URL=http://vision:11434/?$' }) {
+  $arguments += @('--network', 'movie-highlights_default')
+}
 if ($SourceDir) {
   if (-not (Test-Path $SourceDir)) { throw "SourceDir not found: $SourceDir" }
   $arguments += @("-v", "${SourceDir}:/sources:ro", "-e", "MOVIE_LOCAL_SOURCE_DIRS=/sources")

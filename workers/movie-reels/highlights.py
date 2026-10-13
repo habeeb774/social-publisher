@@ -50,7 +50,7 @@ def highlight_plan(source, cache_dir, check=None):
     if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in ('', '/'):
         raise ValueError('MOVIE_HIGHLIGHT_URL_INVALID')
     # Remote transport must be encrypted; never use a public untrusted analyzer.
-    if url.scheme == 'http' and url.hostname not in ('localhost', '127.0.0.1', '::1', 'host.docker.internal'):
+    if url.scheme == 'http' and url.hostname not in ('localhost', '127.0.0.1', '::1', 'host.docker.internal', 'vision'):
         raise ValueError('MOVIE_HIGHLIGHT_HTTPS_REQUIRED')
     duration = duration_seconds(source)
     if not math.isfinite(duration) or duration < 30:
