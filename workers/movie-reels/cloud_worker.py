@@ -41,16 +41,33 @@ class Api:
 
     def call(self, action: str, **payload) -> dict:
         body = json.dumps({"action": action, **payload}, ensure_ascii=False).encode()
-        request = urllib.request.Request(self.url, data=body, method="POST", headers={"Authorization": f"Bearer {self.secret}", "Content-Type": "application/json"})
+        request = urllib.request.Request(
+            self.url, data=body, method="POST",
+            headers={"Authorization": f"Bearer {self.secret}", "Content-Type": "application/json"}
+        )
         try:
             with self.open(request, timeout=120) as response:
-                return json.loads(response.read() or b"{}")
+                status = getattr(response, "status", 200)
+                raw = response.read()
+                if not raw.strip():
+                    raise RuntimeError(f"API {action} returned empty response (HTTP {status})")
+                try:
+                    data = json.loads(raw)
+                except (ValueError, UnicodeDecodeError) as error:
+                    raise RuntimeError(f"API {action} returned invalid JSON (HTTP {status})") from error
+                if not isinstance(data, dict):
+                    raise RuntimeError(f"API {action} returned unexpected JSON shape (HTTP {status})")
+                return data
         except urllib.error.HTTPError as error:
-            detail = json.loads(error.read() or b"{}").get("error", "")
+            raw = error.read()
+            try:
+                parsed = json.loads(raw) if raw.strip() else {}
+                detail = parsed.get("error", "") if isinstance(parsed, dict) else ""
+            except (ValueError, UnicodeDecodeError):
+                detail = "non-JSON error response"
             if error.code == 409 and detail == "LEASE_LOST":
                 raise LeaseLost() from error
             if 400 <= error.code < 500 and error.code not in (408, 429):
-                # The server rejected this exact request; repeating it cannot succeed.
                 raise Permanent(f"API {action} rejected: {error.code} {detail}") from error
             raise RuntimeError(f"API {action} failed: {error.code} {detail}") from error
 
