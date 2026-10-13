@@ -63,6 +63,39 @@ def download(url: str, target: Path, opener=urllib.request.urlopen):
     partial.replace(target)
     return target
 
+SAMPLE = 1024 * 1024
+
+def remote_range(url: str, start: int, length: int, opener=urllib.request.urlopen) -> bytes:
+    request = urllib.request.Request(url, headers={"Range": f"bytes={start}-{start + length - 1}"})
+    with opener(request, timeout=120) as response:
+        return response.read(length + 1)
+
+def local_source(job: dict, folders: list[Path], opener=urllib.request.urlopen) -> Path | None:
+    """Reuse the uploader's original file when it exists locally: same name, same size and identical
+    sampled byte ranges (start, middle, end) as the stored object. Any mismatch falls back to download."""
+    name, size = job.get("sourceName"), job.get("sourceSize")
+    if not name or not isinstance(size, int) or size <= 0 or Path(name).name != name:
+        return None
+    for folder in folders:
+        candidate = folder / name
+        if not candidate.is_file() or candidate.stat().st_size != size:
+            continue
+        try:
+            with candidate.open("rb") as handle:
+                for start in sorted({0, max(0, size // 2 - SAMPLE // 2), max(0, size - SAMPLE)}):
+                    length = min(SAMPLE, size - start)
+                    handle.seek(start)
+                    if handle.read(length) != remote_range(job["sourceUrl"], start, length, opener):
+                        break
+                else:
+                    return candidate
+        except (OSError, urllib.error.URLError):
+            continue
+    return None
+
+def local_source_folders() -> list[Path]:
+    return [Path(item) for item in os.environ.get("MOVIE_LOCAL_SOURCE_DIRS", "").split(os.pathsep) if item.strip()]
+
 def upload(url: str, path: Path, opener=urllib.request.urlopen):
     size = path.stat().st_size
     with path.open("rb") as handle:
@@ -106,7 +139,11 @@ def lease_args(job: dict) -> dict:
 def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None, beat: Heartbeat, opener=urllib.request.urlopen):
     movie_dir = work / job["movieId"]
     movie_dir.mkdir(parents=True, exist_ok=True)
-    source = download(job["sourceUrl"], movie_dir / "source.video", opener)
+    source = local_source(job, local_source_folders(), opener)
+    if source:
+        print(json.dumps({"job": job["id"], "status": "using_local_source"}))
+    else:
+        source = download(job["sourceUrl"], movie_dir / "source.video", opener)
     beat.progress = 10
     try:
         outputs = render(source, movie_dir / "clips", limit=1000, model_dir=model_dir, check=beat.check)

@@ -49,7 +49,9 @@ export async function POST(request:NextRequest){
       }
       await db.execute(processingStartedQuery(job.id,job.lease_token));
       const existing=(await db.execute(sql`SELECT part_number FROM movie_clips WHERE movie_id=${movie.id}::uuid`)).rows as Array<{part_number:number}>;
-      return json({job:{...base,sourceUrl:await storage.signRead(movie.source_storage_key,43200),existingParts:existing.map(row=>row.part_number)}});
+      // Name/size let a worker on the uploader's own PC reuse the local original after byte-sampling it against storage.
+      const [source]=(await db.execute(sql`SELECT file_name,size_bytes FROM movie_upload_sessions WHERE movie_id=${movie.id}::uuid AND storage_key=${movie.source_storage_key} AND status='completed' LIMIT 1`)).rows as Array<{file_name:string;size_bytes:string|number}>;
+      return json({job:{...base,sourceUrl:await storage.signRead(movie.source_storage_key,43200),sourceName:source?.file_name??null,sourceSize:source?Number(source.size_bytes):null,existingParts:existing.map(row=>row.part_number)}});
     }
     if(input.action==="fail"){
       const result=await db.execute(failJobQuery(input.jobId,input.leaseToken,input.error,input.retryable));
