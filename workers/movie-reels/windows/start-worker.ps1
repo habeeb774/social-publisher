@@ -23,8 +23,10 @@ if (-not (Test-Path $envFile)) { throw "Create $envFile from worker.env.example 
 $secret = (Get-Content $envFile | Where-Object { $_ -match '^MOVIE_WORKER_SECRET=' }) -replace '^MOVIE_WORKER_SECRET=', ''
 if ($secret.Trim().Length -lt 32) { throw "MOVIE_WORKER_SECRET in worker.env must be at least 32 characters." }
 New-Item -ItemType Directory -Force $WorkDir | Out-Null
+# Docker writes progress to stderr; Windows PowerShell 5.1 would treat that as a terminating error.
+$ErrorActionPreference = "Continue"
 
-docker build -f (Join-Path $repo "workers\movie-reels\Dockerfile") -t social-publisher-reels $repo
+docker build --quiet -f (Join-Path $repo "workers\movie-reels\Dockerfile") -t social-publisher-reels $repo 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Image build failed." }
 docker rm -f movie-reels-worker *> $null
 
