@@ -73,3 +73,36 @@ python burn_subtitles.py /private/review-clips/part-001.mp4 /private/review-clip
 This creates a new revision-addressed MP4 with Arabic subtitles and part number; it never approves or publishes. Every changed caption/timing/input/font produces a new revision requiring review. Mount the licensed Tajawal font from the application's `public` directory and preserve its OFL notice. The current web UI is not wired to this command yet.
 
 Editable `.captions.json` files are authoritative on render resume; transcription cannot overwrite human edits. The derived SRT is regenerated from validated edited cues. New caption files include source hash and start interval, and mismatched bindings are refused. Legacy caption files remain accepted only inside their already source-bound output directory. Edits still require a new burn-in revision and human approval; JSON `review_required` is not publishing authorization.
+
+
+## Windows production worker setup (private R2)
+
+The container polls `https://sp.leanpix.site` over outbound HTTPS. The worker needs **only**
+`MOVIE_API_URL` and a shared `MOVIE_WORKER_SECRET`; R2 access credentials belong to
+the Vercel application and should **not** be added to `worker.env`.
+
+From PowerShell, in `workers/movie-reels/windows`:
+
+```powershell
+.\setup-worker-secret.ps1 -CopyToClipboard
+```
+
+This creates the locally gitignored `worker.env` using a cryptographically random
+64-character hexadecimal secret and puts the secret temporarily on your clipboard.
+Set that **same** value in Vercel's Production environment as `MOVIE_WORKER_SECRET`.
+Clear the clipboard after use and redeploy to apply new environment variables.
+Do not paste the secret into chat or GitHub.
+
+Keep `MOVIE_REELS_PUBLISHING_ENABLED=false` until end-to-end tests and explicit
+approval. Vercel environment changes cannot be made from GitHub alone.
+
+When Vercel settings are saved, the worker can be started from the same folder:
+
+```powershell
+.\start-worker.ps1 -WorkDir D:\movie-work -SourceDir D:\Movies
+.\worker-status.ps1
+```
+
+If `worker.env` already exists, the setup script refuses to overwrite it to prevent
+accidental divergence between the server and worker credentials. For translation,
+mount a downloaded faster-whisper model using the `-ModelDir` argument.
