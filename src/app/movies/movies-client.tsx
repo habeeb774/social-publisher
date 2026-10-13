@@ -5,7 +5,7 @@ import { MovieDetail } from "./movie-detail";
 
 type Movie = {id:string;title:string;status:string;rightsStatus:string;createdAt?:string};
 type Page = {id:string;name:string};
-const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",queued:"في طابور المعالجة",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة"};
+const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",queued:"في طابور المعالجة",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة",deleting:"حذف غير مكتمل — أعد المحاولة"};
 const rightsLabels: Record<string,string> = {pending:"بانتظار التحقق",verified:"حقوق موثقة",rejected:"حقوق مرفوضة",revoked:"ترخيص ملغى"};
 
 export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,canDelete=false,pages}:{enabled:boolean;canWrite:boolean;canReview?:boolean;canPublish?:boolean;canDelete?:boolean;pages:Page[]}) {
