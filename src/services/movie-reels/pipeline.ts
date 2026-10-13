@@ -51,8 +51,8 @@ export function leaseJobQuery(leaseMinutes=20){
   ), picked AS (
     SELECT j.id FROM movie_jobs j JOIN movie_assets m ON m.id=j.movie_id
     WHERE j.attempts<${MAX_JOB_ATTEMPTS} AND (j.status='queued' OR (j.status='running' AND j.lease_expires_at<now()))
-      AND m.source_storage_key IS NOT NULL AND m.rights_status IN ('pending','verified')
-    ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1
+      AND m.source_storage_key IS NOT NULL AND m.rights_status IN ('pending','verified') AND m.status <> 'deleting'
+    ORDER BY j.created_at FOR UPDATE OF j,m SKIP LOCKED LIMIT 1
   )
   UPDATE movie_jobs j SET status='running',lease_token=gen_random_uuid(),lease_expires_at=now()+make_interval(mins=>${leaseMinutes}),
     attempts=j.attempts+1,error_message=NULL,updated_at=now()
