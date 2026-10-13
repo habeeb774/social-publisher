@@ -8,6 +8,7 @@ export const movieAssets = pgTable("movie_assets", {
   pageId: uuid("page_id").references(() => facebookPages.id),
   title: text("title").notNull(), sourceStorageKey: text("source_storage_key"),
   rightsStatus: text("rights_status").notNull().default("pending"), rightsBasis: text("rights_basis"),
+  rightsRevision: integer("rights_revision").notNull().default(1),
   rightsVerifiedBy: uuid("rights_verified_by").references(() => users.id),
   rightsVerifiedAt: timestamp("rights_verified_at", {withTimezone:true}),
   rightsExpiresAt: timestamp("rights_expires_at", {withTimezone:true}),
@@ -48,6 +49,12 @@ export const movieApprovals = pgTable("movie_approvals", {
   decision: text("decision").notNull(), note: text("note"),
   createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
 },t=>[index("movie_approvals_clip_idx").on(t.clipId,t.revision),check("movie_approvals_decision_check",sql`${t.decision} IN ('approved','rejected')`)]);
+
+export const movieRightsReviews=pgTable("movie_rights_reviews",{
+  id:uuid("id").primaryKey().defaultRandom(),movieId:uuid("movie_id").notNull().references(()=>movieAssets.id),
+  revision:integer("revision").notNull(),reviewerId:uuid("reviewer_id").notNull().references(()=>users.id),
+  decision:text("decision").notNull(),note:text("note").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>[uniqueIndex("movie_rights_reviews_revision_idx").on(t.movieId,t.revision),check("movie_rights_reviews_decision_check",sql`${t.decision} IN ('verified','rejected','revoked')`)]);
 
 export const moviePublications = pgTable("movie_publications", {
   id: uuid("id").primaryKey().defaultRandom(),clipId: uuid("clip_id").notNull().unique().references(() => movieClips.id),
