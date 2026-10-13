@@ -197,6 +197,18 @@ export async function publishGraphReel(pageId: string, video: Buffer, descriptio
   return { id: videoId };
 }
 
+/** Best-effort permalink lookup for a published Reel; null when Facebook has not exposed it yet. */
+export async function graphVideoPermalink(pageId: string, videoId: string) {
+  try {
+    const token = await pageToken(pageId);
+    const result = await graph(`/${encodeURIComponent(videoId)}?fields=permalink_url&access_token=${encodeURIComponent(token)}`);
+    const link = typeof result.body.permalink_url === "string" ? result.body.permalink_url : null;
+    return link ? (link.startsWith("http") ? link : `https://www.facebook.com${link}`) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
 export async function replyToCommentGraph(pageId: string, commentId: string, message: string) {
   const token = await pageToken(pageId);

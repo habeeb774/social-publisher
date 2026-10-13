@@ -17,6 +17,7 @@ import { enqueueHourlyTechNews } from "@/services/tech-news";
 import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
+import { moviePublishingEnabled, publishDueMovieReels } from "@/services/movie-reels/publisher";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -181,6 +182,15 @@ async function run(request: Request) {
       console.error("Text-only page queue failed", { error: error instanceof Error ? error.message : String(error) });
     }
     const results = await publishDuePosts();
+    // Movie reels run only behind their own explicit publishing flag; failures never affect regular posts.
+    if (moviePublishingEnabled()) {
+      try {
+        const reels = await publishDueMovieReels(1);
+        if (reels.published || reels.failed) console.info("Movie reels dispatch", reels);
+      } catch (error) {
+        console.error("Movie reels dispatch failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     await getDb().insert(schedulerRuns).values({ finishedAt, processedCount: results.length, publishedCount: results.filter((item) => item.status === "published").length, failedCount: results.filter((item) => item.status === "failed").length, durationMs, status: "success" });
