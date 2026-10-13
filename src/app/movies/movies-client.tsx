@@ -8,13 +8,17 @@ type Page = {id:string;name:string};
 const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",queued:"في طابور المعالجة",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة"};
 const rightsLabels: Record<string,string> = {pending:"بانتظار التحقق",verified:"حقوق موثقة",rejected:"حقوق مرفوضة",revoked:"ترخيص ملغى"};
 
-export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,pages}:{enabled:boolean;canWrite:boolean;canReview?:boolean;canPublish?:boolean;pages:Page[]}) {
+export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,canDelete=false,pages}:{enabled:boolean;canWrite:boolean;canReview?:boolean;canPublish?:boolean;canDelete?:boolean;pages:Page[]}) {
   const [openId,setOpenId]=useState<string|null>(null);
   const [items,setItems]=useState<Movie[]>([]);
   const [loading,setLoading]=useState(enabled);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const [pendingDelete,setPendingDelete]=useState<Movie|null>(null);
+  const [deleteConfirmation,setDeleteConfirmation]=useState("");
+  const [deleteError,setDeleteError]=useState("");
+  const [deleting,setDeleting]=useState(false);
   const saving=useRef(false);
   const sequence=useRef(0);
   const load=useCallback(async()=>{
@@ -46,6 +50,26 @@ export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,
     } catch(cause){setError(cause instanceof Error?cause.message:"تعذر تسجيل الفيلم");}
     finally{saving.current=false;setBusy(false);}
   }
+  async function deleteSelectedMovie(){
+    const movie=pendingDelete;
+    if(!movie||deleteConfirmation!==movie.title||deleting)return;
+    setDeleting(true);setDeleteError("");setError("");
+    try {
+      const result=await api<{deleted:boolean;objectsDeleted:number}>(`/api/movies/${movie.id}/delete`,{
+        method:"POST",body:{confirmation:movie.title}
+      });
+      if(!result.deleted)throw new Error("لم يكتمل حذف الفيلم");
+      ++sequence.current;
+      setOpenId(current=>current===movie.id?null:current);
+      setItems(current=>current.filter(item=>item.id!==movie.id));
+      setPendingDelete(null);
+      setDeleteConfirmation("");
+      setNotice(`حُذف الفيلم «${movie.title}» وملفاته نهائيًا من التخزين وقاعدة البيانات.`);
+      void load();
+    } catch(cause) {
+      setDeleteError(cause instanceof Error?cause.message:"تعذر الحذف؛ أعد المحاولة لاحقًا");
+    } finally {setDeleting(false);}
+  }
   return <div className="stack">
     <section className="card" style={{padding:24}}>
       <h2>رحلة الفيلم</h2>
@@ -73,8 +97,30 @@ export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,
     <section className="card stack" style={{padding:24}} aria-busy={loading}>
       <div className="row-between"><h2>الأفلام المسجّلة</h2><button type="button" className="btn btn-secondary" disabled={!enabled||loading||busy} onClick={()=>{setLoading(true);setError("");void load();}}>تحديث</button></div>
       {loading?<p role="status">جارٍ تحميل الأفلام…</p>:!items.length?<p>{enabled?"لا توجد أفلام مسجلة بعد.":"ستظهر أفلامك هنا بعد تجهيز القسم."}</p>:items.map(movie=><article key={movie.id} className="panel-card row-between"><div><h3>{movie.title}</h3><p>{states[movie.status]??movie.status} · {rightsLabels[movie.rightsStatus]??movie.rightsStatus}</p><small>{riyadh(movie.createdAt)}</small></div>
-        <button type="button" className="btn btn-secondary btn-sm" aria-expanded={openId===movie.id} onClick={()=>setOpenId(current=>current===movie.id?null:movie.id)}>{openId===movie.id?"إغلاق":"فتح ومراجعة"}</button></article>)}
+        <div className="row-actions">
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={openId===movie.id} onClick={()=>setOpenId(current=>current===movie.id?null:movie.id)}>{openId===movie.id?"إغلاق":"فتح ومراجعة"}</button>
+          {canDelete&&<button type="button" className="btn btn-danger btn-sm" disabled={deleting} onClick={()=>{setPendingDelete(movie);setDeleteConfirmation("");setDeleteError("");}}>حذف</button>}
+        </div></article>)}
     </section>
     {enabled&&openId&&<MovieDetail key={openId} movieId={openId} pages={pages} canWrite={canWrite} canReview={canReview} canPublish={canPublish} onChanged={()=>void load()}/>}
+    {pendingDelete&&<div>
+      <div className="dialog-backdrop" onClick={()=>{if(!deleting)setPendingDelete(null);}}/>
+      <div className="dialog stack" role="alertdialog" aria-modal="true" aria-labelledby="movie-delete-title"
+        onKeyDown={event=>{if(event.key==="Escape"&&!deleting)setPendingDelete(null);}}>
+        <h2 id="movie-delete-title">حذف الفيلم نهائيًا</h2>
+        <p>سيتم حذف «{pendingDelete.title}» والفيديو الأصلي وجميع المقاطع والنسخ المحفوظة في R2، ثم سجلات الفيلم المرتبطة في قاعدة البيانات. لا يمكن التراجع عن ذلك.</p>
+        <p className="hint">يُرفض الحذف إذا كانت المعالجة جارية أو وُجدت ريلز مجدولة أو منشورة. لن يُحذف أي منشور من Facebook.</p>
+        <label>اكتب اسم الفيلم «{pendingDelete.title}» للتأكيد
+          <input value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.currentTarget.value)} autoComplete="off" autoFocus disabled={deleting}/>
+        </label>
+        {deleteError&&<p className="banner" role="alert">{deleteError}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn btn-danger" disabled={deleting||deleteConfirmation!==pendingDelete.title} onClick={()=>void deleteSelectedMovie()}>
+            {deleting?"جارٍ الحذف والتحقق…":"حذف الفيلم نهائيًا"}
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={deleting} onClick={()=>setPendingDelete(null)}>إلغاء</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
