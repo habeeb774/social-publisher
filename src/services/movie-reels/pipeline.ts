@@ -33,9 +33,9 @@ export function finalizeUploadQueries(sessionId:string,movieId:string){
   return [
     sql`UPDATE movie_upload_sessions SET status='completed',updated_at=now() WHERE id=${sessionId}::uuid AND status='completing'`,
     sql`UPDATE movie_assets m SET source_storage_key=s.storage_key,status='queued',updated_at=now() FROM movie_upload_sessions s
-      WHERE s.id=${sessionId}::uuid AND s.status='completed' AND m.id=s.movie_id AND m.id=${movieId}::uuid AND m.source_storage_key IS NULL`,
+      WHERE s.id=${sessionId}::uuid AND s.status='completed' AND m.id=s.movie_id AND m.id=${movieId}::uuid AND m.status <> 'deleting' AND m.source_storage_key IS NULL`,
     sql`INSERT INTO movie_jobs(movie_id,kind,idempotency_key) SELECT id,'process','process:'||id::text FROM movie_assets
-      WHERE id=${movieId}::uuid AND source_storage_key IS NOT NULL ON CONFLICT(idempotency_key) DO NOTHING`,
+      WHERE id=${movieId}::uuid AND status <> 'deleting' AND source_storage_key IS NOT NULL ON CONFLICT(idempotency_key) DO NOTHING`,
   ];
 }
 
@@ -51,8 +51,8 @@ export function leaseJobQuery(leaseMinutes=20){
   ), picked AS (
     SELECT j.id FROM movie_jobs j JOIN movie_assets m ON m.id=j.movie_id
     WHERE j.attempts<${MAX_JOB_ATTEMPTS} AND (j.status='queued' OR (j.status='running' AND j.lease_expires_at<now()))
-      AND m.source_storage_key IS NOT NULL AND m.rights_status IN ('pending','verified')
-    ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1
+      AND m.source_storage_key IS NOT NULL AND m.rights_status IN ('pending','verified') AND m.status <> 'deleting'
+    ORDER BY j.created_at FOR UPDATE OF j,m SKIP LOCKED LIMIT 1
   )
   UPDATE movie_jobs j SET status='running',lease_token=gen_random_uuid(),lease_expires_at=now()+make_interval(mins=>${leaseMinutes}),
     attempts=j.attempts+1,error_message=NULL,updated_at=now()
@@ -125,7 +125,7 @@ export function editClipQuery(input:{movieId:string;clipId:string;user:Actor;all
       captions=coalesce(${captions}::jsonb,c.captions),approved_by=NULL,approved_at=NULL,subtitle_reviewed=false,
       status=CASE WHEN ${captions}::jsonb IS NULL THEN 'pending_approval' ELSE 'rendering' END,updated_at=now()
     FROM movie_assets m
-    WHERE c.id=${uuid(input.clipId)}::uuid AND c.movie_id=${uuid(input.movieId)}::uuid AND m.id=c.movie_id AND c.revision=${edit.expectedRevision}
+    WHERE c.id=${uuid(input.clipId)}::uuid AND c.movie_id=${uuid(input.movieId)}::uuid AND m.id=c.movie_id AND m.status <> 'deleting' AND c.revision=${edit.expectedRevision}
       AND c.status IN ('pending_approval','approved','rejected','render_failed') AND ${movieScope(input.user,input.allowed)}
     RETURNING c.id,c.movie_id,c.revision,c.status
   ), job AS (
@@ -145,7 +145,7 @@ export function reviewClipsQuery(input:{movieId:string;user:Actor;allowed:Readon
     UPDATE movie_clips c SET status=${review.decision},approved_by=CASE WHEN ${approve} THEN ${uuid(input.user.id)}::uuid ELSE NULL END,
       approved_at=CASE WHEN ${approve} THEN now() ELSE NULL END,subtitle_reviewed=${approve},scheduled_at=NULL,updated_at=now()
     FROM movie_assets m,(VALUES ${values}) v(id,revision)
-    WHERE c.id=v.id AND c.revision=v.revision AND c.movie_id=${uuid(input.movieId)}::uuid AND m.id=c.movie_id AND ${movieScope(input.user,input.allowed)}
+    WHERE c.id=v.id AND c.revision=v.revision AND c.movie_id=${uuid(input.movieId)}::uuid AND m.id=c.movie_id AND m.status <> 'deleting' AND ${movieScope(input.user,input.allowed)}
       AND EXISTS(SELECT 1 FROM users u WHERE u.id=${uuid(input.user.id)}::uuid AND u.is_active=true AND u.role IN ('admin','reviewer'))
       AND (CASE WHEN ${approve} THEN c.status IN ('pending_approval','rejected','excluded') AND c.output_storage_key IS NOT NULL AND m.rights_status IN ('pending','verified')
         ELSE c.status IN ('pending_approval','approved','scheduled','rejected','excluded') END)
@@ -178,7 +178,7 @@ export function reserveScheduleQueries(input:{movieId:string;pageId:string;slots
     sql`INSERT INTO movie_publications(clip_id,page_id,revision,scheduled_at)
       SELECT c.id,${input.pageId}::uuid,c.revision,v.at FROM (VALUES ${values}) v(id,at)
       JOIN movie_clips c ON c.id=v.id AND c.movie_id=${input.movieId}::uuid AND c.status IN ('approved','scheduled') AND c.approved_by IS NOT NULL AND c.subtitle_reviewed AND c.output_storage_key IS NOT NULL
-      JOIN movie_assets m ON m.id=c.movie_id AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>v.at)
+      JOIN movie_assets m ON m.id=c.movie_id AND m.status <> 'deleting' AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>v.at)
       JOIN facebook_pages fp ON fp.id=${input.pageId}::uuid AND fp.is_active AND fp.platform='facebook'
       WHERE v.at>now()`,
     sql`UPDATE movie_clips c SET status='scheduled',page_id=p.page_id,scheduled_at=p.scheduled_at,updated_at=now()
@@ -192,7 +192,7 @@ export function reserveScheduleQueries(input:{movieId:string;pageId:string;slots
 
 // ---------- Publishing ----------
 const publishable=sql`c.id=p.clip_id AND c.revision=p.revision AND c.status='scheduled' AND c.approved_by IS NOT NULL AND c.subtitle_reviewed AND c.output_storage_key IS NOT NULL
-  AND m.id=c.movie_id AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>now())
+  AND m.id=c.movie_id AND m.status <> 'deleting' AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>now())
   AND fp.id=p.page_id AND fp.is_active AND fp.platform='facebook'`;
 /** Housekeeping before a lease: invalid due reels are cancelled, abandoned sends become outcome_unknown (never resent blindly). */
 export function sweepPublicationsQuery(){
