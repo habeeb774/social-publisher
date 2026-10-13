@@ -1,6 +1,7 @@
 import {S3Client,CreateMultipartUploadCommand,UploadPartCommand,ListPartsCommand,CompleteMultipartUploadCommand,AbortMultipartUploadCommand,HeadObjectCommand,GetObjectCommand} from "@aws-sdk/client-s3";
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
-import {isIsoVideoHeader,movieFileSchema,privateMovieKey,uploadPartPlan,validateMovieKey} from "./upload-policy";
+import {isIsoVideoHeader,movieFileSchema,privateMovieKey,uploadPartPlan,validateClipKey,validateMovieKey} from "./upload-policy";
+import {PutObjectCommand} from "@aws-sdk/client-s3";
 
 /** Internal provider boundary: API callers must persist and authorize upload sessions.
  * Never return bucket credentials or accept a browser-supplied storage key/upload ID. */
@@ -42,6 +43,28 @@ export class PrivateMovieStorage {
     const bytes=await sample.Body?.transformToByteArray();
     if(!bytes||!isIsoVideoHeader(bytes))throw new Error("MOVIE_UPLOADED_FILE_INVALID");
     return {key:session.key,size:info.ContentLength,type:info.ContentType,versionId:info.VersionId??null,etag:info.ETag??null};
+  }
+  /** Short-lived read URL for the worker (source) or reviewer preview (clip). */
+  async signRead(key:string,expiresIn=3600){
+    if(key.includes("/sources/"))validateMovieKey(key);else validateClipKey(key);
+    return getSignedUrl(this.client,new GetObjectCommand({Bucket:this.bucket,Key:key}),{expiresIn:Math.min(expiresIn,43200)});
+  }
+  async signClipWrite(key:string){
+    validateClipKey(key);
+    return getSignedUrl(this.client,new PutObjectCommand({Bucket:this.bucket,Key:key,ContentType:"video/mp4"}),{expiresIn:3600});
+  }
+  async clipBytes(key:string,maxBytes=200*1024**2){
+    validateClipKey(key);
+    const info=await this.client.send(new HeadObjectCommand({Bucket:this.bucket,Key:key}));
+    if(!info.ContentLength||info.ContentLength>maxBytes)throw new Error("MOVIE_CLIP_FILE_INVALID");
+    const object=await this.client.send(new GetObjectCommand({Bucket:this.bucket,Key:key}));
+    const bytes=await object.Body?.transformToByteArray();
+    if(!bytes||bytes.length!==info.ContentLength||!isIsoVideoHeader(bytes))throw new Error("MOVIE_CLIP_FILE_INVALID");
+    return Buffer.from(bytes);
+  }
+  async clipExists(key:string){
+    validateClipKey(key);
+    try{const info=await this.client.send(new HeadObjectCommand({Bucket:this.bucket,Key:key}));return Boolean(info.ContentLength);}catch{return false;}
   }
   async abort(session:{key:string;uploadId:string}){
     validateMovieKey(session.key);

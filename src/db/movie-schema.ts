@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, integer, bigint, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { users, facebookPages } from "./schema";
 
 export const movieAssets = pgTable("movie_assets", {
@@ -24,7 +24,7 @@ export const movieClips = pgTable("movie_clips", {
   partNumber: integer("part_number").notNull(), startMs: integer("start_ms").notNull(),
   durationMs: integer("duration_ms").notNull().default(30000),
   title: text("title").notNull().default(""), description: text("description").notNull().default(""),
-  outputStorageKey: text("output_storage_key"), subtitleStorageKey: text("subtitle_storage_key"),
+  outputStorageKey: text("output_storage_key"), baseStorageKey: text("base_storage_key"), subtitleStorageKey: text("subtitle_storage_key"),
   captions: jsonb("captions").notNull().default([]), revision: integer("revision").notNull().default(1),
   subtitleReviewed: boolean("subtitle_reviewed").notNull().default(false),
   status: text("status").notNull().default("processing"),
@@ -40,6 +40,8 @@ export const movieJobs = pgTable("movie_jobs", {
   kind: text("kind").notNull().default("process"), idempotencyKey: text("idempotency_key").unique(),
   leaseToken: uuid("lease_token"), leaseExpiresAt: timestamp("lease_expires_at", {withTimezone:true}),
   progress: integer("progress").notNull().default(0), errorMessage: text("error_message"),
+  clipId: uuid("clip_id").references(() => movieClips.id),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).notNull().defaultNow(),
   createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
 }, t => [index("movie_jobs_due_idx").on(t.status,t.leaseExpiresAt),check("movie_jobs_progress_check",sql`${t.progress} BETWEEN 0 AND 100 AND ${t.attempts}>=0`)]);
 
@@ -63,5 +65,16 @@ export const moviePublications = pgTable("movie_publications", {
   status: text("status").notNull().default("scheduled"), attempts: integer("attempts").notNull().default(0),
   remoteReelId: text("remote_reel_id"), remotePermalink: text("remote_permalink"),
   leaseToken: uuid("lease_token"), leaseExpiresAt: timestamp("lease_expires_at", {withTimezone:true}),
-  errorCode: text("error_code"), createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
+  errorCode: text("error_code"), publishedAt: timestamp("published_at", {withTimezone:true}),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).notNull().defaultNow(), createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
 },t=>[index("movie_publications_due_idx").on(t.status,t.scheduledAt),index("movie_publications_quota_idx").on(t.pageId,t.scheduledAt), check("movie_publications_status_check",sql`${t.status} IN ('scheduled','publishing','processing','published','failed','outcome_unknown','cancelled')`)]);
+
+export const movieUploadSessions = pgTable("movie_upload_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(), movieId: uuid("movie_id").notNull().references(() => movieAssets.id),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id),
+  storageKey: text("storage_key").notNull().unique(), providerUploadId: text("provider_upload_id").notNull(),
+  fileName: text("file_name").notNull(), sizeBytes: bigint("size_bytes", {mode:"number"}).notNull(), mimeType: text("mime_type").notNull(),
+  status: text("status").notNull().default("uploading"),
+  createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).notNull().defaultNow(),
+}, t => [uniqueIndex("movie_upload_sessions_active_idx").on(t.movieId).where(sql`${t.status} IN ('uploading','completing')`), check("movie_upload_sessions_status_check", sql`${t.status} IN ('uploading','completing','completed','aborted','failed')`)]);

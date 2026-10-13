@@ -16,3 +16,13 @@ export function validateMovieKey(key:string){
 export function isIsoVideoHeader(bytes:Uint8Array){
   return bytes.length>=12&&String.fromCharCode(...bytes.slice(4,8))==="ftyp";
 }
+/** Worker outputs live under the movie prefix; the server derives every key, never the worker. */
+export function clipOutputKey(movieId:string,part:number,variant:"base"|number){
+  if(!z.uuid().safeParse(movieId).success||!Number.isInteger(part)||part<1||part>10000)throw new Error("MOVIE_CLIP_KEY_INVALID");
+  if(variant!=="base"&&(!Number.isInteger(variant)||variant<1))throw new Error("MOVIE_CLIP_KEY_INVALID");
+  return `movies/${movieId}/clips/${String(part).padStart(4,"0")}/${variant==="base"?"base":`r${variant}`}.mp4`;
+}
+export function validateClipKey(key:string,movieId?:string){
+  const match=/^movies\/([0-9a-f-]{36})\/clips\/\d{4}\/(base|r\d+)\.mp4$/.exec(key);
+  if(!match||(movieId&&match[1]!==movieId))throw new Error("MOVIE_STORAGE_KEY_INVALID");
+}
