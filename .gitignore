@@ -11,3 +11,5 @@ drizzle/meta
 .tmp/card-check/
 .env*
 CRON_SECRET.local.txt
+__pycache__/
+*.pyc

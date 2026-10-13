@@ -11,3 +11,5 @@ Remaining: private direct upload/storage credentials, database migration on an i
 Defaults: 30 seconds per clip, 5 reels/day, automatic subtitles and part numbers, mandatory review, explicit Facebook page selection and verified rights.
 
 Worker progress 2026-10-13: scene-aware exact-duration planning, source-bound manifest, exclusive directory lock, validated MP4 outputs, atomic partial-to-final rename and reuse of completed outputs. Fourteen Python tests pass. A generated 30-second fixture was rendered with real FFmpeg and resumed successfully; ffprobe confirmed H.264, 1080x1920, 30 seconds. Transcription/subtitles, leased cloud jobs and Docker runtime validation remain pending.
+
+Subtitle progress: local faster-whisper adapter with offline model requirement, validated editable cues, per-clip offset/clamping and SRT export are connected to render output. Eighteen Python tests pass; timed caption transforms tested, real model inference NOT yet verified. Runtime reports missing transcription explicitly. Subtitle burn-in/re-render and Arabic UI review remain incomplete.
