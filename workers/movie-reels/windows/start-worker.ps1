@@ -10,7 +10,7 @@ param(
   [string]$SourceDir = "",      # folder holding the originals you upload; reused instead of re-downloading
   [string]$ModelDir = "",       # pre-downloaded faster-whisper model (see download_model.py); empty = no auto subtitles
   [int]$Cpus = [Math]::Max(2, [Environment]::ProcessorCount - 2),
-  [int]$MemoryGB = 12
+  [int]$MemoryGB = 8   # Docker Desktop (WSL2) gets about half of system RAM by default
 )
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
