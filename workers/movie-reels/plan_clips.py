@@ -2,6 +2,7 @@
 """Offline movie clip planner. No uploads, publishing or external network access."""
 from __future__ import annotations
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,8 @@ def duration_seconds(path: Path) -> float:
 
 def plan(path: Path) -> list[dict[str, int]]:
     duration = duration_seconds(path)
+    if not math.isfinite(duration) or duration < CLIP_SECONDS:
+        return []
     return [
         {"part": i + 1, "start_seconds": i * CLIP_SECONDS,
          "duration_seconds": min(CLIP_SECONDS, int(duration - i * CLIP_SECONDS))}
