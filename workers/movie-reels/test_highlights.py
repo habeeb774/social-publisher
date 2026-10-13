@@ -29,6 +29,10 @@ class HighlightTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_rating({'score': score, 'reason': 'danger'})
 
+    def test_quiet_and_graphics_never_selected_for_their_motion(self):
+        for kind in ('quiet', 'credits', 'test_pattern', 'uncertain'):
+            self.assertEqual(validate_rating({'score': 9, 'reason': 'colors', 'kind': kind})['score'], 0)
+
     @patch.dict('os.environ', {'MOVIE_HIGHLIGHT_MODEL': ''})
     def test_missing_model_never_silently_uses_sequential(self):
         with self.assertRaisesRegex(ValueError, 'MODEL_REQUIRED'):
@@ -45,8 +49,9 @@ class HighlightTests(unittest.TestCase):
         def open_request(request, timeout):
             body = json.loads(request.data)
             self.assertEqual(len(body['messages'][1]['images']), 5)
+            self.assertGreaterEqual(body['options']['num_ctx'], 8192)
             calls.append(body)
-            return Response(json.dumps({'message': {'content': json.dumps({'score': 9, 'reason': 'مواجهة'})}}).encode())
+            return Response(json.dumps({'message': {'content': json.dumps({'score': 9, 'reason': 'مواجهة', 'kind': 'confrontation'})}}).encode())
         with tempfile.TemporaryDirectory() as directory:
             with patch('highlights.urllib.request.build_opener', return_value=SimpleNamespace(open=open_request)):
                 clips = highlight_plan(Path('film.mp4'), Path(directory))

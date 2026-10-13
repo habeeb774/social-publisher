@@ -25,11 +25,13 @@ def main():
         manifest = json.loads((output / 'manifest.json').read_text())
         assert len(clips) == 1 and manifest['selection'] == 'highlights'
         assert manifest['clips'][0]['duration_seconds'] == 30
+        assert manifest['clips'][0]['score'] < 6, 'Synthetic graphics must not qualify as exciting movie scenes'
         resumed = render(source, output, limit=1)
         assert resumed == clips
         print(json.dumps({'status': 'passed', 'model': os.environ['MOVIE_HIGHLIGHT_MODEL'],
                           'elapsed_seconds': round(time.monotonic() - started, 1),
                           'rating': manifest['clips'][0]['score'],
+                          'kind': manifest['clips'][0]['kind'],
                           'reason': manifest['clips'][0]['reason'],
                           'publishing': False}, ensure_ascii=False))
 
