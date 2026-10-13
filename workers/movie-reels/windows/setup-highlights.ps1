@@ -5,6 +5,8 @@ $taskDocker = (Get-Command docker -ErrorAction SilentlyContinue).Source
 if (-not $taskDocker) { $taskDocker = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' }
 if (-not (Test-Path -LiteralPath $taskDocker)) { throw 'Docker Desktop is required.' }
 $env:PATH = (Split-Path -Parent $taskDocker) + ';' + $env:PATH
+# Native Docker progress is stderr, not a terminating PowerShell 5.1 error.
+$ErrorActionPreference = 'Continue'
 & $taskDocker compose -f (Join-Path $taskRepo 'docker-compose.highlights.yml') up -d
 if ($LASTEXITCODE -ne 0) { throw 'Vision service failed to start.' }
 & $taskDocker compose -f (Join-Path $taskRepo 'docker-compose.highlights.yml') exec -T vision ollama pull $Model

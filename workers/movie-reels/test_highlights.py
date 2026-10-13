@@ -22,6 +22,9 @@ class HighlightTests(unittest.TestCase):
         self.assertEqual(select_highlights([{'start_seconds': 0, 'score': 2}], 5), [])
 
     def test_invalid_model_ratings_rejected(self):
+        for value in (None, [], 'score=9'):
+            with self.assertRaises(ValueError):
+                validate_rating(value)
         for score in (True, float('nan'), 11, -1, '9'):
             with self.assertRaises(ValueError):
                 validate_rating({'score': score, 'reason': 'danger'})

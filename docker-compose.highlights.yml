@@ -1,7 +1,8 @@
 name: movie-highlights
 services:
   vision:
-    image: ollama/ollama:latest
+    # Verified Linux/amd64 image; pin so future setup does not change unexpectedly.
+    image: ollama/ollama@sha256:44833c52df2a164cc1238a96ce100123c8e54082b85c5e235a9cb5a7adc55f27
     restart: unless-stopped
     ports: ["127.0.0.1:11434:11434"]
     environment:
@@ -9,5 +10,6 @@ services:
       OLLAMA_MAX_LOADED_MODELS: "1"
     volumes: [vision-models:/root/.ollama]
     mem_limit: 8g
+    gpus: all
 volumes:
   vision-models: {}
