@@ -88,6 +88,10 @@ Editable `.captions.json` files are authoritative on render resume; transcriptio
 
 ## Windows production worker setup (private R2)
 
+### Model response recovery
+
+Empty, malformed, incomplete or invalid-schema model responses are retried up to three times per window. After a constrained-schema generation failure, retries use plain JSON mode while keeping the same strict rating/category validation. Network errors and HTTP 408/429/5xx are also retryable; redirects, oversized replies and other HTTP 4xx fail closed. Exhausted temporary failures are RuntimeErrors, so the worker reports a retryable job failure and preserves its source-bound ratings and work files instead of deleting them. No invalid rating is cached and no scene is silently skipped. Already permanently failed jobs need an explicit requeue; this change does not resurrect caches previously deleted by the old permanent-failure path. Regression suite: 48 tests passed, including malformed-response recovery and work-directory preservation. A narrow deployment hotfix can be built with `Dockerfile.retry-fix` to avoid including unrelated local worker edits.
+
 ### Local highlight analyzer
 
 Run `windows/setup-highlights.ps1` to create a localhost-only Ollama Docker service and download `qwen2.5vl:3b` (approximately 3.2 GB). Persistent model files live in the `movie-highlights_vision-models` Docker volume; do not delete this volume unless deliberately uninstalling the model. The compose setup requests an NVIDIA GPU supported by Docker Desktop/WSL2; remove `gpus: all` for CPU-only hosts (much slower). It is independent of the application deployment and never publishes. Configure the highlight variables shown in `worker.env.example`; preserve the existing secret and API URL. Let active jobs finish before rebuilding/restarting the worker. Previously saved clip plans remain unchanged; highlight selection applies to new movie plans. Run `/worker/verify_highlights.py` inside a one-off worker container with the model settings; it exercises real inference, rendering and resume without accessing the application or publishing. Reference: https://ollama.com/library/qwen2.5vl

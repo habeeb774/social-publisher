@@ -1,0 +1,4 @@
+# Narrow hotfix: retain the deployed worker and apply only response retry handling.
+FROM social-publisher-reels:highlights
+COPY workers/movie-reels/highlights.py /worker/highlights.py
+COPY workers/movie-reels/test_highlights.py /worker/test_highlights.py

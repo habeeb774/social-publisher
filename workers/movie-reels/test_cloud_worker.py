@@ -49,6 +49,23 @@ def synthetic(path: Path, seconds: int):
 @unittest.skipUnless(FONT.is_file(), "Tajawal font required")
 @patch.dict('os.environ', {'MOVIE_CLIP_SELECTION': 'sequential'})
 class CloudWorkerTests(unittest.TestCase):
+    def test_bad_model_response_keeps_work_and_reports_retryable(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source.mp4'
+            source.write_bytes(b'fixture')
+            cache = root / 'work' / 'm' / 'clips'
+            cache.mkdir(parents=True)
+            (cache / 'completed-rating.json').write_text('{"score":9}')
+            api = FakeApi([{'id':'j','leaseToken':'t','kind':'process','movieId':'m','sourceUrl':f'file://{source}','existingParts':[]}])
+            with mock.patch('cloud_worker.render', side_effect=RuntimeError('HIGHLIGHT_MODEL_TEMPORARY_FAILURE_RETRYABLE')):
+                run_once(api, root / 'work', FONT, None, FakeStorage())
+            self.assertEqual(api.calls[-1][0], 'fail')
+            self.assertTrue(api.calls[-1][1]['retryable'])
+            self.assertTrue((cache / 'completed-rating.json').is_file())
+            self.assertTrue((root / 'work' / 'm' / 'source.video').is_file())
+
     def test_process_uploads_base_and_captioned_then_rerender_uses_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -5,10 +5,36 @@ import io
 from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path
-from highlights import select_highlights, validate_rating, highlight_plan
+from highlights import select_highlights, validate_rating, highlight_plan, request_rating
 
 
 class HighlightTests(unittest.TestCase):
+    @patch('highlights.time.sleep')
+    def test_empty_and_malformed_content_retry_with_json_fallback(self, sleep):
+        payloads = []
+        replies = iter([b'{"message":{"content":""}}', b'{"message":{"content":"not json"}}', json.dumps({'message': {'content': json.dumps({'score': 9, 'reason': 'danger', 'kind': 'danger'})}}).encode()])
+        class Response(io.BytesIO):
+            def geturl(self):
+                return 'http://localhost:11434/api/chat'
+        def open_request(request, timeout):
+            payloads.append(json.loads(request.data))
+            return Response(next(replies))
+        with patch('highlights.urllib.request.build_opener', return_value=SimpleNamespace(open=open_request)):
+            self.assertEqual(request_rating('http://localhost:11434', {'format': {'type': 'object'}})['score'], 9)
+        self.assertEqual([p['format'] for p in payloads[1:]], ['json', 'json'])
+        self.assertEqual(sleep.call_count, 2)
+
+    @patch('highlights.time.sleep')
+    def test_persistent_bad_output_is_retryable_not_permanent(self, sleep):
+        class Response(io.BytesIO):
+            def geturl(self):
+                return 'http://localhost:11434/api/chat'
+        opener = SimpleNamespace(open=lambda *args, **kwargs: Response(b''))
+        with patch('highlights.urllib.request.build_opener', return_value=opener):
+            with self.assertRaisesRegex(RuntimeError, 'TEMPORARY_FAILURE_RETRYABLE'):
+                request_rating('http://localhost:11434', {})
+        self.assertEqual(sleep.call_count, 2)
+
     def test_best_scenes_across_film_no_overlap_chronological(self):
         clips = select_highlights([
             {'start_seconds': 0, 'score': 2},
