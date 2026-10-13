@@ -9,3 +9,6 @@ drizzle/meta
 .vercel
 *.tsbuildinfo
 .tmp/card-check/
+__pycache__/
+*.pyc
+.movie-storage/

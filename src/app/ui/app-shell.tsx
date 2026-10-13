@@ -19,6 +19,7 @@ export const NAV: NavGroup[] = [
     { icon: "posts", label: "المنشورات", href: "/posts" }, { icon: "queue", label: "الطابور", href: "/queue" },
     { icon: "review", label: "المراجعة", href: "/reviews", badge: "reviews" }, { icon: "failed", label: "المتعثرة", href: "/failed", badge: "failed" },
   ] },
+  { key: "movies", title: "ناشر الأفلام", links: [{ icon: "media", label: "ناشر الأفلام", href: "/movies" }] },
   { key: "calendar", title: "التقويم", links: [{ icon: "calendar", label: "التقويم", href: "/calendar" }] },
   { key: "tech-radar", title: "رادار التقنية", links: [{ icon: "analytics", label: "رادار التقنية", href: "/tech-radar" }] },
   { key: "library", title: "المكتبة", links: [

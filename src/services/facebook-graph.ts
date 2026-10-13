@@ -12,9 +12,9 @@ export function isGraphConfigured() {
   return Boolean(process.env.META_PAGE_ACCESS_TOKEN?.trim());
 }
 
-async function graph(path: string, init?: RequestInit) {
+async function graph(path: string, init?: RequestInit, timeoutMs = 20000) {
   // Paging links from Graph are absolute URLs; everything else is a path under the versioned base.
-  const response = await fetch(path.startsWith("https://") ? path : `${base()}${path}`, { ...init, signal: AbortSignal.timeout(20000) });
+  const response = await fetch(path.startsWith("https://") ? path : `${base()}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   const body = await response.json().catch(() => ({})) as GraphError & Record<string, unknown>;
   return { ok: response.ok && !body.error, body };
 }
@@ -127,6 +127,44 @@ export async function publishGraphPost(input: { pageId: string; content: string;
   const link = await graph(`/${id}?fields=permalink_url&access_token=${encodeURIComponent(token)}`).catch(() => null);
   const permalink = link?.ok && typeof link.body.permalink_url === "string" ? link.body.permalink_url : undefined;
   return { id, permalink, dryRun: false, provider: "facebook_graph" as const };
+}
+
+/**
+ * Publishes a Facebook Reel from video bytes: start an upload session, send the file to
+ * rupload.facebook.com, then finish with the caption. Facebook processes the Reel afterwards.
+ */
+export async function publishGraphReel(pageId: string, video: Buffer, description: string, uploadTimeoutMs = 30000) {
+  const token = await pageToken(pageId);
+  const start = await graph(`/${pageId}/video_reels`, { method: "POST", body: new URLSearchParams({ upload_phase: "start", access_token: token }) });
+  if (!start.ok || typeof start.body.video_id !== "string") throw new Error(graphError(start.body));
+  const videoId = start.body.video_id;
+  const upload = await fetch(`https://rupload.facebook.com/video-upload/${version()}/${videoId}`, {
+    method: "POST", body: new Uint8Array(video), signal: AbortSignal.timeout(uploadTimeoutMs),
+    headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(video.length), "Content-Type": "application/octet-stream" },
+  });
+  const uploaded = await upload.json().catch(() => ({})) as GraphError & { success?: boolean };
+  if (!upload.ok || uploaded.error || uploaded.success === false) throw new Error(graphError(uploaded));
+  let finish: Awaited<ReturnType<typeof graph>>;
+  try {
+    finish = await graph(`/${pageId}/video_reels`, { method: "POST", body: new URLSearchParams({ upload_phase: "finish", video_id: videoId, video_state: "PUBLISHED", description, access_token: token }) });
+  } catch (cause) {
+    throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من ريلز الصفحة قبل أي إعادة محاولة", { cause });
+  }
+  // Meta may already have queued the reel even when finish reports an error or a non-JSON 5xx: never auto-retry.
+  if (!finish.ok || finish.body.success !== true) throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من ريلز الصفحة قبل أي إعادة محاولة (video ${videoId}; ${finish.body.error ? graphError(finish.body) : "no success flag"})`);
+  return { id: videoId };
+}
+
+/** Best-effort permalink lookup for a published Reel; null when Facebook has not exposed it yet. */
+export async function graphVideoPermalink(pageId: string, videoId: string) {
+  try {
+    const token = await pageToken(pageId);
+    const result = await graph(`/${encodeURIComponent(videoId)}?fields=permalink_url&access_token=${encodeURIComponent(token)}`);
+    const link = typeof result.body.permalink_url === "string" ? result.body.permalink_url : null;
+    return link ? (link.startsWith("http") ? link : `https://www.facebook.com${link}`) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Replies to a comment as the page. Needs pages_manage_engagement on the token. */
