@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -18,15 +19,23 @@ def duration_seconds(path: Path) -> float:
     )
     return float(result.stdout.strip())
 
-def plan(path: Path) -> list[dict[str, int]]:
+def scene_boundaries(path: Path) -> list[float]:
+    result = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-i", str(path), "-an", "-vf", "scale=320:-2,select='gt(scene,0.35)',showinfo", "-f", "null", "-"], capture_output=True, text=True, check=True, timeout=7200)
+    return sorted({float(value) for value in re.findall(r"pts_time:([0-9.]+)", result.stderr)})
+
+def plan(path: Path, scenes: list[float] | None = None) -> list[dict[str, float | int]]:
     duration = duration_seconds(path)
     if not math.isfinite(duration) or duration < CLIP_SECONDS:
         return []
-    return [
-        {"part": i + 1, "start_seconds": i * CLIP_SECONDS,
-         "duration_seconds": min(CLIP_SECONDS, int(duration - i * CLIP_SECONDS))}
-        for i in range(int(duration // CLIP_SECONDS))
-    ]
+    boundaries = sorted({float(s) for s in scenes or [] if math.isfinite(s) and 0 <= s <= duration})
+    clips = []
+    cursor = 0.0
+    while cursor + CLIP_SECONDS <= duration:
+        candidates = [s for s in boundaries if cursor <= s <= cursor + 3 and s + CLIP_SECONDS <= duration]
+        start = candidates[0] if candidates else cursor
+        clips.append({"part": len(clips) + 1, "start_seconds": start, "duration_seconds": CLIP_SECONDS})
+        cursor = start + CLIP_SECONDS
+    return clips
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or not Path(sys.argv[1]).is_file():
