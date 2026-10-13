@@ -1,13 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, riyadh } from "../ui/api";
+import { MovieDetail } from "./movie-detail";
 
 type Movie = {id:string;title:string;status:string;rightsStatus:string;createdAt?:string};
 type Page = {id:string;name:string};
-const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة"};
+const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",queued:"في طابور المعالجة",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة"};
 const rightsLabels: Record<string,string> = {pending:"بانتظار التحقق",verified:"حقوق موثقة",rejected:"حقوق مرفوضة",revoked:"ترخيص ملغى"};
 
-export function MoviesClient({enabled,canWrite,pages}:{enabled:boolean;canWrite:boolean;pages:Page[]}) {
+export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,pages}:{enabled:boolean;canWrite:boolean;canReview?:boolean;canPublish?:boolean;pages:Page[]}) {
+  const [openId,setOpenId]=useState<string|null>(null);
   const [items,setItems]=useState<Movie[]>([]);
   const [loading,setLoading]=useState(enabled);
   const [busy,setBusy]=useState(false);
@@ -40,7 +42,7 @@ export function MoviesClient({enabled,canWrite,pages}:{enabled:boolean;canWrite:
       const expiry=String(fields.get("expiry")??"");
       const movie=await api<Movie>("/api/movies",{method:"POST",body:{title:fields.get("title"),pageId:fields.get("page"),rightsBasis:fields.get("basis"),rightsEvidence:fields.get("evidence"),rightsExpiresAt:expiry?new Date(`${expiry}T23:59:59+03:00`).toISOString():null,facebookAllowed:fields.get("facebook")==="on",excerptsAllowed:fields.get("excerpts")==="on",declaration:fields.get("declaration")==="on"}});
       ++sequence.current;setLoading(false);setItems(current=>[movie,...current]);
-      form.reset();setNotice("حُفظ سجل الفيلم بانتظار التحقق من الحقوق. لم يُرفع الفيديو ولم تبدأ المعالجة.");
+      form.reset();setOpenId(movie.id);setNotice("حُفظ سجل الفيلم بانتظار التحقق من الحقوق. ارفع ملف الفيديو من بطاقة الفيلم أدناه.");
     } catch(cause){setError(cause instanceof Error?cause.message:"تعذر تسجيل الفيلم");}
     finally{saving.current=false;setBusy(false);}
   }
@@ -48,7 +50,8 @@ export function MoviesClient({enabled,canWrite,pages}:{enabled:boolean;canWrite:
     <section className="card" style={{padding:24}}>
       <h2>رحلة الفيلم</h2>
       <p>تسجيل الترخيص ← رفع خاص ← معالجة وترجمة ← مراجعة واعتماد ← جدولة بتوقيت الرياض</p>
-      <p className="banner">رفع الفيديو والمعالجة السحابية والنشر غير مفعّلة بعد. لا يُنشر أي مقطع دون تحقق الحقوق ومراجعة نسخته النهائية.</p>
+      {enabled?<p className="banner">لا يُنشر أي مقطع دون توثيق الحقوق واعتماد نسخته النهائية واختيار صفحة Facebook. النشر التلقائي يعمل فقط بعد تفعيله صراحة.</p>
+        :<p className="banner">رفع الفيديو والمعالجة السحابية والنشر غير مفعّلة بعد. لا يُنشر أي مقطع دون تحقق الحقوق ومراجعة نسخته النهائية.</p>}
     </section>
     {!enabled&&<p className="banner" role="status">القسم في مرحلة التجهيز. التسجيل متاح بعد تطبيق ترحيل قاعدة البيانات وتفعيل القسم؛ تفعيل النشر منفصل ويحتاج موافقتك النهائية.</p>}
     {notice&&<p className="banner" role="status">{notice}</p>}
@@ -69,7 +72,9 @@ export function MoviesClient({enabled,canWrite,pages}:{enabled:boolean;canWrite:
     </form>}
     <section className="card stack" style={{padding:24}} aria-busy={loading}>
       <div className="row-between"><h2>الأفلام المسجّلة</h2><button type="button" className="btn btn-secondary" disabled={!enabled||loading||busy} onClick={()=>{setLoading(true);setError("");void load();}}>تحديث</button></div>
-      {loading?<p role="status">جارٍ تحميل الأفلام…</p>:!items.length?<p>{enabled?"لا توجد أفلام مسجلة بعد.":"ستظهر أفلامك هنا بعد تجهيز القسم."}</p>:items.map(movie=><article key={movie.id} className="panel-card"><h3>{movie.title}</h3><p>{states[movie.status]??movie.status} · {rightsLabels[movie.rightsStatus]??movie.rightsStatus}</p><small>{riyadh(movie.createdAt)}</small></article>)}
+      {loading?<p role="status">جارٍ تحميل الأفلام…</p>:!items.length?<p>{enabled?"لا توجد أفلام مسجلة بعد.":"ستظهر أفلامك هنا بعد تجهيز القسم."}</p>:items.map(movie=><article key={movie.id} className="panel-card row-between"><div><h3>{movie.title}</h3><p>{states[movie.status]??movie.status} · {rightsLabels[movie.rightsStatus]??movie.rightsStatus}</p><small>{riyadh(movie.createdAt)}</small></div>
+        <button type="button" className="btn btn-secondary btn-sm" aria-expanded={openId===movie.id} onClick={()=>setOpenId(current=>current===movie.id?null:movie.id)}>{openId===movie.id?"إغلاق":"فتح ومراجعة"}</button></article>)}
     </section>
+    {enabled&&openId&&<MovieDetail key={openId} movieId={openId} pages={pages} canWrite={canWrite} canReview={canReview} canPublish={canPublish} onChanged={()=>void load()}/>}
   </div>;
 }

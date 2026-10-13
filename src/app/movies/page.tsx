@@ -14,6 +14,6 @@ export default async function MoviesPage() {
   return <AppShell title="ناشر الأفلام"><main className="stack">
     <h1>ناشر الأفلام والريلز</h1>
     <p>30 ثانية لكل ريل · 5 ريلز يوميًا · ترجمة تلقائية · ترقيم الأجزاء</p>
-    <MoviesClient enabled={enabled} canWrite={can(session.role,"content.write")} pages={(data?.pages??[]).filter(page=>page.platform==="facebook").map(page=>({id:page.id,name:page.name}))}/>
+    <MoviesClient enabled={enabled} canWrite={can(session.role,"content.write")} canReview={can(session.role,"content.review")} canPublish={can(session.role,"content.publish")} pages={(data?.pages??[]).filter(page=>page.platform==="facebook").map(page=>({id:page.id,name:page.name}))}/>
   </main></AppShell>;
 }
