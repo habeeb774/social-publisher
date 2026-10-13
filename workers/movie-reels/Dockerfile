@@ -4,5 +4,5 @@
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /worker
-COPY plan_clips.py /worker/plan_clips.py
+COPY plan_clips.py render.py /worker/
 ENTRYPOINT ["python", "/worker/plan_clips.py"]
