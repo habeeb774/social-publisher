@@ -28,13 +28,23 @@ $ErrorActionPreference = "Continue"
 
 docker build --quiet -f (Join-Path $repo "workers\movie-reels\Dockerfile") -t social-publisher-reels $repo 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Image build failed." }
+$modelNetworkArgs = @()
+if (Get-Content $envFile | Where-Object { $_ -match '^MOVIE_HIGHLIGHT_URL=http://vision:11434/?$' }) {
+  $modelNetworkArgs = @('--network', 'movie-highlights_default')
+}
+# Do not replace a working worker until the model is downloaded and supports images.
+docker run --rm @modelNetworkArgs --env-file $envFile --entrypoint python social-publisher-reels /worker/verify_model.py
+if ($LASTEXITCODE -ne 0) { throw 'Vision model is not ready; existing worker has not been replaced.' }
+$oldWorker = docker ps --filter 'name=^/movie-reels-worker$' --format '{{.Names}}'
+if ($oldWorker) {
+  docker exec movie-reels-worker python -c "import os,sys;sys.exit(1 if os.listdir('/work') else 0)"
+  if ($LASTEXITCODE -ne 0) { throw 'Worker has unfinished work; wait for it to finish before restarting.' }
+}
 docker rm -f movie-reels-worker *> $null
 
 $arguments = @("run", "-d", "--name", "movie-reels-worker", "--restart", "unless-stopped",
   "--cpus", "$Cpus", "--memory", "${MemoryGB}g", "--env-file", $envFile, "-v", "${WorkDir}:/work")
-if (Get-Content $envFile | Where-Object { $_ -match '^MOVIE_HIGHLIGHT_URL=http://vision:11434/?$' }) {
-  $arguments += @('--network', 'movie-highlights_default')
-}
+$arguments += $modelNetworkArgs
 if ($SourceDir) {
   if (-not (Test-Path $SourceDir)) { throw "SourceDir not found: $SourceDir" }
   $arguments += @("-v", "${SourceDir}:/sources:ro", "-e", "MOVIE_LOCAL_SOURCE_DIRS=/sources")
