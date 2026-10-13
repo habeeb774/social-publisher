@@ -37,3 +37,11 @@ python render.py /private/input.mp4 /private/review-clips --limit 5 --model-dir 
 ```
 
 This saves a source-bound `transcript.json`, per-part editable `.captions.json` and UTF-8 `.srt` with times clamped to each 30-second clip. Without a model, output explicitly reports `transcription_required`. Captions remain review-required; they are NOT yet burned into MP4. Caption edit UI, reviewed re-render, actual model inference verification and cloud integration remain pending. Silence may produce zero cues and still requires human review.
+
+## Burn reviewed captions into a new preview revision
+
+```bash
+python burn_subtitles.py /private/review-clips/part-001.mp4 /private/review-clips/part-001.captions.json /private/captioned --part 1 --font /fonts/Tajawal-Regular.ttf
+```
+
+This creates a new revision-addressed MP4 with Arabic subtitles and part number; it never approves or publishes. Every changed caption/timing/input/font produces a new revision requiring review. Mount the licensed Tajawal font from the application's `public` directory and preserve its OFL notice. The current web UI is not wired to this command yet.

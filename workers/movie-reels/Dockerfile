@@ -6,5 +6,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /worker
 COPY requirements.txt /worker/
 RUN pip install --no-cache-dir -r requirements.txt
-COPY plan_clips.py render.py subtitles.py /worker/
+COPY plan_clips.py render.py subtitles.py burn_subtitles.py /worker/
 ENTRYPOINT ["python", "/worker/plan_clips.py"]
