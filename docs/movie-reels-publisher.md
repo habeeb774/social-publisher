@@ -37,6 +37,19 @@ Phase 3: human review, page selection, scheduling and official Meta integration 
 Phase 4: explicit opt-in production enablement, five-per-day limit, logging and monitoring.
 
 Feature flags (all default false):
-MOVIE_REELS_ENABLED, MOVIE_REELS_PROCESSING_ENABLED, MOVIE_REELS_PUBLISHING_ENABLED.
+MOVIE_REELS_ENABLED, MOVIE_REELS_PROCESSING_ENABLED, MOVIE_REELS_PUBLISHING_ENABLED (stays false until tests pass, rights are verified and the owner explicitly approves).
+
+## Configuration (provider-agnostic)
+- Storage: `MOVIE_STORAGE_DRIVER=s3|local`. `s3` works with any S3-compatible provider (R2, AWS S3, B2, Wasabi, MinIO) via `MOVIE_S3_ENDPOINT`, `MOVIE_S3_REGION`, `MOVIE_S3_BUCKET`, `MOVIE_S3_ACCESS_KEY_ID`, `MOVIE_S3_SECRET_ACCESS_KEY`, `MOVIE_S3_FORCE_PATH_STYLE`. `local` (dev only) uses `MOVIE_LOCAL_STORAGE_DIR` + `MOVIE_LOCAL_STORAGE_SECRET`.
+- Publishing: `MOVIE_PUBLISH_DRIVER=meta|mock` (`mock` never calls Meta).
+- Worker: `MOVIE_WORKER_SECRET` (≥32 chars, shared); worker env `MOVIE_API_URL`, `MOVIE_WORK_DIR`, `MOVIE_FONT`, `MOVIE_WHISPER_MODEL_DIR`, `MOVIE_POLL_SECONDS`, `MOVIE_ALLOW_INSECURE_API=1` (dev only).
+- Local runbook: `docs/movie-reels-local-dev.md`; stack: `docker-compose.movies.yml`.
 
 No scheduler, Facebook page, or existing content workflow is changed by this document.
+
+## Publish driver (pluggable target)
+`MOVIE_PUBLISH_DRIVER` = `meta` (default) | `mock` — see `src/services/movie-reels/publish-driver.ts`.
+- `meta`: Page Reels upload via `publishGraphReel` with a 120s upload timeout (other callers keep 30s).
+- `mock`: no network; returns a fake numeric reel id and `https://example.invalid/reel/<id>`. Refused when `NODE_ENV=production`.
+- Both drivers still require `MOVIE_REELS_ENABLED=true` AND `MOVIE_REELS_PUBLISHING_ENABLED=true`; leases still recheck rights, review, order and quota.
+- Dev only: `POST /api/movies/dispatch` (needs `settings.manage`) runs one publish tick; it returns 404 unless the driver is `mock` and this is not production.

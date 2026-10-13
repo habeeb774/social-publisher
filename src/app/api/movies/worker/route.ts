@@ -5,7 +5,7 @@ import {z} from "zod";
 import {getDb} from "@/db";
 import {configuredMovieStorage} from "@/services/movie-reels/private-storage";
 import {clipOutputKey} from "@/services/movie-reels/upload-policy";
-import {completeJobQuery,failJobQuery,heartbeatQuery,leaseJobQuery,processingStartedQuery,reportClipsQuery,reportedClipSchema} from "@/services/movie-reels/pipeline";
+import {completeJobQuery,failJobQuery,heartbeatQuery,leaseJobQuery,lockedClipPartsQuery,processingStartedQuery,reportClipsQuery,reportedClipSchema} from "@/services/movie-reels/pipeline";
 
 /** Machine-to-machine API for the Docker FFmpeg worker. Bearer MOVIE_WORKER_SECRET; no browser session is accepted. */
 const lease={jobId:z.uuid(),leaseToken:z.uuid()};
@@ -64,6 +64,10 @@ export async function POST(request:NextRequest){
       if(job.kind==="rerender"){
         const [clip]=(await db.execute(sql`SELECT part_number,revision FROM movie_clips WHERE id=${job.clip_id}::uuid AND status='rendering'`)).rows as Array<{part_number:number;revision:number}>;
         allowed=(part,variant)=>Boolean(clip)&&part===clip.part_number&&variant===clip.revision;
+      } else {
+        // A resumed process job may only write parts not yet reported (or still processing): reviewed clips are immutable.
+        const locked=(await db.execute(lockedClipPartsQuery(job.movie_id,input.items.map(item=>item.part)))).rows as Array<{part_number:number}>;
+        if(locked.length)return json({error:"UPLOAD_TARGET_NOT_ALLOWED",parts:locked.map(row=>row.part_number)},403);
       }
       if(input.items.some(item=>!allowed(item.part,item.variant)))return json({error:"UPLOAD_TARGET_NOT_ALLOWED"},403);
       return json({urls:await Promise.all(input.items.map(async item=>({...item,url:await storage.signClipWrite(clipOutputKey(job.movie_id,item.part,item.variant))})))});

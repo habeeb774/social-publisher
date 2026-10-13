@@ -43,9 +43,11 @@ export function finalizeUploadQueries(sessionId:string,movieId:string){
 export function leaseJobQuery(leaseMinutes=20){
   return sql`WITH exhausted AS (
     UPDATE movie_jobs SET status='failed',lease_token=NULL,error_message=coalesce(error_message,'MAX_ATTEMPTS'),updated_at=now()
-    WHERE attempts>=${MAX_JOB_ATTEMPTS} AND (status='queued' OR (status='running' AND lease_expires_at<now())) RETURNING movie_id,kind
+    WHERE attempts>=${MAX_JOB_ATTEMPTS} AND (status='queued' OR (status='running' AND lease_expires_at<now())) RETURNING movie_id,kind,clip_id
   ), failed_movies AS (
     UPDATE movie_assets SET status='failed',updated_at=now() WHERE id IN (SELECT movie_id FROM exhausted WHERE kind='process') RETURNING id
+  ), failed_clips AS (
+    UPDATE movie_clips c SET status='render_failed',updated_at=now() FROM exhausted e WHERE e.kind='rerender' AND c.id=e.clip_id AND c.status='rendering' RETURNING c.id
   ), picked AS (
     SELECT j.id FROM movie_jobs j JOIN movie_assets m ON m.id=j.movie_id
     WHERE j.attempts<${MAX_JOB_ATTEMPTS} AND (j.status='queued' OR (j.status='running' AND j.lease_expires_at<now()))
@@ -55,7 +57,7 @@ export function leaseJobQuery(leaseMinutes=20){
   UPDATE movie_jobs j SET status='running',lease_token=gen_random_uuid(),lease_expires_at=now()+make_interval(mins=>${leaseMinutes}),
     attempts=j.attempts+1,error_message=NULL,updated_at=now()
   FROM picked WHERE j.id=picked.id
-  RETURNING j.id,j.movie_id,j.kind,j.clip_id,j.lease_token,j.attempts,(SELECT count(*) FROM failed_movies) AS failed_count`;
+  RETURNING j.id,j.movie_id,j.kind,j.clip_id,j.lease_token,j.attempts,(SELECT count(*) FROM failed_movies) AS failed_count,(SELECT count(*) FROM failed_clips) AS failed_clips`;
 }
 const leased=(jobId:string,token:string)=>sql`j.id=${uuid(jobId)}::uuid AND j.lease_token=${uuid(token)}::uuid AND j.status='running' AND j.lease_expires_at>now()`;
 export function heartbeatQuery(jobId:string,token:string,progress:number){
@@ -79,6 +81,11 @@ export function reportClipsQuery(input:{jobId:string;token:string;movieId:string
     ON CONFLICT(movie_id,part_number) DO UPDATE SET base_storage_key=EXCLUDED.base_storage_key,output_storage_key=EXCLUDED.output_storage_key,status='pending_approval',updated_at=now()
     WHERE movie_clips.status='processing' AND movie_clips.revision=1
     RETURNING id,part_number`;
+}
+/** Parts a process job may no longer overwrite: anything already reported past 'processing'. */
+export function lockedClipPartsQuery(movieId:string,parts:number[]){
+  const list=sql.join([...new Set(parts)].map(part=>sql`${z.number().int().min(1).parse(part)}::int`),sql`,`);
+  return sql`SELECT part_number FROM movie_clips WHERE movie_id=${uuid(movieId)}::uuid AND status<>'processing' AND part_number IN (${list})`;
 }
 /** A re-render must finish against the revision it was leased for; a newer edit leaves the clip rendering for its own job. */
 export function completeJobQuery(jobId:string,token:string,rerenderRevision?:number){
@@ -147,7 +154,7 @@ export function reviewClipsQuery(input:{movieId:string;user:Actor;allowed:Readon
     INSERT INTO movie_approvals(clip_id,revision,reviewer_id,decision,note)
     SELECT id,revision,${uuid(input.user.id)}::uuid,CASE WHEN ${approve} THEN 'approved' ELSE 'rejected' END,${review.decision==="excluded"?`[excluded] ${review.note??""}`.trim():review.note??null} FROM changed RETURNING id
   ), cancelled AS (
-    UPDATE movie_publications p SET status='cancelled',error_code='CLIP_REVIEW_WITHDRAWN',updated_at=now() WHERE p.status='scheduled' AND p.clip_id IN (SELECT id FROM changed) RETURNING p.id
+    UPDATE movie_publications p SET status='cancelled',error_code='CLIP_REVIEW_WITHDRAWN',updated_at=now() WHERE (p.status='scheduled' OR (p.status='failed' AND ${!approve})) AND p.clip_id IN (SELECT id FROM changed) RETURNING p.id
   ) SELECT changed.*,(SELECT count(*) FROM history) AS audited,(SELECT count(*) FROM cancelled) AS cancelled FROM changed`;
 }
 
@@ -170,7 +177,7 @@ export function reserveScheduleQueries(input:{movieId:string;pageId:string;slots
     sql`DELETE FROM movie_publications WHERE status='cancelled' AND clip_id IN (${ids})`,
     sql`INSERT INTO movie_publications(clip_id,page_id,revision,scheduled_at)
       SELECT c.id,${input.pageId}::uuid,c.revision,v.at FROM (VALUES ${values}) v(id,at)
-      JOIN movie_clips c ON c.id=v.id AND c.movie_id=${input.movieId}::uuid AND c.status='approved' AND c.approved_by IS NOT NULL AND c.subtitle_reviewed AND c.output_storage_key IS NOT NULL
+      JOIN movie_clips c ON c.id=v.id AND c.movie_id=${input.movieId}::uuid AND c.status IN ('approved','scheduled') AND c.approved_by IS NOT NULL AND c.subtitle_reviewed AND c.output_storage_key IS NOT NULL
       JOIN movie_assets m ON m.id=c.movie_id AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>v.at)
       JOIN facebook_pages fp ON fp.id=${input.pageId}::uuid AND fp.is_active AND fp.platform='facebook'
       WHERE v.at>now()`,
@@ -200,20 +207,30 @@ export function sweepPublicationsQuery(){
     WHERE status='publishing' AND lease_expires_at<now() RETURNING id
   ) SELECT (SELECT count(*) FROM invalid) AS cancelled,(SELECT count(*) FROM stale) AS stale`;
 }
+const underQuota=sql`(SELECT count(*) FROM movie_publications q WHERE q.page_id=p.page_id AND q.id<>p.id AND q.status IN ('publishing','processing','published','outcome_unknown')
+      AND (coalesce(q.published_at,q.scheduled_at) AT TIME ZONE ${REEL_TIME_ZONE})::date=(now() AT TIME ZONE ${REEL_TIME_ZONE})::date)<${DAILY_REEL_LIMIT}`;
+/** Ineligible or over-quota rows are skipped inside `due`, so one blocked page never stalls the others. */
 export function leasePublicationQuery(){
   return sql`WITH due AS (
-    SELECT p.id FROM movie_publications p JOIN movie_clips c ON c.id=p.clip_id
-    WHERE p.status='scheduled' AND p.scheduled_at<=now()
+    SELECT p.id FROM movie_publications p,movie_clips c,movie_assets m,facebook_pages fp
+    WHERE p.status='scheduled' AND p.scheduled_at<=now() AND ${publishable} AND ${underQuota}
       AND NOT EXISTS(SELECT 1 FROM movie_publications p2 JOIN movie_clips c2 ON c2.id=p2.clip_id
         WHERE c2.movie_id=c.movie_id AND c2.part_number<c.part_number AND p2.status IN ('scheduled','publishing','failed','outcome_unknown'))
     ORDER BY p.scheduled_at,c.part_number FOR UPDATE OF p SKIP LOCKED LIMIT 1
   )
   UPDATE movie_publications p SET status='publishing',lease_token=gen_random_uuid(),lease_expires_at=now()+interval '10 minutes',attempts=p.attempts+1,updated_at=now()
   FROM due,movie_clips c,movie_assets m,facebook_pages fp
-  WHERE p.id=due.id AND ${publishable}
-    AND (SELECT count(*) FROM movie_publications q WHERE q.page_id=p.page_id AND q.id<>p.id AND q.status IN ('publishing','processing','published','outcome_unknown')
-      AND (coalesce(q.published_at,q.scheduled_at) AT TIME ZONE ${REEL_TIME_ZONE})::date=(now() AT TIME ZONE ${REEL_TIME_ZONE})::date)<${DAILY_REEL_LIMIT}
+  WHERE p.id=due.id AND ${publishable} AND ${underQuota}
   RETURNING p.id,p.lease_token,p.attempts,c.id AS clip_id,c.part_number,c.title,c.description,c.output_storage_key,fp.facebook_page_id`;
+}
+/** Quota/order checks only see committed rows, so leases run serialized: the global xact lock is held until the lease commits. */
+export function leasePublicationQueries(){
+  return [sql`SELECT pg_advisory_xact_lock(hashtextextended('movie-publish-lease',0))`,leasePublicationQuery()];
+}
+/** The lease was swept to outcome_unknown while Meta accepted the reel: keep its id so nobody retries blindly. */
+export function publishedAfterLeaseLostQuery(id:string,remoteId:string,permalink:string|null){
+  return sql`UPDATE movie_publications SET remote_reel_id=${remoteId},remote_permalink=${permalink},error_code='PUBLISHED_AFTER_LEASE_EXPIRED',updated_at=now()
+    WHERE id=${uuid(id)}::uuid AND status='outcome_unknown' RETURNING id`;
 }
 export function publishedQuery(id:string,token:string,remoteId:string,permalink:string|null){
   return sql`WITH pub AS (
@@ -242,8 +259,11 @@ export function publicationActionQuery(input:{movieId:string;publicationId:strin
     FROM movie_clips c,movie_assets m
     WHERE p.id=${uuid(input.publicationId)}::uuid AND c.id=p.clip_id AND m.id=c.movie_id AND m.id=${uuid(input.movieId)}::uuid AND ${movieScope(input.user,input.allowed)}
       AND (p.status IN ('failed','outcome_unknown') OR (${next}='cancelled' AND p.status='scheduled'))
+      AND (${next}<>'scheduled' OR (c.status='scheduled' AND c.approved_by IS NOT NULL AND p.remote_reel_id IS NULL))
     RETURNING p.id,p.clip_id,p.status
-  ) UPDATE movie_clips c SET status=CASE changed.status WHEN 'published' THEN 'published' WHEN 'cancelled' THEN 'approved' ELSE 'scheduled' END,
+  ), clip AS (
+    UPDATE movie_clips c SET status=CASE changed.status WHEN 'published' THEN 'published' WHEN 'cancelled' THEN 'approved' ELSE 'scheduled' END,
       remote_reel_id=coalesce(${body.remoteReelId??null},c.remote_reel_id),scheduled_at=CASE WHEN changed.status='cancelled' THEN NULL ELSE c.scheduled_at END,updated_at=now()
-    FROM changed WHERE c.id=changed.clip_id RETURNING c.id,c.status`;
+    FROM changed WHERE c.id=changed.clip_id AND (c.status='scheduled' OR changed.status='published') RETURNING c.id
+  ) SELECT changed.*,(SELECT count(*) FROM clip) AS clips FROM changed`;
 }

@@ -1,12 +1,14 @@
 import type {SQL} from "drizzle-orm";
 import {getDb} from "@/db";
-import {graphVideoPermalink,publishGraphReel} from "../facebook-graph";
+import {movieReelTarget} from "./publish-driver";
 import {configuredMovieStorage} from "./private-storage";
-import {leasePublicationQuery,publishedQuery,publishFailedQuery,sweepPublicationsQuery} from "./pipeline";
+import {leasePublicationQueries,publishedAfterLeaseLostQuery,publishedQuery,publishFailedQuery,runTransaction,sweepPublicationsQuery} from "./pipeline";
 
 type Leased={id:string;lease_token:string;clip_id:string;part_number:number;title:string;description:string;output_storage_key:string;facebook_page_id:string};
 export type MoviePublishDeps={
   execute:(query:SQL)=>Promise<{rows:unknown[]}>;
+  /** Runs the statements in one transaction and returns the last statement's rows (serializes leases). */
+  transaction:(queries:SQL[])=>Promise<unknown[]>;
   clipBytes:(key:string)=>Promise<Buffer>;
   publish:(pageId:string,video:Buffer,description:string)=>Promise<{id:string}>;
   permalink:(pageId:string,videoId:string)=>Promise<string|null>;
@@ -26,7 +28,7 @@ export async function publishDueMovieReels(limit=1,deps?:MoviePublishDeps){
   await d.execute(sweepPublicationsQuery());
   let published=0,failed=0;
   for(let i=0;i<limit;i++){
-    const [job]=(await d.execute(leasePublicationQuery())).rows as Leased[];
+    const [job]=await d.transaction(leasePublicationQueries()) as Leased[];
     if(!job)break;
     let video:Buffer;
     try {video=await d.clipBytes(job.output_storage_key);}
@@ -37,7 +39,10 @@ export async function publishDueMovieReels(limit=1,deps?:MoviePublishDeps){
     try {
       const result=await d.publish(job.facebook_page_id,video,reelCaption(job));
       const permalink=await d.permalink(job.facebook_page_id,result.id).catch(()=>null);
-      await d.execute(publishedQuery(job.id,job.lease_token,result.id,permalink));published++;
+      if((await d.execute(publishedQuery(job.id,job.lease_token,result.id,permalink))).rows.length){published++;continue;}
+      // Lease expired mid-send and was swept to outcome_unknown: record the reel id for the human check, never count it as clean.
+      await d.execute(publishedAfterLeaseLostQuery(job.id,result.id,permalink));failed++;
+      console.error("Movie reel published after lease expired",{code:"MOVIE_PUBLISH_LEASE_LOST",publicationId:job.id,remoteId:result.id});
     } catch(error){
       const message=error instanceof Error?error.message:String(error);
       // Only an explicit Graph error body proves nothing was published; anything else may have posted.
@@ -50,5 +55,6 @@ export async function publishDueMovieReels(limit=1,deps?:MoviePublishDeps){
 
 function defaultDeps():MoviePublishDeps{
   const storage=configuredMovieStorage();
-  return {execute:query=>getDb().execute(query),clipBytes:key=>storage.clipBytes(key),publish:publishGraphReel,permalink:graphVideoPermalink};
+  const target=movieReelTarget();
+  return {execute:query=>getDb().execute(query),transaction:async queries=>((await runTransaction(queries)).at(-1) as unknown[])??[],clipBytes:key=>storage.clipBytes(key),publish:target.publish,permalink:target.permalink};
 }

@@ -13,7 +13,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from burn_subtitles import burn
-from render import render
+from render import RenderBusy, render
+from subtitles import fit_server_limits
 
 CHUNK = 8 * 1024 * 1024
 REPORT_BATCH = 10
@@ -25,8 +26,12 @@ class Permanent(Exception):
     """Input problems that a retry cannot fix (bad source, invalid captions)."""
 
 class Api:
-    def __init__(self, base: str, secret: str, opener=urllib.request.urlopen):
-        if not base.startswith("https://") and not base.startswith("http://127.0.0.1") and not base.startswith("http://localhost"):
+    def __init__(self, base: str, secret: str, opener=urllib.request.urlopen, allow_insecure: bool | None = None):
+        # Plain http only for loopback, or for local dev (e.g. host.docker.internal) when MOVIE_ALLOW_INSECURE_API=1.
+        if allow_insecure is None:
+            allow_insecure = os.environ.get("MOVIE_ALLOW_INSECURE_API") == "1"
+        local = base.startswith("http://127.0.0.1") or base.startswith("http://localhost")
+        if not base.startswith("https://") and not local and not (allow_insecure and base.startswith("http://")):
             raise ValueError("MOVIE_API_URL must use https")
         if len(secret) < 32:
             raise ValueError("MOVIE_WORKER_SECRET must be at least 32 characters")
@@ -44,6 +49,9 @@ class Api:
             detail = json.loads(error.read() or b"{}").get("error", "")
             if error.code == 409 and detail == "LEASE_LOST":
                 raise LeaseLost() from error
+            if 400 <= error.code < 500 and error.code not in (408, 429):
+                # The server rejected this exact request; repeating it cannot succeed.
+                raise Permanent(f"API {action} rejected: {error.code} {detail}") from error
             raise RuntimeError(f"API {action} failed: {error.code} {detail}") from error
 
 def download(url: str, target: Path, opener=urllib.request.urlopen):
@@ -88,6 +96,10 @@ class Heartbeat:
     def __exit__(self, *_):
         self.stop.set()
 
+    def check(self):
+        if self.lost:
+            raise LeaseLost()
+
 def lease_args(job: dict) -> dict:
     return {"jobId": job["id"], "leaseToken": job["leaseToken"]}
 
@@ -96,7 +108,10 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
     movie_dir.mkdir(parents=True, exist_ok=True)
     source = download(job["sourceUrl"], movie_dir / "source.video", opener)
     beat.progress = 10
-    outputs = render(source, movie_dir / "clips", limit=1000, model_dir=model_dir)
+    try:
+        outputs = render(source, movie_dir / "clips", limit=1000, model_dir=model_dir, check=beat.check)
+    except ValueError as error:
+        raise Permanent(str(error)) from error
     manifest = json.loads((movie_dir / "clips" / "manifest.json").read_text(encoding="utf-8"))
     starts = {clip["part"]: clip["start_seconds"] for clip in manifest["clips"]}
     if not outputs:
@@ -112,8 +127,11 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
         for entry in batch:
             base = Path(entry["path"])
             captions_file = base.with_suffix(".captions.json")
-            cues = json.loads(captions_file.read_text(encoding="utf-8"))["cues"] if captions_file.exists() else []
-            captioned = Path(burn(base, cues, entry["part"], movie_dir / "captioned", font)["path"])
+            cues = fit_server_limits(json.loads(captions_file.read_text(encoding="utf-8"))["cues"]) if captions_file.exists() else []
+            try:
+                captioned = Path(burn(base, cues, entry["part"], movie_dir / "captioned", font)["path"])
+            except ValueError as error:
+                raise Permanent(str(error)) from error
             files.append((entry["part"], "base", base))
             files.append((entry["part"], 1, captioned))
             reports.append({"part": entry["part"], "startMs": round(starts[entry["part"]] * 1000), "captions": cues})
@@ -125,6 +143,10 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
         api.call("report_clips", **lease_args(job), clips=reports)
         beat.progress = min(95, 10 + int(85 * (offset + len(batch)) / len(pending)))
     api.call("complete", **lease_args(job))
+
+def cleanup(path: Path):
+    # Finished or permanently failed: the source and renders are no longer needed on this disk.
+    shutil.rmtree(path, ignore_errors=True)
 
 def rerender(api: Api, job: dict, work: Path, font: Path, opener=urllib.request.urlopen):
     clip = job["clip"]
@@ -138,6 +160,7 @@ def rerender(api: Api, job: dict, work: Path, font: Path, opener=urllib.request.
     [signed] = api.call("upload_urls", **lease_args(job), items=[{"part": clip["part"], "variant": clip["revision"]}])["urls"]
     upload(signed["url"], output, opener)
     api.call("complete", **lease_args(job), revision=clip["revision"])
+    cleanup(clip_dir)
 
 def run_once(api: Api, work: Path, font: Path, model_dir: Path | None, opener=urllib.request.urlopen) -> bool:
     job = api.call("lease").get("job")
@@ -149,10 +172,14 @@ def run_once(api: Api, work: Path, font: Path, model_dir: Path | None, opener=ur
                 rerender(api, job, work, font, opener)
             else:
                 process(api, job, work, font, model_dir, beat, opener)
-        except LeaseLost:
-            print(json.dumps({"job": job["id"], "status": "lease_lost"}))
+                cleanup(work / job["movieId"])
+        except (LeaseLost, RenderBusy) as error:
+            # Busy means another live worker holds this movie; leave the job to its lease instead of burning an attempt.
+            print(json.dumps({"job": job["id"], "status": "lease_lost" if isinstance(error, LeaseLost) else "render_busy"}))
         except Permanent as error:
             api.call("fail", **lease_args(job), error=str(error)[:500], retryable=False)
+            if job["kind"] != "rerender":
+                cleanup(work / job["movieId"])
         except Exception as error:
             # Leased outputs are deterministic and resumable, so a retry repeats no completed upload work twice.
             api.call("fail", **lease_args(job), error=f"{type(error).__name__}: {error}"[:500], retryable=True)

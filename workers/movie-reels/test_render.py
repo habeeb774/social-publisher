@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from render import render, prepare_captions
+from render import RenderBusy, directory_lock, render, prepare_captions
 
 class ResumeTests(unittest.TestCase):
     def test_human_caption_edits_survive_resume(self):
@@ -34,12 +34,41 @@ class ResumeTests(unittest.TestCase):
                     prepare_captions(srt,[],{"start_seconds":0},"same")
                 self.assertEqual(editable.read_text(),text)
 
-    def test_concurrent_render_is_rejected(self):
+    def test_concurrent_render_is_rejected_but_stale_lock_file_is_not(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            (output / ".render.lock").touch()
-            with self.assertRaises(FileExistsError):
-                render(output / "source.mp4", output)
+            (output / ".render.lock").touch()  # left behind by a crashed process
+            with self.assertRaises(ValueError):  # gets past the lock to input validation
+                render(output / "missing.mp4", output)
+            with directory_lock(output):
+                with self.assertRaises(RenderBusy):
+                    render(output / "missing.mp4", output)
+
+    @patch("render.validate_output", return_value=True)
+    @patch("render.source_hash", return_value="same")
+    def test_input_side_seek_and_cancellation_check(self, _hash, _validate):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.mp4"
+            source.touch()
+            clips = [{"part":1,"start_seconds":6000,"duration_seconds":30},{"part":2,"start_seconds":6030,"duration_seconds":30}]
+            (root / "manifest.json").write_text(json.dumps({"source_sha256":"same","clips":clips}))
+            calls = []
+            def fake_run(args, **_):
+                calls.append(args)
+                Path(args[-1]).touch()
+            with patch("render.subprocess.run", side_effect=fake_run):
+                checks = []
+                def check():
+                    checks.append(1)
+                    if len(checks) > 1:
+                        raise RuntimeError("lease lost")
+                with self.assertRaises(RuntimeError):
+                    render(source, root, limit=2, check=check)
+            self.assertEqual(len(calls), 1, "stopped before the second clip")
+            args = calls[0]
+            self.assertLess(args.index("-ss"), args.index("-i"))
+            self.assertEqual(args[args.index("-ss") + 1], "6000")
 
     @patch("render.validate_output", return_value=True)
     @patch("render.source_hash", return_value="same")
@@ -53,7 +82,8 @@ class ResumeTests(unittest.TestCase):
             with patch("render.subprocess.run") as run:
                 self.assertEqual(len(render(source, root)), 1)
                 run.assert_not_called()
-            self.assertFalse((root / ".render.lock").exists())
+            with directory_lock(root):  # lock released after render
+                pass
 
     @patch("render.source_hash", return_value="different")
     def test_wrong_source_does_not_reuse_output(self, _hash):
@@ -64,4 +94,5 @@ class ResumeTests(unittest.TestCase):
             (root / "manifest.json").write_text(json.dumps({"source_sha256":"old","clips":[]}))
             with self.assertRaises(ValueError):
                 render(source, root)
-            self.assertFalse((root / ".render.lock").exists())
+            with directory_lock(root):  # lock released after render
+                pass

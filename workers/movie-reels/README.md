@@ -15,6 +15,19 @@ Flow: `lease` → download source via signed URL (12h) → scene-aware 30 s 1080
 
 Requires the `MOVIE_WORKER_SECRET` (≥32 chars) to match the Vercel environment variable. Disk needs roughly 2× the largest source size.
 
+## Environment
+
+| Var | Default | Notes |
+|---|---|---|
+| `MOVIE_API_URL` | required | https; http only for localhost or with `MOVIE_ALLOW_INSECURE_API=1` (dev) |
+| `MOVIE_WORKER_SECRET` | required | ≥32 chars, same as app |
+| `MOVIE_WORK_DIR` | `/work` | ~2× largest source |
+| `MOVIE_FONT` | `/worker/fonts/Tajawal-Regular.ttf` | |
+| `MOVIE_WHISPER_MODEL_DIR` | unset | offline faster-whisper model; see `download_model.py` (small/medium) |
+| `MOVIE_POLL_SECONDS` | `30` | |
+
+Local stack: `docker-compose.movies.yml` (profile `worker`) and `docs/movie-reels-local-dev.md`.
+
 ## Local preview
 
 ```bash

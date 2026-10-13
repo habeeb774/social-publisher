@@ -13,3 +13,4 @@ drizzle/meta
 CRON_SECRET.local.txt
 __pycache__/
 *.pyc
+.movie-storage/

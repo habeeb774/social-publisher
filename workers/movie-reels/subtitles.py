@@ -26,6 +26,38 @@ def clip_cues(cues: list[dict], start: float, duration: float = 30) -> list[dict
              "text": cue["text"]}
             for cue in cues if cue["end"] > start and cue["start"] < start + duration]
 
+# Must match workerCaptionSchema in src/services/movie-reels/pipeline.ts.
+SERVER_MAX_CUE_CHARS = 300
+SERVER_MAX_CUES = 200
+
+def fit_server_limits(cues: list[dict]) -> list[dict]:
+    """Splits long cues at word boundaries (time shared by length) and caps the cue count."""
+    fitted = []
+    for cue in cues:
+        words, chunks, current = " ".join(str(cue["text"]).split()).split(" "), [], ""
+        for word in words:
+            while len(word) > SERVER_MAX_CUE_CHARS:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.append(word[:SERVER_MAX_CUE_CHARS])
+                word = word[SERVER_MAX_CUE_CHARS:]
+            candidate = f"{current} {word}".strip()
+            if len(candidate) > SERVER_MAX_CUE_CHARS:
+                chunks.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        start, span, total = float(cue["start"]), float(cue["end"]) - float(cue["start"]), sum(len(c) for c in chunks)
+        for chunk in chunks:
+            end = min(float(cue["end"]), start + span * len(chunk) / total)
+            if end > start:
+                fitted.append({"start": start, "end": end, "text": chunk})
+            start = end
+    return fitted[:SERVER_MAX_CUES]
+
 def timestamp(seconds: float) -> str:
     milliseconds = round(seconds * 1000)
     hours, milliseconds = divmod(milliseconds, 3600000)

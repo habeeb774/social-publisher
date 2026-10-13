@@ -176,13 +176,13 @@ export async function publishGraphPhotoStory(pageId: string, imageUrl: string) {
  * Publishes a Facebook Reel from video bytes: start an upload session, send the file to
  * rupload.facebook.com, then finish with the caption. Facebook processes the Reel afterwards.
  */
-export async function publishGraphReel(pageId: string, video: Buffer, description: string) {
+export async function publishGraphReel(pageId: string, video: Buffer, description: string, uploadTimeoutMs = 30000) {
   const token = await pageToken(pageId);
   const start = await graph(`/${pageId}/video_reels`, { method: "POST", body: new URLSearchParams({ upload_phase: "start", access_token: token }) });
   if (!start.ok || typeof start.body.video_id !== "string") throw new Error(graphError(start.body));
   const videoId = start.body.video_id;
   const upload = await fetch(`https://rupload.facebook.com/video-upload/${version()}/${videoId}`, {
-    method: "POST", body: new Uint8Array(video), signal: AbortSignal.timeout(30000),
+    method: "POST", body: new Uint8Array(video), signal: AbortSignal.timeout(uploadTimeoutMs),
     headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(video.length), "Content-Type": "application/octet-stream" },
   });
   const uploaded = await upload.json().catch(() => ({})) as GraphError & { success?: boolean };
@@ -193,7 +193,8 @@ export async function publishGraphReel(pageId: string, video: Buffer, descriptio
   } catch (cause) {
     throw new Error("MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من ريلز الصفحة قبل أي إعادة محاولة", { cause });
   }
-  if (finish.body.error) throw new Error(graphError(finish.body));
+  // Meta may already have queued the reel even when finish reports an error or a non-JSON 5xx: never auto-retry.
+  if (!finish.ok || finish.body.success !== true) throw new Error(`MCP_PUBLISH_OUTCOME_UNKNOWN: تحقق من ريلز الصفحة قبل أي إعادة محاولة (video ${videoId}; ${finish.body.error ? graphError(finish.body) : "no success flag"})`);
   return { id: videoId };
 }
 

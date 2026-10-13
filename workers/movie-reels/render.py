@@ -3,7 +3,13 @@ import json
 import hashlib
 import os
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 from plan_clips import plan, scene_boundaries
 from subtitles import clip_cues, to_srt, transcribe, validate_cues, write_atomic
 from plan_clips import duration_seconds
@@ -45,17 +51,31 @@ def prepare_captions(caption_path: Path, cues: list[dict] | None, clip: dict, di
     write_atomic(caption_path, to_srt(local_cues))
     return True
 
-def render(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None):
-    output_dir.mkdir(parents=True, exist_ok=True)
-    lock = output_dir / ".render.lock"
-    descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    os.close(descriptor)
-    try:
-        return render_locked(source, output_dir, limit, model_dir)
-    finally:
-        lock.unlink(missing_ok=True)
+class RenderBusy(Exception):
+    """Another live process holds this output directory."""
 
-def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None):
+@contextmanager
+def directory_lock(output_dir: Path):
+    # OS-level lock: released automatically if the process dies, so a stale file never blocks a retry.
+    descriptor = os.open(output_dir / ".render.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            if fcntl:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        except OSError as error:
+            raise RenderBusy(str(output_dir)) from error
+        yield
+    finally:
+        os.close(descriptor)
+
+def render(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None, check=None):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with directory_lock(output_dir):
+        return render_locked(source, output_dir, limit, model_dir, check)
+
+def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None, check=None):
     if not source.is_file() or not 1 <= limit <= 1000:
         raise ValueError("Invalid source or limit")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +104,8 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
         write_atomic(transcript, json.dumps({"source_sha256":digest,"cues":cues,"review_required":True}, ensure_ascii=False))
     outputs = []
     for clip in clips[:limit]:
+        if check:
+            check()  # e.g. raises when the job lease was lost
         target = output_dir / f"part-{clip['part']:03d}.mp4"
         caption_path = output_dir / f"part-{clip['part']:03d}.srt"
         has_captions = prepare_captions(caption_path, cues, clip, digest)
@@ -94,8 +116,8 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
             outputs.append(entry)
             continue
         partial = output_dir / f"part-{clip['part']:03d}.partial.mp4"
-        subprocess.run(["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", str(source),
-            "-ss", str(clip["start_seconds"]), "-t", "30",
+        # Input-side -ss seeks instead of decoding the film up to each clip (accurate when re-encoding).
+        subprocess.run(["ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", str(clip["start_seconds"]), "-i", str(source), "-t", "30",
             "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1",
             "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-movflags", "+faststart", str(partial)],
             check=True, timeout=900)

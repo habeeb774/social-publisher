@@ -55,6 +55,7 @@ class CloudWorkerTests(unittest.TestCase):
             storage = FakeStorage()
             api = FakeApi([{"id": "job-1", "leaseToken": "t", "kind": "process", "movieId": "m1", "sourceUrl": f"file://{source}", "existingParts": []}])
             self.assertTrue(run_once(api, root / "work", FONT, None, storage))
+            self.assertFalse((root / "work" / "m1").exists(), "work dir removed after complete")
             actions = [name for name, _ in api.calls]
             self.assertEqual(actions, ["lease", "upload_urls", "report_clips", "complete"])
             reported = api.calls[2][1]["clips"]
@@ -89,9 +90,75 @@ class CloudWorkerTests(unittest.TestCase):
 
     def test_api_requires_https_and_long_secret(self):
         with self.assertRaises(ValueError):
-            Api("http://example.com", "x" * 40)
+            Api("http://example.com", "x" * 40, allow_insecure=False)
         with self.assertRaises(ValueError):
             Api("https://example.com", "short")
+
+    def test_insecure_http_requires_explicit_opt_in(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"MOVIE_ALLOW_INSECURE_API": ""}):
+            with self.assertRaises(ValueError):
+                Api("http://host.docker.internal:3000", "x" * 40)
+        with mock.patch.dict(os.environ, {"MOVIE_ALLOW_INSECURE_API": "1"}):
+            self.assertTrue(Api("http://host.docker.internal:3000", "x" * 40).url.endswith("/api/movies/worker"))
+        with self.assertRaises(ValueError):
+            Api("ftp://x", "x" * 40, allow_insecure=True)
+
+class ClassificationTests(unittest.TestCase):
+    def test_client_errors_are_permanent_except_lease_lost_timeout_and_throttle(self):
+        import urllib.error
+        from cloud_worker import Permanent
+        def opener_for(code, detail):
+            def opener(request, timeout=None):
+                raise urllib.error.HTTPError(request.full_url, code, "x", {}, io.BytesIO(json.dumps({"error": detail}).encode()))
+            return opener
+        api = lambda code, detail: Api("https://example.com", "x" * 40, opener=opener_for(code, detail))
+        with self.assertRaises(LeaseLost):
+            api(409, "LEASE_LOST").call("heartbeat")
+        for code, detail in [(400, "INVALID_REQUEST"), (403, "UPLOAD_TARGET_NOT_ALLOWED"), (409, "CLIP_OUTPUT_MISSING")]:
+            with self.assertRaises(Permanent):
+                api(code, detail).call("report_clips")
+        for code in (408, 429, 503):
+            with self.assertRaises(RuntimeError):
+                api(code, "X").call("report_clips")
+
+    def test_render_value_error_is_permanent_and_busy_is_not_a_failed_attempt(self):
+        from unittest import mock
+        from render import RenderBusy
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "s.mp4"
+            source.write_bytes(b"x")
+            job = lambda: {"id": "j", "leaseToken": "t", "kind": "process", "movieId": "m", "sourceUrl": f"file://{source}", "existingParts": []}
+            api = FakeApi([job()])
+            with mock.patch("cloud_worker.render", side_effect=ValueError("Output directory belongs to another source")):
+                run_once(api, root / "work", FONT, None, FakeStorage())
+            self.assertEqual(api.calls[-1][0], "fail")
+            self.assertFalse(api.calls[-1][1]["retryable"])
+            self.assertFalse((root / "work" / "m").exists(), "work dir removed after permanent failure")
+            api = FakeApi([job()])
+            with mock.patch("cloud_worker.render", side_effect=RenderBusy("m")):
+                run_once(api, root / "work", FONT, None, FakeStorage())
+            self.assertEqual([name for name, _ in api.calls], ["lease"])
+
+    def test_lost_lease_stops_render_via_check(self):
+        from unittest import mock
+        from cloud_worker import Heartbeat
+        beat = Heartbeat(FakeApi([]), {"id": "j", "leaseToken": "t"})
+        beat.lost = True
+        with self.assertRaises(LeaseLost):
+            beat.check()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "s.mp4"
+            source.write_bytes(b"x")
+            api = FakeApi([{"id": "j", "leaseToken": "t", "kind": "process", "movieId": "m", "sourceUrl": f"file://{source}", "existingParts": []}])
+            def fake_render(*_args, check=None, **_kwargs):
+                check()
+            with mock.patch("cloud_worker.render", side_effect=fake_render), mock.patch.object(Heartbeat, "check", side_effect=LeaseLost()):
+                run_once(api, root / "work", FONT, None, FakeStorage())
+            self.assertEqual([name for name, _ in api.calls], ["lease"])
 
 if __name__ == "__main__":
     unittest.main()

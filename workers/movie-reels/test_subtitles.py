@@ -21,3 +21,17 @@ class SubtitleTests(unittest.TestCase):
         text = to_srt([{"start":0,"end":2,"text":"one\n\n99\n-->"}])
         self.assertEqual(text.count("-->"), 1)
         self.assertEqual(to_srt([]), "")
+
+
+class ServerLimitTests(unittest.TestCase):
+    def test_long_cues_split_and_count_capped(self):
+        from subtitles import fit_server_limits
+        long = " ".join(["كلمة"] * 200)
+        fitted = fit_server_limits([{"start": 0, "end": 10, "text": long}, {"start": 10, "end": 12, "text": "x" * 700}])
+        self.assertTrue(all(0 < len(cue["text"]) <= 300 for cue in fitted))
+        self.assertTrue(all(cue["end"] > cue["start"] for cue in fitted))
+        self.assertTrue(all(b["start"] >= a["end"] for a, b in zip(fitted, fitted[1:])))
+        self.assertLessEqual(fitted[-1]["end"], 12)
+        self.assertEqual(" ".join(c["text"] for c in fitted[:-3]), long)
+        many = [{"start": i * .1, "end": i * .1 + .05, "text": "a"} for i in range(250)]
+        self.assertEqual(len(fit_server_limits(many)), 200)

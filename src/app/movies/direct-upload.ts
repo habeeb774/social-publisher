@@ -57,7 +57,10 @@ export async function directMovieUpload(file:Pick<File,"name"|"size"|"type"|"sli
 export function putMoviePart(url:string,body:Blob,signal:AbortSignal,onProgress:(bytes:number)=>void):Promise<string>{
   return new Promise((resolve,reject)=>{
     const parsed=new URL(url);
-    if(parsed.protocol!=="https:"||parsed.username||parsed.password||parsed.origin===window.location.origin){reject(new Error("MOVIE_UPLOAD_DESTINATION_INVALID"));return;}
+    // Same-origin is only the local dev storage driver; real storage must be cross-origin https.
+    const sameOrigin=parsed.origin===window.location.origin;
+    const allowed=sameOrigin?parsed.pathname.startsWith("/api/movies/local-storage/"):parsed.protocol==="https:";
+    if(!allowed||parsed.username||parsed.password){reject(new Error("MOVIE_UPLOAD_DESTINATION_INVALID"));return;}
     const xhr=new XMLHttpRequest();
     const cleanup=()=>signal.removeEventListener("abort",cancel);
     const fail=(code:string)=>{cleanup();reject(new Error(code));};

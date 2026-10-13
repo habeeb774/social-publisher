@@ -2,10 +2,25 @@ import {S3Client,CreateMultipartUploadCommand,UploadPartCommand,ListPartsCommand
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
 import {isIsoVideoHeader,movieFileSchema,privateMovieKey,uploadPartPlan,validateClipKey,validateMovieKey} from "./upload-policy";
 import {PutObjectCommand} from "@aws-sdk/client-s3";
+import {localMovieStorage} from "./local-storage";
 
 /** Internal provider boundary: API callers must persist and authorize upload sessions.
  * Never return bucket credentials or accept a browser-supplied storage key/upload ID. */
-export class PrivateMovieStorage {
+export type MovieUploadSession={key:string;uploadId:string;size:number;type:string};
+/** Provider boundary shared by the S3-compatible and local dev drivers. */
+export interface MovieStorage{
+  initiate(movieId:string,file:unknown):Promise<{key:string;uploadId:string;size:number;type:string;parts:Array<{number:number;offset:number;size:number}>}>;
+  signParts(session:{key:string;uploadId:string;size:number},numbers:number[]):Promise<Array<{number:number;url:string;size:number}>>;
+  complete(session:MovieUploadSession,parts:Array<{number:number;etag:string}>):Promise<{key:string;size:number;type:string;versionId:string|null;etag:string|null}>;
+  verify(session:{key:string;size:number;type:string}):Promise<{key:string;size:number;type:string;versionId:string|null;etag:string|null}>;
+  abort(session:{key:string;uploadId:string}):Promise<void>;
+  signRead(key:string,expiresIn?:number):Promise<string>;
+  signClipWrite(key:string):Promise<string>;
+  clipBytes(key:string,maxBytes?:number):Promise<Buffer>;
+  clipExists(key:string):Promise<boolean>;
+}
+
+export class PrivateMovieStorage implements MovieStorage {
   constructor(private client:S3Client,private bucket:string){}
   async initiate(movieId:string,file:unknown){
     const metadata=movieFileSchema.parse(file);
@@ -42,7 +57,7 @@ export class PrivateMovieStorage {
     const sample=await this.client.send(new GetObjectCommand({Bucket:this.bucket,Key:session.key,Range:"bytes=0-63"}));
     const bytes=await sample.Body?.transformToByteArray();
     if(!bytes||!isIsoVideoHeader(bytes))throw new Error("MOVIE_UPLOADED_FILE_INVALID");
-    return {key:session.key,size:info.ContentLength,type:info.ContentType,versionId:info.VersionId??null,etag:info.ETag??null};
+    return {key:session.key,size:info.ContentLength,type:info.ContentType as string,versionId:info.VersionId??null,etag:info.ETag??null};
   }
   /** Short-lived read URL for the worker (source) or reviewer preview (clip). */
   async signRead(key:string,expiresIn=3600){
@@ -72,10 +87,21 @@ export class PrivateMovieStorage {
   }
 }
 
-export function configuredMovieStorage(){
-  const {MOVIE_S3_ENDPOINT:endpoint,MOVIE_S3_REGION:region,MOVIE_S3_BUCKET:bucket,MOVIE_S3_ACCESS_KEY_ID:accessKeyId,MOVIE_S3_SECRET_ACCESS_KEY:secretAccessKey}=process.env;
+export function s3MovieStorage(env:NodeJS.ProcessEnv=process.env){
+  const {MOVIE_S3_ENDPOINT:endpoint,MOVIE_S3_REGION:region,MOVIE_S3_BUCKET:bucket,MOVIE_S3_ACCESS_KEY_ID:accessKeyId,MOVIE_S3_SECRET_ACCESS_KEY:secretAccessKey}=env;
   if(!endpoint||!region||!bucket||!accessKeyId||!secretAccessKey)throw new Error("MOVIE_PRIVATE_STORAGE_NOT_CONFIGURED");
   const url=new URL(endpoint);
-  if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)throw new Error("MOVIE_STORAGE_ENDPOINT_INVALID");
-  return new PrivateMovieStorage(new S3Client({endpoint,region,credentials:{accessKeyId,secretAccessKey},forcePathStyle:true,requestChecksumCalculation:"WHEN_REQUIRED"}),bucket);
+  // http only for local MinIO outside production.
+  const okProtocol=url.protocol==="https:"||(url.protocol==="http:"&&env.NODE_ENV!=="production");
+  if(!okProtocol||url.username||url.password||url.search||url.hash)throw new Error("MOVIE_STORAGE_ENDPOINT_INVALID");
+  const forcePathStyle=(env.MOVIE_S3_FORCE_PATH_STYLE??"true").toLowerCase()!=="false";
+  return new PrivateMovieStorage(new S3Client({endpoint,region,credentials:{accessKeyId,secretAccessKey},forcePathStyle,requestChecksumCalculation:"WHEN_REQUIRED"}),bucket);
+}
+
+/** MOVIE_STORAGE_DRIVER: "s3" (default; AWS S3, R2, B2, Wasabi, MinIO) or "local" (dev/tests only). */
+export function configuredMovieStorage(env:NodeJS.ProcessEnv=process.env):MovieStorage{
+  const driver=(env.MOVIE_STORAGE_DRIVER||"s3").toLowerCase();
+  if(driver==="s3")return s3MovieStorage(env);
+  if(driver==="local")return localMovieStorage(env);
+  throw new Error("MOVIE_STORAGE_DRIVER_INVALID");
 }
