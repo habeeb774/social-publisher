@@ -1,5 +1,5 @@
 """Validate human approval and licensing before scheduling a movie reel."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 DAILY_LIMIT = 5
 
@@ -15,6 +15,8 @@ def may_schedule(*, rights_status: str, approved: bool, page_id: str | None,
         return False, "timezone_required"
     from zoneinfo import ZoneInfo
     local_date = scheduled_at.astimezone(ZoneInfo("Asia/Riyadh")).date()
+    if any(slot.tzinfo is None for slot in existing_slots):
+        return False, "timezone_required"
     used = sum(slot.astimezone(ZoneInfo("Asia/Riyadh")).date() == local_date for slot in existing_slots)
     if used >= DAILY_LIMIT:
         return False, "daily_limit_reached"
