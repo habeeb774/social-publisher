@@ -2,6 +2,19 @@
 
 This worker is separate from the Vercel Next.js application. It requires a rights-cleared input video and FFmpeg/FFprobe.
 
+## Cloud worker (production path)
+
+`cloud_worker.py` leases jobs from the app, never publishes and never approves:
+
+```bash
+docker build -f workers/movie-reels/Dockerfile -t social-publisher-reels .
+docker run -d --restart unless-stopped --memory 4g --cpus 2   -e MOVIE_API_URL=https://sp.leanpix.site -e MOVIE_WORKER_SECRET=...   -v reels-work:/work [-v /models/whisper-small:/models/whisper:ro -e MOVIE_WHISPER_MODEL_DIR=/models/whisper]   social-publisher-reels
+```
+
+Flow: `lease` → download source via signed URL (12h) → scene-aware 30 s 1080x1920 render → local transcription (if model mounted) → burn Arabic captions + part label → PUT `base` and `r1` to server-derived signed keys → `report_clips` in batches of 10 → `complete`. A heartbeat renews the 20-minute lease; an expired lease is re-leased (max 5 attempts) and resumes from the source-bound local cache and the server's `existingParts`, so reviewed clips are never overwritten. Caption edits in the dashboard create `rerender` jobs that burn the new revision `rN` from the stored `base` clip.
+
+Requires the `MOVIE_WORKER_SECRET` (≥32 chars) to match the Vercel environment variable. Disk needs roughly 2× the largest source size.
+
 ## Local preview
 
 ```bash
@@ -20,7 +33,7 @@ The renderer creates 30-second, 1080x1920 padded previews and labels outputs for
 ## Safety and current limitations
 
 - Only process footage for which you hold the necessary rights.
-- No video uploads, database writes, review approvals or Meta publishing are implemented by this worker.
+- The worker never approves clips or calls Meta; publishing happens only in the app after human review.
 - Do not expose worker filesystem or its endpoints publicly.
 - Before production, add a durable queue, private object storage, explicit license verification, authenticated job submission, resource limits, and atomic five-per-day publishing limits.
 - Each output directory is bound to the source SHA-256 and saved clip plan. Complete H.264 1080x1920 30-second outputs are verified and reused on resume; partial output is never treated as complete. Invalid existing outputs require inspection rather than silent replacement.

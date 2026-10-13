@@ -56,7 +56,7 @@ def render(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | Non
         lock.unlink(missing_ok=True)
 
 def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Path | None = None):
-    if not source.is_file() or not 1 <= limit <= 100:
+    if not source.is_file() or not 1 <= limit <= 1000:
         raise ValueError("Invalid source or limit")
     output_dir.mkdir(parents=True, exist_ok=True)
     # Bind cached previews to their source and immutable scene-aware plan.
