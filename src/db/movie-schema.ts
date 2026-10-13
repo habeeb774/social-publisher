@@ -5,6 +5,7 @@ import { users, facebookPages } from "./schema";
 export const movieAssets = pgTable("movie_assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerUserId: uuid("owner_user_id").notNull().references(() => users.id),
+  pageId: uuid("page_id").references(() => facebookPages.id),
   title: text("title").notNull(), sourceStorageKey: text("source_storage_key"),
   rightsStatus: text("rights_status").notNull().default("pending"), rightsBasis: text("rights_basis"),
   rightsVerifiedBy: uuid("rights_verified_by").references(() => users.id),

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS movie_jobs (
 CREATE INDEX IF NOT EXISTS movie_clips_page_schedule_idx ON movie_clips(page_id,scheduled_at);
 -- Publication worker must verify rights, explicit page, clip approval, and quota.
 ALTER TABLE movie_assets ADD COLUMN IF NOT EXISTS rights_expires_at timestamptz;
+ALTER TABLE movie_assets ADD COLUMN IF NOT EXISTS page_id uuid REFERENCES facebook_pages(id);
 ALTER TABLE movie_assets ADD COLUMN IF NOT EXISTS rights_evidence text;
 ALTER TABLE movie_assets ADD COLUMN IF NOT EXISTS facebook_allowed boolean NOT NULL DEFAULT false;
 ALTER TABLE movie_assets ADD COLUMN IF NOT EXISTS excerpts_allowed boolean NOT NULL DEFAULT false;
