@@ -5,6 +5,7 @@ import {getDb} from "@/db";
 import {getSetting} from "../settings-store";
 import {CATALOG,catalogAttribution,catalogIds,catalogKey,CATALOG_POLICY_KEY,licenseEvidence,type CatalogId} from "./catalog";
 import {configuredMovieStorage,type MovieUploadSession} from "./private-storage";
+import {uploadPartPlan} from "./upload-policy";
 import {finalizeUploadQueries,reservationsQuery,reserveScheduleQueries,runTransaction} from "./pipeline";
 import {planReelSchedule,type ReviewedClip,type Reservation} from "./policy";
 import {reserveYouTubeQueries} from "../youtube/pipeline";
@@ -94,7 +95,11 @@ export async function catalogHeartbeat(movieId:string,token:string){
 }
 export async function initCatalogUpload(movieId:string,token:string,size:number){
  await activePolicy();const asset=await leasedAsset(movieId,token),db=getDb();
- if(asset.sessionId)throw new Error("CATALOG_UPLOAD_EXISTS");
+ if(asset.sessionId){
+  const [existing]=(await db.execute(sql`SELECT size_bytes,status FROM movie_upload_sessions WHERE id=${asset.sessionId}::uuid AND movie_id=${movieId}::uuid`)).rows as Array<{size_bytes:number|string;status:string}>;
+  if(!existing||Number(existing.size_bytes)!==size||!["uploading","completing"].includes(existing.status))throw new Error("CATALOG_UPLOAD_EXISTS");
+  return {sessionId:asset.sessionId,parts:existing.status==="completing"?[]:uploadPartPlan(size),completeOnly:existing.status==="completing"};
+ }
  const storage=configuredMovieStorage(),created=await storage.initiate(movieId,{name:`${asset.catalogId}.mp4`,size,type:"video/mp4"});
  const id=randomUUID();
  try{await runTransaction([

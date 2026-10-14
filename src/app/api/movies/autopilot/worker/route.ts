@@ -7,7 +7,7 @@ const input=z.discriminatedUnion("action",[
  z.object({action:z.literal("lease")}).strict(),z.object({action:z.literal("heartbeat"),...lease}).strict(),
  z.object({action:z.literal("init"),...lease,size:z.number().int().min(1000).max(800*1024**2)}).strict(),
  z.object({action:z.literal("parts"),...lease,numbers:z.array(z.number().int().positive()).min(1).max(10)}).strict(),
- z.object({action:z.literal("complete"),...lease,parts:z.array(z.object({number:z.number().int().positive(),etag:z.string().min(1).max(200)}).strict()).min(1).max(100),sourceSha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
+ z.object({action:z.literal("complete"),...lease,parts:z.array(z.object({number:z.number().int().positive(),etag:z.string().min(1).max(200)}).strict()).max(100),sourceSha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
  z.object({action:z.literal("fail"),...lease,error:z.string().max(200)}).strict(),
 ]);
 const digest=(value:string)=>createHash("sha256").update(value).digest();

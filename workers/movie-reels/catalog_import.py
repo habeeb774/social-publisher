@@ -20,6 +20,7 @@ SOURCES = {
  "big-buck-bunny": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_720p_h264.mov.zip",
  "tears-of-steel": "https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov",
 }
+SOURCE_SIZES={"big-buck-bunny":416751396,"tears-of-steel":372178639}
 SUBTITLE_URL = "https://download.blender.org/demo/movies/ToS/subtitles/TOS-en.srt"
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -173,7 +174,9 @@ def import_once(api, work):
             raise ValueError("CATALOG_SOURCE_NOT_ALLOWED")
         if shutil.disk_usage(work).free < 2*1024**3:
             raise ValueError("CATALOG_DISK_SPACE_LOW")
-        raw = official_download(job["sourceUrl"],movie_dir/"catalog.download",check=check)
+        raw=movie_dir/"catalog.download"
+        if not raw.is_file() or raw.stat().st_size!=SOURCE_SIZES[job["catalogId"]]:
+            raw = official_download(job["sourceUrl"],raw,check=check)
         if job["archive"]:
             raw = unpack_movie(raw,movie_dir/"catalog.mov")
         source = movie_dir/"source.video"
