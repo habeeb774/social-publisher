@@ -2,6 +2,7 @@
 import {useCallback,useEffect,useRef,useState} from "react";
 import {api,riyadh} from "../ui/api";
 import {directMovieUpload,putMoviePart,UploadCompletionUnknown,type UploadProgress} from "./direct-upload";
+import {YouTubeMovie} from "./youtube-panel";
 
 type Cue={start:number;end:number;text:string};
 type Clip={id:string;part_number:number;start_ms:number;title:string;description:string;captions:Cue[];revision:number;subtitle_reviewed:boolean;status:string;
@@ -135,6 +136,8 @@ export function MovieDetail({movieId,pages,canWrite,canReview,canPublish,onChang
 
     {canPublish&&approved.length>0&&<Scheduler pages={pages} defaultPage={movie.page_id} count={approved.length} busy={busy}
       onSubmit={(pageId,start)=>act(()=>api<{scheduled:unknown[]}>(`/api/movies/${movieId}/schedule`,{method:"POST",body:{pageId,start}}),"جُدولت المقاطع المعتمدة بحد 5 ريلز يوميًا بتوقيت الرياض")}/>}
+
+    <YouTubeMovie movieId={movieId} revision={movie.rights_revision} rightsStatus={movie.rights_status} canReview={canReview} canPublish={canPublish}/>
 
     {publications.length>0&&<div className="card stack" style={{padding:24}}>
       <h3>جدول النشر</h3>

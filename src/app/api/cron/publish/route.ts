@@ -18,6 +18,7 @@ import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
 import { moviePublishingEnabled, publishDueMovieReels } from "@/services/movie-reels/publisher";
+import { publishDueYouTube, youtubePublishingEnabled } from "@/services/youtube/publisher";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -191,6 +192,10 @@ async function run(request: Request) {
         console.error("Movie reels dispatch failed", { error: error instanceof Error ? error.message : String(error) });
       }
     }
+    if (youtubePublishingEnabled()) {
+      try { await publishDueYouTube(); }
+      catch { console.error("YouTube dispatch failed", {code:"YOUTUBE_DISPATCH_FAILED"}); }
+    }
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     await getDb().insert(schedulerRuns).values({ finishedAt, processedCount: results.length, publishedCount: results.filter((item) => item.status === "published").length, failedCount: results.filter((item) => item.status === "failed").length, durationMs, status: "success" });
@@ -203,6 +208,6 @@ async function run(request: Request) {
   }
 }
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export async function GET(request: Request) { return run(request); }
 export async function POST(request: Request) { return run(request); }
