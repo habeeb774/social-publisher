@@ -100,7 +100,7 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
         mode = os.environ.get('MOVIE_CLIP_SELECTION', 'highlights')
         if mode not in ('highlights', 'sequential'):
             raise ValueError('MOVIE_CLIP_SELECTION_INVALID')
-        clips = highlight_plan(source, output_dir, check) if mode == 'highlights' else plan(source, scene_boundaries(source))
+        clips = highlight_plan(source, output_dir, check, limit=limit) if mode == 'highlights' else plan(source, scene_boundaries(source))
         temporary = output_dir / "manifest.partial.json"
         temporary.write_text(json.dumps({"source_sha256": digest, "selection": mode, "clips": clips}), encoding="utf-8")
         temporary.replace(manifest)

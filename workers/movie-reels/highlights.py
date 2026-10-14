@@ -108,7 +108,7 @@ def request_rating(endpoint, body, check=None):
     raise RuntimeError('HIGHLIGHT_MODEL_TEMPORARY_FAILURE_RETRYABLE') from failure
 
 
-def highlight_plan(source, cache_dir, check=None):
+def highlight_plan(source, cache_dir, check=None, limit=None):
     model = os.environ.get('MOVIE_HIGHLIGHT_MODEL', '').strip()
     endpoint = os.environ.get('MOVIE_HIGHLIGHT_URL', 'http://localhost:11434').rstrip('/')
     url = urlparse(endpoint)
@@ -123,6 +123,8 @@ def highlight_plan(source, cache_dir, check=None):
     if not math.isfinite(duration) or duration < 30:
         return []
     maximum = int(os.environ.get('MOVIE_HIGHLIGHT_MAX_CLIPS', '20'))
+    if limit is not None:
+        maximum = min(maximum, limit)
     threshold = float(os.environ.get('MOVIE_HIGHLIGHT_MIN_SCORE', '6'))
     if not 1 <= maximum <= 1000 or not math.isfinite(threshold) or not 0 <= threshold <= 10:
         raise ValueError('MOVIE_HIGHLIGHT_SETTINGS_INVALID')
