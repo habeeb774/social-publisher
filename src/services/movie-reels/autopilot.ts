@@ -32,7 +32,10 @@ export async function configureAutopilot(ownerId:string,input:z.infer<typeof aut
   AND p.id=${input.pageId}::uuid AND p.is_active AND p.platform='facebook' AND ch.id=${input.channelId}::uuid AND ch.active AND ch.owner_user_id=u.id`);
  if(!targets.rows.length)throw new Error("AUTOPILOT_TARGET_UNAVAILABLE");
  const statements=[sql`SELECT pg_advisory_xact_lock(hashtext('movie-autopilot'))`,
-  sql`INSERT INTO settings(key,value) VALUES(${CATALOG_POLICY_KEY},${JSON.stringify(next)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`];
+  sql`INSERT INTO settings(key,value) VALUES(${CATALOG_POLICY_KEY},${JSON.stringify(next)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()
+   WHERE settings.value::jsonb->>'ownerId'=${ownerId} AND settings.value::jsonb->>'pageId'=${input.pageId} AND settings.value::jsonb->>'channelId'=${input.channelId} AND settings.value::jsonb->>'madeForKids'=${String(input.madeForKids)}`,
+  sql`SELECT 1/((value::jsonb->>'ownerId'=${ownerId} AND value::jsonb->>'pageId'=${input.pageId} AND value::jsonb->>'channelId'=${input.channelId}
+   AND value::jsonb->>'madeForKids'=${String(input.madeForKids)} AND value::jsonb->>'enabled'=${String(input.enabled)})::int) FROM settings WHERE key=${CATALOG_POLICY_KEY}`];
  if(input.enabled)for(const id of catalogIds){
   const movieId=randomUUID(),asset:AutoAsset={movieId,catalogId:id,state:"queued",attribution:catalogAttribution(id),attempts:0,qa:{}};
   statements.push(sql`WITH registered AS (INSERT INTO settings(key,value) VALUES(${"movie_autopilot_catalog:"+id},${JSON.stringify({movieId})}) ON CONFLICT(key) DO NOTHING RETURNING key)
@@ -64,6 +67,8 @@ export async function leaseCatalog(){
    sql`INSERT INTO movie_rights_reviews(movie_id,revision,reviewer_id,decision,note) SELECT id,rights_revision,${policy.ownerId}::uuid,'verified',${note} FROM movie_assets WHERE id=${asset.movieId}::uuid
     ON CONFLICT(movie_id,revision) DO NOTHING`,
    sql`INSERT INTO movie_youtube_rights(movie_id,rights_revision,verified_by,evidence) SELECT id,rights_revision,${policy.ownerId}::uuid,${asset.attribution} FROM movie_assets WHERE id=${asset.movieId}::uuid AND rights_status='verified' ON CONFLICT(movie_id) DO NOTHING`,
+   sql`INSERT INTO movie_youtube_rights_history(movie_id,reviewer_id,decision,note) SELECT ${asset.movieId}::uuid,${policy.ownerId}::uuid,'verified',${note}
+    WHERE NOT EXISTS(SELECT 1 FROM movie_youtube_rights_history WHERE movie_id=${asset.movieId}::uuid AND note LIKE 'AUTOMATED_CATALOG_LICENSE_POLICY_V1%')`,
    sql`INSERT INTO settings(key,value) VALUES(${"movie_autopilot_license:"+asset.movieId},${JSON.stringify(evidence)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=now()`,
   ]);
   return {...asset,sourceUrl:film.sourceUrl,archive:film.archive,subtitlesUrl:film.subtitlesUrl};
@@ -114,6 +119,8 @@ export async function advanceCatalog(){
  const db=getDb(),assets=(await db.execute(sql`SELECT value FROM settings WHERE key LIKE 'movie_autopilot_asset:%' AND value::jsonb->>'state'='ready' ORDER BY key`)).rows as Array<{value:string}>;
  for(const row of assets){
   const asset=JSON.parse(row.value) as AutoAsset;
+  const failed=(await db.execute(sql`SELECT id FROM movie_assets WHERE id=${asset.movieId}::uuid AND status='failed'`)).rows;
+  if(failed.length){await db.execute(sql`UPDATE settings SET value=(value::jsonb||'{"state":"blocked","error":"CATALOG_PROCESSING_FAILED"}'::jsonb)::text WHERE key=${catalogKey(asset.movieId)}`);continue;}
   const [movie]=(await db.execute(sql`SELECT * FROM movie_assets WHERE id=${asset.movieId}::uuid AND owner_user_id=${policy.ownerId}::uuid AND status='review_required'
    AND rights_status='verified' AND rights_revision=1 AND source_storage_key=${asset.sourceKey??null}`)).rows as Array<Record<string,unknown>>;
   if(!movie)continue;

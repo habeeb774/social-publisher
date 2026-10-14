@@ -8,7 +8,7 @@ import {autoPolicy,autopilotConfigSchema,configureAutopilot} from "@/services/mo
 import {CATALOG,catalogIds} from "@/services/movie-reels/catalog";
 const response=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{"cache-control":"no-store"}});
 export async function GET(request:NextRequest){
- const denied=await guard(request,false,"content.read");if(denied)return denied;
+ const denied=await guard(request,false,"settings.manage");if(denied)return denied;
  const policy=await autoPolicy(),rows=(await getDb().execute(sql`SELECT value FROM settings WHERE key LIKE 'movie_autopilot_asset:%' ORDER BY key`)).rows as Array<{value:string}>;
  return response({policy,films:catalogIds.map(id=>({id,title:CATALOG[id].title,licensePage:CATALOG[id].licensePage})),
   imports:rows.map(row=>{const asset=JSON.parse(row.value);return {movieId:asset.movieId,catalogId:asset.catalogId,state:asset.state,error:asset.error??null,qualityChecked:Object.keys(asset.qa??{}).length};})});

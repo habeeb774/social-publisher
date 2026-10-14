@@ -3,7 +3,7 @@ import {getDb} from "@/db";
 import {movieReelTarget} from "./publish-driver";
 import {configuredMovieStorage} from "./private-storage";
 import {platformPublishingEnabled} from "./publishing-control";
-import {leasePublicationQueries,publishedAfterLeaseLostQuery,publishedQuery,publishFailedQuery,runTransaction,sweepPublicationsQuery} from "./pipeline";
+import {checkPublicationLeaseQuery,leasePublicationQueries,publishedAfterLeaseLostQuery,publishedQuery,publishFailedQuery,runTransaction,sweepPublicationsQuery} from "./pipeline";
 
 type Leased={id:string;lease_token:string;clip_id:string;part_number:number;title:string;description:string;output_storage_key:string;facebook_page_id:string};
 export type MoviePublishDeps={
@@ -41,7 +41,7 @@ export async function publishDueMovieReels(limit=1,deps?:MoviePublishDeps){
       await d.execute(publishFailedQuery(job.id,job.lease_token,`STORAGE:${error instanceof Error?error.message:"read failed"}`,"rejected"));failed++;continue;
     }
     try {
-      if(!await enabled()){
+      if(!await enabled()||(!deps&&!(await d.execute(checkPublicationLeaseQuery(job.id,job.lease_token))).rows.length)){
         await d.execute(sql`UPDATE movie_publications SET status='scheduled',attempts=greatest(0,attempts-1),lease_token=NULL,
           lease_expires_at=NULL,updated_at=now() WHERE id=${job.id}::uuid AND lease_token=${job.lease_token}::uuid AND status='publishing'`);break;
       }

@@ -211,6 +211,11 @@ export function sweepPublicationsQuery(){
 }
 const underQuota=sql`(SELECT count(*) FROM movie_publications q WHERE q.page_id=p.page_id AND q.id<>p.id AND q.status IN ('publishing','processing','published','outcome_unknown')
       AND (coalesce(q.published_at,q.scheduled_at) AT TIME ZONE ${REEL_TIME_ZONE})::date=(now() AT TIME ZONE ${REEL_TIME_ZONE})::date)<${DAILY_REEL_LIMIT}`;
+/** Recheck revocations and catalogue policy after file loading, before touching Meta. */
+export function checkPublicationLeaseQuery(id:string,token:string){
+ return sql`SELECT p.id FROM movie_publications p,movie_clips c,movie_assets m,facebook_pages fp WHERE p.id=${uuid(id)}::uuid
+  AND p.lease_token=${uuid(token)}::uuid AND p.status='publishing' AND p.lease_expires_at>now() AND ${publishable}`;
+}
 /** Ineligible or over-quota rows are skipped inside `due`, so one blocked page never stalls the others. */
 export function leasePublicationQuery(){
   return sql`WITH due AS (

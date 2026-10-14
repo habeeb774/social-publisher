@@ -19,7 +19,7 @@ export default async function MoviesPage() {
     <h1>ناشر الأفلام والريلز</h1>
     <p>30 ثانية لكل ريل · 5 ريلز يوميًا · ترجمة تلقائية · ترقيم الأجزاء</p>
     {enabled?<><MoviePublishingControls canManage={can(session.role,"settings.manage")}/><YouTubeConnection canManage={can(session.role,"settings.manage")}/></>:null}
-    {enabled?<MovieAutopilot canManage={can(session.role,"settings.manage")} pages={(data?.pages??[]).filter(page=>page.platform==="facebook").map(page=>({id:page.id,name:page.name}))}/>:null}
+    {enabled&&can(session.role,"settings.manage")?<MovieAutopilot canManage={true} pages={(data?.pages??[]).filter(page=>page.platform==="facebook").map(page=>({id:page.id,name:page.name}))}/>:null}
     <MoviesClient enabled={enabled} canWrite={can(session.role,"content.write")} canReview={can(session.role,"content.review")} canPublish={can(session.role,"content.publish")} canDelete={session.role==="admin"} pages={(data?.pages??[]).filter(page=>page.platform==="facebook").map(page=>({id:page.id,name:page.name}))}/>
   </main></AppShell>;
 }
