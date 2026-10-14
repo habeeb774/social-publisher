@@ -1,0 +1,97 @@
+.page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page :global(.stack),
+.page :global(.card),
+.page :global(.panel-card),
+.page :global(.row-between),
+.page :global(.row-actions),
+.page fieldset {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page :global(.row-between) > *,
+.page :global(.row-actions) > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page :global(.row-actions) {
+  flex-wrap: wrap;
+}
+
+.page :global(.card-grid) {
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.page video,
+.page progress {
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .page :global(.card),
+  .page :global(.panel-card) {
+    /* These components currently set desktop padding inline. */
+    padding: 16px !important;
+  }
+
+  .page :global(.card-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page :global(.bulk-bar) {
+    position: static;
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .page :global(.row-actions) {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .page :global(.row-actions) > :global(.btn) {
+    flex: 1 1 120px;
+  }
+
+  .page :global(.btn) {
+    min-height: 44px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .page label,
+  .page input,
+  .page select,
+  .page textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .page input:not([type="checkbox"]):not([type="radio"]),
+  .page select,
+  .page textarea {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .page label:has(input[type="checkbox"]) {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 44px;
+  }
+
+  .page input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin-top: 4px;
+  }
+}
