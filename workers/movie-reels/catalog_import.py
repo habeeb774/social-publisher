@@ -95,10 +95,10 @@ def translate_cues(cues, check=None):
         raise ValueError("CATALOG_TRANSLATION_MODEL_REQUIRED")
     translated = []
     opener = urllib.request.build_opener(NoRedirect()).open
-    for start in range(0, len(cues), 8):
+    for start in range(0, len(cues), 1):
         if check:
             check()
-        batch = cues[start:start+8]
+        batch = cues[start:start+1]
         texts = {str(index):cue["text"] for index,cue in enumerate(batch)}
         arabic_pattern=r"^[\u0600-\u06ff0-9\s.,!?،؛؟:'\"()\-]+$"
         schema={"type":"object","properties":{"translations":{"type":"object","properties":{key:{"type":"string","pattern":arabic_pattern,"minLength":1,"maxLength":300} for key in texts},"required":list(texts),"additionalProperties":False}},"required":["translations"],"additionalProperties":False}
@@ -115,6 +115,9 @@ def translate_cues(cues, check=None):
             raise ValueError("CATALOG_TRANSLATION_IDS_INVALID")
         values=[mapping[str(index)] for index in range(len(batch))]
         if any(not isinstance(s,str) or not re.search(r"[\u0600-\u06ff]",s) or not re.fullmatch(arabic_pattern,s) or not 1<=len(s.strip())<=300 for s in values):
+            diagnostics=[{"type":type(s).__name__,"length":len(s) if isinstance(s,str) else None,"arabic":bool(re.search(r"[\u0600-\u06ff]",s)) if isinstance(s,str) else False,
+             "unexpectedCharacters":sorted(set(re.sub(r"[\u0600-\u06ff0-9\s.,!?،؛؟:'\"()\-]","",s)))[:20] if isinstance(s,str) else []} for s in values]
+            print(json.dumps({"status":"translation_validation_failed","diagnostics":diagnostics},ensure_ascii=False))
             raise ValueError("CATALOG_TRANSLATION_INVALID")
         translated.extend({**cue,"text":value.strip()} for cue,value in zip(batch,values))
     return translated
