@@ -14,11 +14,14 @@ import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
 import { enqueueHourlyTechNews } from "@/services/tech-news";
+import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
 import { enqueueTextPagePosts, ensureDailyRemembrance } from "@/services/text-content-pages";
 import { moviePublishingEnabled, publishDueMovieReels } from "@/services/movie-reels/publisher";
 import { publishDueYouTube, youtubePublishingEnabled } from "@/services/youtube/publisher";
+import {advanceCatalog} from "@/services/movie-reels/autopilot";
+import { getGeneralSettings } from "@/services/general-settings";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -102,6 +105,8 @@ async function run(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date();
+  const controls = await getGeneralSettings();
+  if (!controls.systemEnabled || !controls.automationEnabled) return NextResponse.json({ success: true, paused: true, reason: !controls.systemEnabled ? "SYSTEM_DISABLED" : "AUTOMATION_DISABLED" });
   // Publishing comes first; everything else runs after the response so it can never delay a post.
   const gapCheck = runHealthChecks();
   // Recurring rules create their upcoming instances before the due-post scan.
@@ -151,6 +156,12 @@ async function run(request: Request) {
   });
   try {
     try {
+      const politicsNews = await enqueuePoliticsNews(startedAt);
+      if (politicsNews.created) console.info("Politics news queued", politicsNews);
+    } catch (error) {
+      console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+    try {
       const techNews = await enqueueHourlyTechNews(startedAt);
       if (techNews.created) console.info("Hourly technology news queued", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
@@ -182,9 +193,10 @@ async function run(request: Request) {
     } catch (error) {
       console.error("Text-only page queue failed", { error: error instanceof Error ? error.message : String(error) });
     }
-    const results = await publishDuePosts();
+    const results = controls.publishingEnabled ? await publishDuePosts() : [];
     // Movie reels run only behind their own explicit publishing flag; failures never affect regular posts.
-    if (await moviePublishingEnabled()) {
+    if (controls.videoEnabled) { try{await advanceCatalog();}catch{console.error("Movie autopilot paused for review",{code:"CATALOG_ADVANCE_FAILED"});} }
+    if (controls.videoEnabled && await moviePublishingEnabled()) {
       try {
         const reels = await publishDueMovieReels(1);
         if (reels.published || reels.failed) console.info("Movie reels dispatch", reels);
@@ -192,7 +204,7 @@ async function run(request: Request) {
         console.error("Movie reels dispatch failed", { error: error instanceof Error ? error.message : String(error) });
       }
     }
-    if (await youtubePublishingEnabled()) {
+    if (controls.videoEnabled && await youtubePublishingEnabled()) {
       try { await publishDueYouTube(); }
       catch { console.error("YouTube dispatch failed", {code:"YOUTUBE_DISPATCH_FAILED"}); }
     }

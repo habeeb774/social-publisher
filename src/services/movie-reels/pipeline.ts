@@ -4,6 +4,7 @@ import {neon} from "@neondatabase/serverless";
 import {z} from "zod";
 import {DAILY_REEL_LIMIT,REEL_TIME_ZONE} from "./policy";
 import {clipOutputKey} from "./upload-policy";
+import {catalogPublicationGate} from "./catalog";
 
 /** Every movie statement is a single atomic SQL statement, or a non-interactive transaction below. */
 export const MAX_JOB_ATTEMPTS=5;
@@ -192,6 +193,7 @@ export function reserveScheduleQueries(input:{movieId:string;pageId:string;slots
 
 // ---------- Publishing ----------
 const publishable=sql`c.id=p.clip_id AND c.revision=p.revision AND c.status='scheduled' AND c.approved_by IS NOT NULL AND c.subtitle_reviewed AND c.output_storage_key IS NOT NULL
+  AND (${catalogPublicationGate()})
   AND m.id=c.movie_id AND m.status <> 'deleting' AND m.rights_status='verified' AND m.facebook_allowed AND m.excerpts_allowed AND (m.rights_expires_at IS NULL OR m.rights_expires_at>now())
   AND fp.id=p.page_id AND fp.is_active AND fp.platform='facebook'`;
 /** Housekeeping before a lease: invalid due reels are cancelled, abandoned sends become outcome_unknown (never resent blindly). */

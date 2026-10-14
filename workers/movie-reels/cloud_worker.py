@@ -13,7 +13,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from burn_subtitles import burn
-from render import RenderBusy, render
+from render import RenderBusy, render, source_hash, validate_output
+from catalog_import import import_once, prepare_catalog_captions
 from subtitles import fit_server_limits
 
 CHUNK = 8 * 1024 * 1024
@@ -163,7 +164,8 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
         source = download(job["sourceUrl"], movie_dir / "source.video", opener)
     beat.progress = 10
     try:
-        outputs = render(source, movie_dir / "clips", limit=1000, model_dir=model_dir, check=beat.check)
+        prepare_catalog_captions(job,source,movie_dir / "clips",beat.check)
+        outputs = render(source, movie_dir / "clips", limit=5 if job.get("autopilot") else 1000, model_dir=model_dir, check=beat.check)
     except ValueError as error:
         raise Permanent(str(error)) from error
     manifest = json.loads((movie_dir / "clips" / "manifest.json").read_text(encoding="utf-8"))
@@ -177,6 +179,7 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
             raise LeaseLost()
         batch = pending[offset:offset + REPORT_BATCH]
         reports = []
+        quality = []
         files = []
         for entry in batch:
             base = Path(entry["path"])
@@ -188,13 +191,20 @@ def process(api: Api, job: dict, work: Path, font: Path, model_dir: Path | None,
                 raise Permanent(str(error)) from error
             files.append((entry["part"], "base", base))
             files.append((entry["part"], 1, captioned))
+            if job.get("autopilot"):
+                if not validate_output(captioned):
+                    raise Permanent("CATALOG_OUTPUT_INVALID")
+                if job["autopilot"]["catalogId"]=="tears-of-steel" and any(not any("\u0600"<=char<="\u06ff" for char in cue["text"]) for cue in cues):
+                    raise Permanent("CATALOG_ARABIC_CAPTIONS_REQUIRED")
+                quality.append({"part":entry["part"],"sha256":source_hash(captioned),"durationMs":30000,"width":1080,"height":1920,"codec":"h264","captionsArabic":True})
             reports.append({"part": entry["part"], "startMs": round(starts[entry["part"]] * 1000), "captions": cues})
         urls = api.call("upload_urls", **lease_args(job), items=[{"part": part, "variant": variant} for part, variant, _ in files])["urls"]
         for (part, variant, path), signed in zip(files, urls):
             if signed["part"] != part or signed["variant"] != variant:
                 raise RuntimeError("Signed URL order mismatch")
             upload(signed["url"], path, opener)
-        api.call("report_clips", **lease_args(job), clips=reports)
+        extra={"quality":quality,"sourceSha256":job["autopilot"]["sourceSha256"]} if job.get("autopilot") else {}
+        api.call("report_clips", **lease_args(job), clips=reports, **extra)
         beat.progress = min(95, 10 + int(85 * (offset + len(batch)) / len(pending)))
     api.call("complete", **lease_args(job))
 
@@ -241,6 +251,8 @@ def run_once(api: Api, work: Path, font: Path, model_dir: Path | None, opener=ur
 
 def main():
     api = Api(os.environ["MOVIE_API_URL"], os.environ["MOVIE_WORKER_SECRET"])
+    catalogue = Api(os.environ["MOVIE_API_URL"], os.environ["MOVIE_WORKER_SECRET"])
+    catalogue.url = os.environ["MOVIE_API_URL"].rstrip("/")+"/api/movies/autopilot/worker"
     work = Path(os.environ.get("MOVIE_WORK_DIR", "/work"))
     font = Path(os.environ.get("MOVIE_FONT", "/worker/fonts/Tajawal-Regular.ttf"))
     model = os.environ.get("MOVIE_WHISPER_MODEL_DIR")
@@ -249,6 +261,7 @@ def main():
         raise SystemExit("Arabic font missing: set MOVIE_FONT")
     while True:
         try:
+            import_once(catalogue,work)
             if not run_once(api, work, font, Path(model) if model else None):
                 time.sleep(poll)
         except Exception as error:

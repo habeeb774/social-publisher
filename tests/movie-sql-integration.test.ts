@@ -18,7 +18,8 @@ const one=async(db:PGlite,text:string,params:any[]=[])=>(await db.query<Row>(tex
 async function setup(){
   const db=new PGlite();
   await db.exec(`CREATE TABLE users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),email text NOT NULL UNIQUE,name text,role text NOT NULL DEFAULT 'viewer',is_active boolean NOT NULL DEFAULT true);
-    CREATE TABLE facebook_pages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,facebook_page_id text NOT NULL,platform text NOT NULL DEFAULT 'facebook',access_token_enc text,is_active boolean NOT NULL DEFAULT true);`);
+    CREATE TABLE facebook_pages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,facebook_page_id text NOT NULL,platform text NOT NULL DEFAULT 'facebook',access_token_enc text,is_active boolean NOT NULL DEFAULT true);
+    CREATE TABLE settings(key text PRIMARY KEY,value text NOT NULL,updated_at timestamptz DEFAULT now());`);
   for(const f of ["0019_movie_reels.sql","0020_movie_rights_reviews.sql","0021_movie_pipeline.sql"])await db.exec(readFileSync(new URL(`../drizzle/${f}`,import.meta.url),"utf8"));
   return db;
 }

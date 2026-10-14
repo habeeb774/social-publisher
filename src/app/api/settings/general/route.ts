@@ -4,7 +4,7 @@ import { guard } from "@/services/api-guard";
 import { logAudit } from "@/services/audit";
 import { setSetting } from "@/services/settings-store";
 import { getGeneralSettings } from "@/services/general-settings";
-const body = z.object({ systemName: z.string().trim().min(1).max(60), defaultPageId: z.uuid().nullable(), defaultPublishTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) });
+const body = z.object({ systemName: z.string().trim().min(1).max(60), defaultPageId: z.uuid().nullable(), defaultPublishTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), systemEnabled: z.boolean(), automationEnabled: z.boolean(), publishingEnabled: z.boolean(), politicsNewsEnabled: z.boolean(), technologyNewsEnabled: z.boolean(), commentsEnabled: z.boolean(), messengerEnabled: z.boolean(), contentEnabled: z.boolean(), videoEnabled: z.boolean(), integrationsEnabled: z.boolean() });
 
 export async function GET(request: NextRequest) {
   const denied = await guard(request, false); if (denied) return denied;

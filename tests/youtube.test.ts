@@ -67,7 +67,8 @@ test("YouTube SQL: independent schedules, atomic quota, cancellation, revision g
  const db=new PGlite();
  try{
   await db.exec(`CREATE TABLE users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),email text UNIQUE,name text,role text,is_active boolean DEFAULT true);
-   CREATE TABLE facebook_pages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,facebook_page_id text,platform text DEFAULT 'facebook',is_active boolean DEFAULT true);`);
+   CREATE TABLE facebook_pages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,facebook_page_id text,platform text DEFAULT 'facebook',is_active boolean DEFAULT true);
+   CREATE TABLE settings(key text PRIMARY KEY,value text NOT NULL,updated_at timestamptz DEFAULT now());`);
   for(const file of ["0019_movie_reels.sql","0020_movie_rights_reviews.sql","0021_movie_pipeline.sql","0024_movie_youtube.sql"])await db.exec(readFileSync(new URL(`../drizzle/${file}`,import.meta.url),"utf8"));
   const user=String((await db.query<{id:string}>("INSERT INTO users(email,role) VALUES('admin@test','admin') RETURNING id")).rows[0].id);
   const page=(await db.query<{id:string}>("INSERT INTO facebook_pages(name,facebook_page_id) VALUES('FB','123') RETURNING id")).rows[0].id;

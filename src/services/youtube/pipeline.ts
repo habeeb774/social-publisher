@@ -1,6 +1,7 @@
 import {sql} from "drizzle-orm";
 import {z} from "zod";
 import {movieScope} from "../movie-reels/pipeline";
+import {catalogPublicationGate} from "../movie-reels/catalog";
 import {planReelSchedule,type ReviewedClip,type Rights,type Reservation} from "../movie-reels/policy";
 
 export const youtubeScheduleSchema=z.object({channelId:z.uuid(),start:z.iso.datetime({offset:true}),privacy:z.enum(["private","unlisted","public"]),
@@ -73,6 +74,7 @@ export function reserveYouTubeQueries(movieId:string,scope:Scope,input:z.infer<t
 }
 /** SQL expression used at lease time AND immediately before media transmission. */
 const publishEligible=()=>sql`ch.active AND owner.is_active AND owner.role='admin' AND m.status<>'deleting' AND m.rights_status='verified'
+ AND (${catalogPublicationGate()})
  AND m.rights_verified_by IS NOT NULL AND m.rights_verified_at IS NOT NULL AND m.excerpts_allowed
  AND m.rights_revision=p.rights_revision AND r.rights_revision=m.rights_revision
  AND (m.rights_expires_at IS NULL OR m.rights_expires_at>now())

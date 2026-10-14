@@ -5,6 +5,7 @@ import { facebookPages, postMedia, posts, settings } from "@/db/schema";
 import { logAudit } from "./audit";
 import { eligibleTechArticle, editorialTechPost } from "./tech-news-editorial";
 import { politicsTargetPage } from "./politics-autopost";
+import { getGeneralSettings } from "./general-settings";
 
 const HABEEB_FACEBOOK_PAGE_ID = "1330947143441946";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
@@ -60,6 +61,7 @@ async function readFeed(source: FeedSource) {
 function articleHash(url: string) { return createHash("sha256").update(url).digest("hex").slice(0, 20); }
 
 export async function enqueueHourlyTechNews(now = new Date(), destination: "habeeb" | "former-politics" = "habeeb") {
+  if (!(await getGeneralSettings()).technologyNewsEnabled) return { created: false, reason: "DISABLED_BY_SETTINGS" as const };
   const db = getDb();
   const hourKey = now.toISOString().slice(0, 13);
   const namespace = destination === "former-politics" ? "tech_news_former_politics" : "tech_news";

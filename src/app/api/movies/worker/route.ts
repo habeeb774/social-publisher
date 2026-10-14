@@ -5,6 +5,7 @@ import {z} from "zod";
 import {getDb} from "@/db";
 import {configuredMovieStorage} from "@/services/movie-reels/private-storage";
 import {clipOutputKey} from "@/services/movie-reels/upload-policy";
+import {catalogInfo,qualitySchema,recordCatalogQuality} from "@/services/movie-reels/autopilot";
 import {completeJobQuery,failJobQuery,heartbeatQuery,leaseJobQuery,lockedClipPartsQuery,processingStartedQuery,reportClipsQuery,reportedClipSchema} from "@/services/movie-reels/pipeline";
 
 /** Machine-to-machine API for the Docker FFmpeg worker. Bearer MOVIE_WORKER_SECRET; no browser session is accepted. */
@@ -13,7 +14,7 @@ const body=z.discriminatedUnion("action",[
   z.object({action:z.literal("lease")}).strict(),
   z.object({action:z.literal("heartbeat"),...lease,progress:z.number().int().min(0).max(100)}).strict(),
   z.object({action:z.literal("upload_urls"),...lease,items:z.array(z.object({part:z.number().int().min(1).max(10000),variant:z.union([z.literal("base"),z.number().int().min(1)])}).strict()).min(1).max(40)}).strict(),
-  z.object({action:z.literal("report_clips"),...lease,clips:z.array(reportedClipSchema).min(1).max(40)}).strict(),
+  z.object({action:z.literal("report_clips"),...lease,clips:z.array(reportedClipSchema).min(1).max(40),quality:z.array(qualitySchema).max(5).optional(),sourceSha256:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict(),
   z.object({action:z.literal("complete"),...lease,revision:z.number().int().min(1).optional()}).strict(),
   z.object({action:z.literal("fail"),...lease,error:z.string().max(500),retryable:z.boolean()}).strict(),
 ]);
@@ -38,7 +39,7 @@ export async function POST(request:NextRequest){
       const [job]=(await db.execute(leaseJobQuery())).rows as Array<Leased&{lease_token:string;attempts:number}>;
       if(!job)return json({job:null});
       const [movie]=(await db.execute(sql`SELECT id,title,source_storage_key FROM movie_assets WHERE id=${job.movie_id}::uuid`)).rows as Array<{id:string;title:string;source_storage_key:string}>;
-      const base={id:job.id,leaseToken:job.lease_token,kind:job.kind,attempts:job.attempts,movieId:movie.id,movieTitle:movie.title};
+      const base={id:job.id,leaseToken:job.lease_token,kind:job.kind,attempts:job.attempts,movieId:movie.id,movieTitle:movie.title,autopilot:await catalogInfo(movie.id)};
       if(job.kind==="rerender"){
         const [clip]=(await db.execute(sql`SELECT id,part_number,revision,captions,base_storage_key FROM movie_clips WHERE id=${job.clip_id}::uuid AND status='rendering'`)).rows as Array<{id:string;part_number:number;revision:number;captions:unknown;base_storage_key:string|null}>;
         if(!clip?.base_storage_key){
@@ -79,6 +80,7 @@ export async function POST(request:NextRequest){
       for(const clip of input.clips)for(const variant of ["base",1] as const)if(!(await storage.clipExists(clipOutputKey(job.movie_id,clip.part,variant))))return json({error:"CLIP_OUTPUT_MISSING",part:clip.part},409);
       const [movie]=(await db.execute(sql`SELECT title FROM movie_assets WHERE id=${job.movie_id}::uuid`)).rows as Array<{title:string}>;
       const result=await db.execute(reportClipsQuery({jobId:input.jobId,token:input.leaseToken,movieId:job.movie_id,movieTitle:movie.title,clips:input.clips}));
+      if(input.quality&&input.sourceSha256)await recordCatalogQuality(job.movie_id,input.sourceSha256,input.quality);
       return json({ok:true,saved:result.rows.length});
     }
     if(job.kind==="rerender"){

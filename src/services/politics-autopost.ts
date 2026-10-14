@@ -6,6 +6,7 @@ import { logAudit } from "./audit";
 import { rankRadar } from "./tech-radar-ranking";
 import { editorialPoliticsPost, eligiblePoliticsArticle, isYemenNews, politicsRisk } from "./politics-editorial";
 import { readPoliticsFeeds } from "./politics-radar";
+import { getGeneralSettings } from "./general-settings";
 
 /** Only stories this fresh are auto-posted, so a restart never floods the page with old news. */
 const MAX_AGE_MS = 3 * 3600000;
@@ -30,6 +31,7 @@ export async function politicsTargetPage() {
  * Casualty reports are never auto-posted; they stay on the radar for manual review.
  */
 export async function enqueuePoliticsNews(now = new Date()) {
+  if (!(await getGeneralSettings()).politicsNewsEnabled) return { created: 0, reason: "DISABLED_BY_SETTINGS" as const };
   const db = getDb();
   const claimKey = `politics_news_hour:${now.toISOString().slice(0, 13)}`;
   const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
