@@ -4,16 +4,18 @@ import {decryptToken} from "../page-tokens";
 import {configuredMovieStorage} from "../movie-reels/private-storage";
 import {runTransaction} from "../movie-reels/pipeline";
 import {checkYouTubeLease,finishYouTube,leaseYouTubeQueries} from "./pipeline";
-import {ownChannel,refreshAccessToken,uploadVideo,videoStatus,YouTubeError,youtubeConfigured,youtubeEnabled} from "./google";
+import {ownChannel,refreshAccessToken,uploadVideo,videoStatus,YouTubeError} from "./google";
+import {platformPublishingEnabled} from "../movie-reels/publishing-control";
 
-export const youtubePublishingEnabled=()=>youtubeEnabled()&&youtubeConfigured()&&process.env.MOVIE_YOUTUBE_PUBLISHING_ENABLED==="true";
+export const youtubePublishingEnabled=()=>platformPublishingEnabled("youtube");
 type Lease={id:string;lease_token:string;title:string;description:string;output_storage_key:string;refresh_token_enc:string;google_channel_id:string;
  privacy:"private"|"unlisted"|"public";made_for_kids:boolean;synthetic_media:boolean};
-type Dependencies={execute:(q:SQL)=>Promise<{rows:unknown[]}>;transaction:(q:SQL[])=>Promise<unknown[]>;bytes:(key:string)=>Promise<Buffer>;
+type Dependencies={enabled?:()=>Promise<boolean>;execute:(q:SQL)=>Promise<{rows:unknown[]}>;transaction:(q:SQL[])=>Promise<unknown[]>;bytes:(key:string)=>Promise<Buffer>;
  access:(enc:string)=>Promise<string>;channel:(access:string)=>Promise<{id:string}>;upload:typeof uploadVideo;status:typeof videoStatus};
 /** One upload per cron tick. Real Google upload always requires its own explicit flag. */
 export async function publishDueYouTube(deps?:Dependencies){
- if(!deps&&!youtubePublishingEnabled())return {enabled:false,uploaded:0,failed:0};
+ const enabled=deps?(deps.enabled??(async()=>true)):youtubePublishingEnabled;
+ if(!await enabled())return {enabled:false,uploaded:0,failed:0};
  const d=deps??{execute:(q:SQL)=>getDb().execute(q),transaction:async(q:SQL[])=>((await runTransaction(q)).at(-1) as unknown[])??[],
   bytes:(key:string)=>configuredMovieStorage().clipBytes(key),access:(enc:string)=>refreshAccessToken(decryptToken(enc)),channel:ownChannel,upload:uploadVideo,status:videoStatus};
  // A successful upload is not called "published" until Google confirms processing and privacy.
@@ -29,8 +31,13 @@ export async function publishDueYouTube(deps?:Dependencies){
  let mediaStarted=false;
  try{
   const video=await d.bytes(job.output_storage_key),access=await d.access(job.refresh_token_enc);
+  if(!await enabled()){
+   await d.execute(sql`UPDATE movie_youtube_publications SET status='scheduled',lease_token=NULL,lease_expires_at=NULL,started_at=NULL,updated_at=now()
+    WHERE id=${job.id}::uuid AND lease_token=${job.lease_token}::uuid AND status='uploading'`);
+   return {enabled:false,uploaded:0,failed:0};
+  }
   if((await d.channel(access)).id!==job.google_channel_id)throw new YouTubeError("YOUTUBE_CHANNEL_CHANGED");
-  const allowed=async()=>Boolean((await d.execute(checkYouTubeLease(job.id,job.lease_token))).rows.length);
+  const allowed=async()=>Boolean(await enabled()&&(await d.execute(checkYouTubeLease(job.id,job.lease_token))).rows.length);
   if(!await allowed())throw new YouTubeError("YOUTUBE_APPROVAL_WITHDRAWN");
   mediaStarted=true;
   const result=await d.upload(access,video,{title:job.title,description:job.description,privacy:job.privacy,

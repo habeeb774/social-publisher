@@ -19,7 +19,7 @@ function harness(overrides:Partial<MoviePublishDeps>={},queue=[leased]){
 
 test("publishing is off unless the separate publishing flag is set",async()=>{
   delete process.env.MOVIE_REELS_PUBLISHING_ENABLED;process.env.MOVIE_REELS_ENABLED="true";
-  assert.equal(moviePublishingEnabled(),false);
+  assert.equal(await moviePublishingEnabled(),false);
   assert.deepEqual(await publishDueMovieReels(1),{enabled:false,published:0,failed:0});
 });
 
@@ -31,6 +31,19 @@ test("successful send stores remote id and permalink under the lease",async()=>{
   assert.equal(sent[0],"فيلمي - الجزء 2\n\nوصف");
   const index=statements.findIndex(sql=>/SET status='published'/.test(sql));
   assert.ok(index>0);assert.ok(params[index].includes("555")&&params[index].includes("https://www.facebook.com/reel/555"));
+});
+
+test("off switch prevents leasing or network calls",async()=>{
+ const {deps,statements}=harness({enabled:async()=>false,publish:async()=>{throw new Error("must not send");}});
+ assert.deepEqual(await publishDueMovieReels(1,deps),{enabled:false,published:0,failed:0});
+ assert.equal(statements.length,0);
+});
+test("pause during file read restores the scheduled lease without consuming attempts",async()=>{
+ let enabled=true,sends=0;
+ const {deps,statements}=harness({enabled:async()=>enabled,clipBytes:async()=>{enabled=false;return Buffer.from("video");},publish:async()=>{sends++;return {id:"1"};}});
+ await publishDueMovieReels(1,deps);
+ assert.equal(sends,0);assert.match(statements.at(-1)!,/attempts=greatest\(0,attempts-1\)/);
+ assert.match(statements.at(-1)!,/status='scheduled'/);
 });
 
 test("graph rejection is retryable; network ambiguity becomes outcome_unknown",async()=>{

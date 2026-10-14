@@ -19,7 +19,8 @@ export function YouTubeConnection({canManage}:{canManage:boolean}){
   if(result){const messages:Record<string,string>={connected:"تم ربط قناة YouTube",cancelled:"أُلغيت موافقة Google",'invalid-state':"انتهت جلسة الربط؛ ابدأ من الزر مجددًا",
    'connection-failed':"تعذر ربط القناة؛ تحقق من صلاحيات Google واختيار قناة واحدة",'channel-already-linked':"القناة مرتبطة بحساب مدير آخر؛ استخدم حساب الربط الأصلي",'missing-config':"أكمل إعداد Google أولًا"};
    setNotice(messages[result]??"راجع حالة الربط أدناه");}
-  });return()=>{active=false;++version.value;};},[load]);
+  });const refresh=()=>{void load();};window.addEventListener("movie-publishing-changed",refresh);
+  return()=>{active=false;++version.value;window.removeEventListener("movie-publishing-changed",refresh);};},[load]);
  async function connect(){setBusy(true);setError("");try{const result=await api<{url:string}>("/api/youtube/connect",{method:"POST"});
   const url=new URL(result.url);if(url.origin!=="https://accounts.google.com")throw new Error("رابط الربط غير صالح");window.location.assign(url.href);
  }catch(e){setError(e instanceof Error?e.message:"تعذر الربط");setBusy(false);}}

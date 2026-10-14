@@ -19,7 +19,7 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
    db.execute(sql`SELECT p.id,c.part_number,ch.title AS channel_title,p.scheduled_at,p.privacy,p.status,p.remote_video_id,p.error_code
     FROM movie_youtube_publications p JOIN movie_clips c ON c.id=p.clip_id JOIN youtube_channels ch ON ch.id=p.channel_id WHERE p.movie_id=${movie.id}::uuid ORDER BY p.scheduled_at`),
   ]);
-  return json({enabled:true,publishing:youtubePublishingEnabled(),rightsVerified:movie.rights_status==="verified"&&rights.rows.length>0,publications:publications.rows});
+  return json({enabled:true,publishing:await youtubePublishingEnabled(),rightsVerified:movie.rights_status==="verified"&&rights.rows.length>0,publications:publications.rows});
  }catch(error){return failure(error,"YOUTUBE_DETAIL_UNAVAILABLE","تعذر تحميل جدول YouTube");}
 }
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}){

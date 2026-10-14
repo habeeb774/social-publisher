@@ -184,7 +184,7 @@ async function run(request: Request) {
     }
     const results = await publishDuePosts();
     // Movie reels run only behind their own explicit publishing flag; failures never affect regular posts.
-    if (moviePublishingEnabled()) {
+    if (await moviePublishingEnabled()) {
       try {
         const reels = await publishDueMovieReels(1);
         if (reels.published || reels.failed) console.info("Movie reels dispatch", reels);
@@ -192,7 +192,7 @@ async function run(request: Request) {
         console.error("Movie reels dispatch failed", { error: error instanceof Error ? error.message : String(error) });
       }
     }
-    if (youtubePublishingEnabled()) {
+    if (await youtubePublishingEnabled()) {
       try { await publishDueYouTube(); }
       catch { console.error("YouTube dispatch failed", {code:"YOUTUBE_DISPATCH_FAILED"}); }
     }

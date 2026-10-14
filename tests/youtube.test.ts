@@ -120,8 +120,21 @@ test("YouTube SQL: independent schedules, atomic quota, cancellation, revision g
 });
 test("publishing is independently disabled by default",async()=>{
  const old=process.env.MOVIE_YOUTUBE_PUBLISHING_ENABLED;delete process.env.MOVIE_YOUTUBE_PUBLISHING_ENABLED;
- try{assert.equal(youtubePublishingEnabled(),false);assert.deepEqual(await publishDueYouTube(),{enabled:false,uploaded:0,failed:0});}
+ try{assert.equal(await youtubePublishingEnabled(),false);assert.deepEqual(await publishDueYouTube(),{enabled:false,uploaded:0,failed:0});}
  finally{if(old!==undefined)process.env.MOVIE_YOUTUBE_PUBLISHING_ENABLED=old;}
+});
+test("YouTube off switch blocks uploads and pause before send preserves schedule",async()=>{
+ for(const paused of ["initial","after-file"]){
+  let on=paused!=="initial",uploads=0,leases=0;const statements:string[]=[];
+  const result=await publishDueYouTube({enabled:async()=>on,
+   execute:async q=>{statements.push(dialect.sqlToQuery(q).sql);return {rows:[]};},
+   transaction:async()=>{leases++;return [{id:"11111111-1111-4111-8111-111111111111",lease_token:"22222222-2222-4222-8222-222222222222",output_storage_key:"key",refresh_token_enc:"encrypted"}];},
+   bytes:async()=>{on=false;return Buffer.from("video");},access:async()=>"token",channel:async()=>({id:"UCtest"}),
+   upload:async()=>{uploads++;return {id:"abcdefghijk"};},status:async()=>"processing",
+  });
+  assert.equal(uploads,0);assert.equal(result.enabled,false);assert.equal(leases,paused==="initial"?0:1);
+  if(paused==="after-file")assert.match(statements.at(-1)!,/status='scheduled'.*lease_token=NULL/);
+ }
 });
 test("publisher stores an accepted ID as processing, and uncertain uploads never become retryable failures",async()=>{
  const id="11111111-1111-4111-8111-111111111111",token="22222222-2222-4222-8222-222222222222";

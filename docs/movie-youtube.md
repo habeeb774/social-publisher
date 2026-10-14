@@ -46,3 +46,9 @@ npx next build --webpack
 The tests cover PKCE/consent, hostile upload URLs, private/public status, ambiguous media outcomes, separate rights, real SQL reservation rollback, quota, duplicate rejection, review withdrawal, deletion guards and lease expiry. Test data never touches the production database or YouTube.
 
 Sources: [Google OAuth web-server flow](https://developers.google.com/identity/protocols/oauth2/web-server), [YouTube resumable uploads](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol), [videos.insert](https://developers.google.com/youtube/v3/docs/videos/insert).
+
+## أزرار النشر
+
+في أعلى `/movies` أزرار مستقلة لتشغيل وإيقاف ريلز الأفلام على Facebook وYouTube، للمدير فقط. تستخدم `PUT /api/movies/publishing` مع حماية المصدر والصلاحيات وتسجيل الإجراء.
+تُحفظ الحالة في جدول `settings` القائم، بالمفتاحين `movie_facebook_publishing_enabled` و`movie_youtube_publishing_enabled`. أول استخدام يرث أعلام النشر الحالية؛ بعده تكون الأزرار مرجع التشغيل، مع بقاء أعلام تمكين التكامل وبيانات Google شرطًا لازمًا. لا يلزم ترحيل جديد.
+الإيقاف يوقف إرسال المقاطع الجديدة ولا يحذف المنشور أو الجدولة أو الترخيص، ولا يستطيع إلغاء رفع بدأ بالفعل. عند التشغيل تعود المواعيد المستحقة وفق قيود الترتيب والحصة والحقوق. لا تؤثر الأزرار على الناشر العام أو ردود التعليقات.

@@ -14,6 +14,6 @@ export async function GET(request:NextRequest){
  try{
   const result=await getDb().execute(sql`SELECT id,channel_id,title FROM youtube_channels WHERE active
    AND (${user.role}='admin' OR owner_user_id=${user.id}::uuid) ORDER BY title`);
-  return NextResponse.json({enabled,configured,publishing:youtubePublishingEnabled(),channels:result.rows},{headers:{"cache-control":"no-store"}});
+  return NextResponse.json({enabled,configured,publishing:await youtubePublishingEnabled(),channels:result.rows},{headers:{"cache-control":"no-store"}});
  }catch{return NextResponse.json({error:"جداول YouTube غير جاهزة؛ أكمل إعداد التكامل"},{status:503});}
 }
