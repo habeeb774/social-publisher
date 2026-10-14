@@ -14,6 +14,8 @@ export function MovieAutopilot({canManage,pages}:{canManage:boolean;pages:Array<
   return()=>{active=false;++version.value;clearInterval(interval);};},[load]);
  async function save(enabled:boolean){if(busy)return;setBusy(true);setError("");try{await api("/api/movies/autopilot",{method:"PUT",body:{enabled,pageId:page,channelId:channel,madeForKids:kids==="true",confirmed:true}});await load();}
   catch(e){setError(e instanceof Error?e.message:"تعذر حفظ الأتمتة");}finally{setBusy(false);}}
+ async function retry(){if(busy)return;setBusy(true);setError("");try{await api("/api/movies/autopilot",{method:"POST",body:{action:"retry-download"}});await load();}
+  catch(e){setError(e instanceof Error?e.message:"تعذرت إعادة التنزيل");}finally{setBusy(false);}}
  return <section className="card stack" style={{padding:24}} aria-label="أتمتة الأفلام المرخصة"><h2>أتمتة الأفلام المرخصة</h2>
   <p>Big Buck Bunny وTears of Steel فقط · تنزيل خاص، اختيار مشاهد، ترجمة عربية، اعتماد تقني آلي، جدولة 5 ريلز يوميًا لكل منصة.</p>
   <p className="hint">يُحفظ دليل CC BY 3.0 ويضاف نسب العمل والتعديلات لكل منشور. الاعتماد الآلي ليس مراجعة بشرية للترجمة. الفشل يتوقف للمراجعة. لا تتكرر الأفلام بعد انتهاء القائمة، ولا تُعتمد أفلامك الأخرى تلقائيًا.</p>
@@ -27,6 +29,7 @@ export function MovieAutopilot({canManage,pages}:{canManage:boolean;pages:Array<
   </fieldset>:null}
   <p role="status">الأتمتة: {data?.policy?.enabled?"مفعّلة":"متوقفة"} · أزرار نشر المنصتين تبقى مستقلة.</p>
   {data?.imports.map(item=><div key={item.movieId}><strong>{data.films.find(f=>f.id===item.catalogId)?.title}</strong><p>{states[item.state]??item.state} · فحوص المقاطع: {item.qualityChecked}{item.error?` · ${item.error}`:""}</p></div>)}
+  {canManage&&data?.policy?.enabled&&data.imports.some(item=>item.state==="blocked"&&item.error?.startsWith("HTTPError:"))?<button type="button" className="btn btn-secondary" disabled={busy} onClick={()=>void retry()}>إعادة تنزيل المصادر التي رفضها الخادم</button>:null}
   {error?<p role="alert" className="banner">{error}</p>:null}
  </section>;
 }

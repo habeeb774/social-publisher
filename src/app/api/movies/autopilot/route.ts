@@ -4,7 +4,7 @@ import {getDb} from "@/db";
 import {guard,isUuid} from "@/services/api-guard";
 import {currentUser} from "@/services/rbac";
 import {logAudit} from "@/services/audit";
-import {autoPolicy,autopilotConfigSchema,configureAutopilot} from "@/services/movie-reels/autopilot";
+import {autoPolicy,autopilotConfigSchema,configureAutopilot,retryCatalogDownloads} from "@/services/movie-reels/autopilot";
 import {CATALOG,catalogIds} from "@/services/movie-reels/catalog";
 const response=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{"cache-control":"no-store"}});
 export async function GET(request:NextRequest){
@@ -19,4 +19,11 @@ export async function PUT(request:NextRequest){
  const parsed=autopilotConfigSchema.safeParse(await request.json().catch(()=>null));if(!parsed.success)return response({error:"تحقق من الوجهات وإعداد الجمهور والتأكيد"},400);
  try{const policy=await configureAutopilot(user.id,parsed.data);await logAudit("movies.autopilot_policy","settings",null,{...policy,catalog:catalogIds});return response({policy});}
  catch(error){return response({error:error instanceof Error&&error.message==="AUTOPILOT_POLICY_IMMUTABLE"?"لا يمكن تغيير الوجهات بعد تسجيل الاستيراد":"تعذر حفظ السياسة؛ تحقق من الوجهات وصلاحيات الحساب"},409);}
+}
+export async function POST(request:NextRequest){
+ const denied=await guard(request,true,"settings.manage");if(denied)return denied;
+ const user=await currentUser(request);if(!user||!isUuid(user.id))return response({error:"استخدم حساب المدير الأصلي"},403);
+ const input=await request.json().catch(()=>null);if(input?.action!=="retry-download")return response({error:"طلب غير صالح"},400);
+ try{const retried=await retryCatalogDownloads(user.id);await logAudit("movies.catalog_download_retry","settings",null,{retried});return response({retried});}
+ catch{return response({error:"تعذرت الإعادة؛ تأكد من تشغيل السياسة والحساب الأصلي"},409);}
 }

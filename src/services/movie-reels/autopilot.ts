@@ -44,6 +44,15 @@ export async function configureAutopilot(ownerId:string,input:z.infer<typeof aut
  await runTransaction(statements);return next;
 }
 async function assetFor(movieId:string){z.uuid().parse(movieId);return await getSetting<AutoAsset|null>(catalogKey(movieId),null,{strict:true});}
+export async function retryCatalogDownloads(ownerId:string){
+ const policy=await activePolicy();if(policy.ownerId!==ownerId)throw new Error("AUTOPILOT_OWNER_REQUIRED");
+ const result=await getDb().execute(sql`UPDATE settings s SET value=(s.value::jsonb||'{"state":"queued","attempts":0,"error":null}'::jsonb)::text,updated_at=now()
+  WHERE s.key LIKE 'movie_autopilot_asset:%' AND s.value::jsonb->>'state'='blocked' AND s.value::jsonb->>'sessionId' IS NULL
+  AND s.value::jsonb->>'error' LIKE 'HTTPError:%'
+  AND EXISTS(SELECT 1 FROM movie_assets m WHERE m.id=(s.value::jsonb->>'movieId')::uuid AND m.owner_user_id=${ownerId}::uuid
+   AND m.status='draft' AND m.rights_status='verified' AND m.rights_revision=1 AND m.source_storage_key IS NULL) RETURNING key`);
+ return result.rows.length;
+}
 async function leasedAsset(movieId:string,token:string){
  const asset=await assetFor(movieId);
  if(!asset||asset.state!=="downloading"||asset.leaseToken!==token||!asset.leaseExpiresAt||Date.parse(asset.leaseExpiresAt)<Date.now())throw new Error("LEASE_LOST");return asset;

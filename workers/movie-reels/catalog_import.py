@@ -33,7 +33,7 @@ def official_download(url, target, max_bytes=MAX_BYTES, opener=None, check=None)
     partial = target.with_suffix(target.suffix + ".partial")
     total = 0
     try:
-        with opener(urllib.request.Request(url), timeout=120) as response, partial.open("wb") as handle:
+        with opener(urllib.request.Request(url,headers={"User-Agent":"SocialPublisher-LicensedCatalogue/1.0"}), timeout=120) as response, partial.open("wb") as handle:
             if response.status != 200:
                 raise ValueError("CATALOG_DOWNLOAD_STATUS")
             expected = int(response.headers.get("Content-Length", "0"))
