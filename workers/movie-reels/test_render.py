@@ -6,6 +6,22 @@ from unittest.mock import patch
 from render import RenderBusy, directory_lock, render, prepare_captions
 
 class ResumeTests(unittest.TestCase):
+    @patch('render.source_hash', return_value='same')
+    @patch('render.duration_seconds', return_value=90)
+    @patch('render.transcribe', return_value=[{'start': 1, 'end': 3, 'text': 'الحوار'}])
+    def test_transcription_is_available_to_highlight_selection(self, transcribe, duration, digest):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source.mp4'
+            source.touch()
+            def select(*args, **kwargs):
+                transcript = json.loads((root / 'transcript.json').read_text(encoding='utf-8'))
+                self.assertEqual(transcript['source_sha256'], 'same')
+                self.assertEqual(transcript['cues'][0]['text'], 'الحوار')
+                return []
+            with patch.dict('os.environ', {'MOVIE_CLIP_SELECTION': 'highlights'}), patch('render.highlight_plan', side_effect=select):
+                self.assertEqual(render(source, root, model_dir=Path('local-model')), [])
+
     def test_human_caption_edits_survive_resume(self):
         with tempfile.TemporaryDirectory() as directory:
             srt = Path(directory) / "part-001.srt"

@@ -91,6 +91,17 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
             raise ValueError('Highlight cache belongs to another source')
     else:
         write_atomic(binding, json.dumps({'source_sha256': digest}))
+    # Dialogue must be available BEFORE highlight selection, not only at subtitle render time.
+    transcript = output_dir / "transcript.json"
+    cues = None
+    if transcript.exists():
+        saved_transcript = json.loads(transcript.read_text(encoding="utf-8"))
+        if saved_transcript.get("source_sha256") != digest:
+            raise ValueError("Transcript belongs to another source")
+        cues = validate_cues(saved_transcript["cues"], duration_seconds(source))
+    elif model_dir is not None:
+        cues = transcribe(source, model_dir, duration_seconds(source))
+        write_atomic(transcript, json.dumps({"source_sha256":digest,"cues":cues,"review_required":True}, ensure_ascii=False))
     if manifest.exists():
         saved = json.loads(manifest.read_text(encoding="utf-8"))
         if saved["source_sha256"] != digest:
@@ -102,18 +113,8 @@ def render_locked(source: Path, output_dir: Path, limit: int = 5, model_dir: Pat
             raise ValueError('MOVIE_CLIP_SELECTION_INVALID')
         clips = highlight_plan(source, output_dir, check, limit=limit) if mode == 'highlights' else plan(source, scene_boundaries(source))
         temporary = output_dir / "manifest.partial.json"
-        temporary.write_text(json.dumps({"source_sha256": digest, "selection": mode, "clips": clips}), encoding="utf-8")
+        temporary.write_text(json.dumps({"source_sha256": digest, "selection": mode, "selection_version": 3 if mode == 'highlights' else 1, "clips": clips}), encoding="utf-8")
         temporary.replace(manifest)
-    transcript = output_dir / "transcript.json"
-    cues = None
-    if transcript.exists():
-        saved_transcript = json.loads(transcript.read_text(encoding="utf-8"))
-        if saved_transcript.get("source_sha256") != digest:
-            raise ValueError("Transcript belongs to another source")
-        cues = validate_cues(saved_transcript["cues"], duration_seconds(source))
-    elif model_dir is not None:
-        cues = transcribe(source, model_dir, duration_seconds(source))
-        write_atomic(transcript, json.dumps({"source_sha256":digest,"cues":cues,"review_required":True}, ensure_ascii=False))
     outputs = []
     for clip in clips[:limit]:
         if check:

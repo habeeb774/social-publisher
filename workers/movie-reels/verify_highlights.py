@@ -6,10 +6,11 @@ import tempfile
 import time
 from pathlib import Path
 from render import render
+from highlights import review_story
 
 
 def main():
-    # A synthetic clip tests wiring only, not cinematic quality. Accept any valid rating.
+    # Moving test charts must NEVER become publishable clips, even at threshold zero.
     os.environ['MOVIE_HIGHLIGHT_MIN_SCORE'] = '0'
     os.environ['MOVIE_HIGHLIGHT_MAX_CLIPS'] = '1'
     os.environ['MOVIE_CLIP_SELECTION'] = 'highlights'
@@ -21,18 +22,22 @@ def main():
                         'testsrc2=size=320x180:rate=10:duration=30', '-c:v', 'libx264',
                         '-preset', 'ultrafast', str(source)], check=True, timeout=60)
         output = root / 'clips'
-        clips = render(source, output, limit=1)
-        manifest = json.loads((output / 'manifest.json').read_text())
-        assert len(clips) == 1 and manifest['selection'] == 'highlights'
-        assert manifest['clips'][0]['duration_seconds'] == 30
-        assert manifest['clips'][0]['score'] < 6, 'Synthetic graphics must not qualify as exciting movie scenes'
-        resumed = render(source, output, limit=1)
-        assert resumed == clips
+        try:
+            render(source, output, limit=1)
+        except ValueError as error:
+            if str(error) != 'NO_CONFIDENT_HIGHLIGHTS_REVIEW_SOURCE':
+                raise
+        else:
+            raise AssertionError('Synthetic graphics must never become rendered highlights')
+        assert not (output / 'manifest.json').exists()
+        assert not list(output.glob('part-*.mp4'))
+        # Exercise the actual richer schema/model too, not only coarse retrieval.
+        story = review_story(source, 0, [], os.environ['MOVIE_HIGHLIGHT_MODEL'],
+                             os.environ['MOVIE_HIGHLIGHT_URL'], output)
+        assert story['score'] == 0, 'Motion without a coherent event must fail temporal review'
         print(json.dumps({'status': 'passed', 'model': os.environ['MOVIE_HIGHLIGHT_MODEL'],
                           'elapsed_seconds': round(time.monotonic() - started, 1),
-                          'rating': manifest['clips'][0]['score'],
-                          'kind': manifest['clips'][0]['kind'],
-                          'reason': manifest['clips'][0]['reason'],
+                          'synthetic_graphics': 'rejected_without_rendering',
                           'publishing': False}, ensure_ascii=False))
 
 
