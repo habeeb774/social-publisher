@@ -1,4 +1,5 @@
 import {sql} from 'drizzle-orm';
+import {experimentBlocksOtherNews} from '../reach-experiment-queries';
 
 export const CONFIG_KEY='ai_news_config';
 export const RUNTIME_KEY='ai_news_runtime';
@@ -20,6 +21,7 @@ export function beginSendQuery(input:{id:string;token:string;revision:string;pag
  return sql`UPDATE ai_news_publications p SET status='publishing',reserved_at=now(),attempts=attempts+1,error_code=NULL
  WHERE p.id=${input.id}::uuid AND p.status IN ('queued','preflight') AND p.attempts<5 AND p.next_attempt_at<=now()
  AND ${ownsRun(input.token)} AND ${activePolicy(input.revision,input.pageId)}
+ AND NOT ${experimentBlocksOtherNews(sql`${input.pageId}`)}
  AND EXISTS(SELECT 1 FROM facebook_pages f WHERE f.id=p.page_id AND f.id=${input.pageId}::uuid AND f.platform='facebook' AND f.is_active AND f.status='active')
  AND EXISTS(SELECT 1 FROM ai_news_stories s WHERE s.id=p.story_id AND s.status='verified' AND s.arabic_post IS NOT NULL AND (s.duplicate_of IS NULL OR s.verification->>'distinctConfirmed'='true')
   AND (s.verification->>'policy'<>'approved_source_direct_v1' OR EXISTS(

@@ -4,6 +4,9 @@ import { AppShell } from "../ui/app-shell";
 import { pageSession } from "@/services/session-server";
 import { allowedPageIds } from "@/services/access-scope";
 import {reachGoal,REACH_LABELS,type ReachState} from '@/services/reach-goal';
+import {ReachExperimentPanel} from './reach-experiment-panel';
+import {getReachExperiment} from '@/services/reach-experiment';
+import {reachExperimentMeasurements} from '@/services/reach-experiment-measure';
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +43,12 @@ export default async function Analytics() {
   const session = await pageSession();
   const allowed = session ? await allowedPageIds({ id: session.userId, role: session.role }) : new Set<string>();
   const a = await systemAnalytics(undefined, allowed);
+  const experiment=session?.role==='admin'?await getReachExperiment():null;
+  const measurements=experiment?await reachExperimentMeasurements(experiment.id):{measured:0,below:0,unknown:0,timely:0};
   const insights = insightsFrom(a);
   return <AppShell title="التحليلات">
     <div className="page-intro"><div><h2>التحليلات</h2><p>أرقام النظام الفعلية وأداء منشوراتك على Facebook.</p></div></div>
+    {session?.role==='admin'&&<ReachExperimentPanel initial={experiment} canManage measurements={measurements}/>}
     {insights.length > 0 && <section className="insights">{insights.map((line) => <p key={line} className="insight">💡 {line}</p>)}</section>}
     <section className="metrics-row"><div className="metric"><small>كل المنشورات</small><strong>{a.totals.total}</strong></div><div className="metric"><small>المنشورة</small><strong>{a.totals.published}</strong></div><div className="metric"><small>المجدولة</small><strong>{a.totals.scheduled}</strong></div><div className="metric"><small>الفاشلة</small><strong>{a.totals.failed}</strong></div><div className="metric"><small>نسبة نجاح النشر</small><strong>{a.successRate === null ? "—" : `${a.successRate}%`}</strong></div></section>
     <div className="dashboard-grid">

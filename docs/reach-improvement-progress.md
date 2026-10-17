@@ -47,6 +47,39 @@ Still needed before claiming the reach target:
 - Broaden measurement beyond the latest-post sample, with explicit sample coverage
   and unavailable metrics distinguished from actual zero.
 
+## Live verification after sign-in, 2026-10-17 (Asia/Riyadh)
+
+- Analytics renders the 24-hour target with 15 sampled ordinary posts still in
+  their first day, zero timely target successes and zero views returned for that
+  sample. This does not measure the whole Page or imply that lifetime Page views
+  are zero.
+- New technology posts shown in the live content table have distinct Arabic
+  headlines and no generic repeated opening. This is not proof of global
+  semantic deduplication across all publishers or of reaching the view target.
+- Facebook's Rasdooq professional dashboard status explicitly says the Page
+  can be recommended. The recommendations settings further say the Page is in
+  lists suggested to new people. No recommendation block was found there.
+- Facebook's dashboard shows 647 Page views and 11 interactions for the selected
+  last-28-day period, September 19 through October 16. These are Page-period
+  aggregates, not first-day results per post.
+- The public Rasdooq profile shows three followers. Audience size alone neither
+  guarantees nor precludes non-follower distribution.
+- Inspected read-only. Switched temporarily to Rasdooq to access its dashboard,
+  then restored the previous Habib Al-Yousfi identity. No paid promotion,
+  permission changes, comments, likes or new public posts were made.
+- Screenshot evidence: `04_الصور/rasdooq-recommendations-eligible.png` in the
+  workspace's parent organization directory.
+
 Tests cover request coalescing across the actual readers, cycle-local retries,
 bounded bodies, editorial eligibility, URL/title dedup, durable restart behavior,
 and rollback on attachment failure. They do not prove organic reach of 1,000.
+# Authorized seven-day reach experiment
+
+- Human approved up to four Arabic news posts per day per target Page (Rasdooq and Habib), Riyadh windows 09/13/17/21, no ads and no guaranteed reach.
+- Persistent atomic trial configuration expires automatically; existing news settings remain intact. Parallel news send paths are fenced and ordinary held news stays recoverable as drafts. Non-news content is unchanged.
+- Shared discovery remains in use. Eligible short Arabic source briefs are attributed; no fabricated translation or benefits.
+- Atomic conservative daily attempt budget includes earlier news on activation day. Unknown send outcomes are never blindly retried.
+- Existing scheduler observes posts near and after 24 hours; late lifetime totals do not prove first-day success. Missing metrics are not zero.
+- Verified TypeScript, ESLint, 16 targeted SQL/model/news tests, and isolated Neon measurement/quota/repeat-safety QA with zero Meta requests.
+- Activation is performed through the authenticated analytics panel after deployment; start/end displayed there are authoritative.
+

@@ -7,6 +7,7 @@ import { rankRadar } from "./tech-radar-ranking";
 import { editorialPoliticsPost, eligiblePoliticsArticle, isYemenNews, politicsRisk } from "./politics-editorial";
 import { readPoliticsFeeds } from "./politics-radar";
 import { getGeneralSettings } from "./general-settings";
+import {experimentBlocksPage} from './reach-experiment';
 
 /** Only stories this fresh are auto-posted, so a restart never floods the page with old news. */
 const MAX_AGE_MS = 3 * 3600000;
@@ -46,6 +47,7 @@ export async function enqueuePoliticsNews(now = new Date(),dependencies:{readFee
     await logAudit("politics_news.skipped", "post", null, { reason: "POLITICS_PAGE_UNAVAILABLE" });
     return { created: 0, reason: "POLITICS_PAGE_UNAVAILABLE" as const };
   }
+  if(await experimentBlocksPage(page.id))return {created:0,reason:'REACH_EXPERIMENT_EXCLUSIVE_NEWS' as const};
 
   const feeds = await (dependencies.readFeeds??readPoliticsFeeds)();
   const candidates = rankRadar(feeds.flatMap((f) => f.items), now, eligiblePoliticsArticle)

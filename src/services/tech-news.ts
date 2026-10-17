@@ -3,8 +3,10 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { facebookPages, settings } from "@/db/schema";
 import { logAudit } from "./audit";
-import { eligibleAutomaticTechArticle, editorialTechPost } from "./tech-news-editorial";
+import { eligibleAutomaticTechArticle, editorialTechPost,sourceNewsBrief } from "./tech-news-editorial";
 import {canonicalTechUrl,techArticleKeys,enqueueTechArticleQuery} from './tech-news-dedup';
+import {getReachExperiment} from './reach-experiment';
+import {activeExperiment,experimentSlot,experimentTag} from './reach-experiment-model';
 import { politicsTargetPage } from "./politics-autopost";
 import { getGeneralSettings } from "./general-settings";
 
@@ -71,7 +73,12 @@ export async function enqueueHourlyTechNews(now = new Date(), destination: "habe
   const db = getDb();
   const hourKey = now.toISOString().slice(0, 13);
   const namespace = destination === "former-politics" ? "tech_news_former_politics" : "tech_news";
-  const claimKey = `${namespace}_hour:${hourKey}`;
+  const page = destination === 'former-politics'?await politicsTargetPage():(await db.select({id:facebookPages.id,facebookPageId:facebookPages.facebookPageId}).from(facebookPages).where(and(eq(facebookPages.facebookPageId,HABEEB_FACEBOOK_PAGE_ID),eq(facebookPages.platform,'facebook'),eq(facebookPages.isActive,true))).limit(1))[0];
+  if(!page)return {created:false,reason:'HABEEB_PAGE_UNAVAILABLE' as const};
+  const experiment=await getReachExperiment(),trial=activeExperiment(experiment,page.id,now);
+  const slot=trial?experimentSlot(experiment!,page.id,now):null;
+  if(trial&&!slot)return {created:false,reason:'REACH_EXPERIMENT_OUTSIDE_SLOT' as const};
+  const claimKey = slot??`${namespace}_hour:${hourKey}`;
   // Most scheduler ticks revisit an hour already handled. Avoid fetching and
   // parsing every feed; retain the atomic insert below for concurrent ticks.
   const [existingClaim] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, claimKey)).limit(1);
@@ -88,12 +95,9 @@ export async function enqueueHourlyTechNews(now = new Date(), destination: "habe
     return { created: false, reason: "NO_FRESH_NEWS" as const };
   }
 
-  const page = destination === "former-politics"
-    ? await politicsTargetPage()
-    : (await db.select({ id: facebookPages.id, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, HABEEB_FACEBOOK_PAGE_ID), eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true))).limit(1))[0];
-  if(!page)return {created:false,reason:'HABEEB_PAGE_UNAVAILABLE' as const};
   const probes:Array<{item:FeedItem;keys:string[]}>=[];
   for (const candidate of candidates) {
+    if(trial&&!sourceNewsBrief(candidate))continue;
     let url:string;try{url=canonicalTechUrl(candidate.url);}catch{continue;}
     const keys=techArticleKeys(page.id,url,candidate.title);
     probes.push({item:{...candidate,url},keys:[`${namespace}_seen:${articleHash(candidate.url)}`,`tech_news_seen:${articleHash(candidate.url)}`,keys.url,keys.title]});
@@ -106,7 +110,7 @@ export async function enqueueHourlyTechNews(now = new Date(), destination: "habe
   const post={id:randomUUID()},keys=techArticleKeys(page.id,selected.url,selected.title);
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
   const metadata=JSON.stringify({url:selected.url,title:selected.title,source:selected.source,publishedAt:selected.publishedAt.toISOString(),postId:post.id,createdAt:now.toISOString()});
-  const inserted=await db.execute(enqueueTechArticleQuery({id:post.id,pageId:page.id,hourKey:claimKey,urlKey:keys.url,titleKey:keys.title,seenKey:`${namespace}_seen:${articleHash(selected.url)}`,metadata,content:editorialTechPost(selected),imageUrl:`${appUrl}/api/tech-news-image/${post.id}?v=2`,tags:['تقنية',selected.topic,`source:${selected.source}`],at:now.toISOString()}));
+  const inserted=await db.execute(enqueueTechArticleQuery({id:post.id,pageId:page.id,hourKey:claimKey,urlKey:keys.url,titleKey:keys.title,seenKey:`${namespace}_seen:${articleHash(selected.url)}`,metadata,content:editorialTechPost(selected,trial),imageUrl:`${appUrl}/api/tech-news-image/${post.id}?v=2`,tags:['تقنية',selected.topic,`source:${selected.source}`,...(trial?[experimentTag(experiment!.id)]:[])],at:now.toISOString()}));
   if(!inserted.rows.length)return {created:false,reason:'ARTICLE_OR_HOUR_ALREADY_CLAIMED' as const};
 
   await logAudit("tech_news.enqueued", "post", post.id, { pageId: page.facebookPageId, destination, source: selected.source, sourceUrl: selected.url, publishedAt: selected.publishedAt.toISOString(), hourly: true });

@@ -17,6 +17,7 @@ import { enqueueHourlyTechNews,createTechFeedScan } from "@/services/tech-news";
 import {createNewsFetchCycle} from '@/services/news-fetch-cycle';
 import {readAiSource} from '@/services/ai-news/sources';
 import {readPoliticsFeeds} from '@/services/politics-radar';
+import {measureReachExperiment} from '@/services/reach-experiment-measure';
 import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
@@ -125,6 +126,7 @@ async function run(request: Request) {
       runAiNews({readFeed:source=>readAiSource(source,newsCycle.fetcher)}).catch(()=>console.error("AI news automation failed",{code:"AI_NEWS_RUN_FAILED"})),
     ]);
     console.info('Shared news discovery',newsCycle.stats());
+    await measureReachExperiment().catch(()=>console.error('Reach experiment measurement failed',{code:'REACH_MEASURE_FAILED'}));
     await gapCheck;
     await deliverLeadFollowups().catch(() => console.error("Lead follow-up dispatch failed", { code: "LEAD_FOLLOWUP_DISPATCH_FAILED" }));
     if (!(await hasMetaAccess())) return;

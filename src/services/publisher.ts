@@ -4,6 +4,10 @@ import { facebookPages, postMedia, posts, publicationAttempts } from "@/db/schem
 import { publishToFacebook, type FacebookResult } from "./facebook";
 import { resolveAlerts, sendAlert } from "./alerts";
 import { classifyError } from "./error-classes";
+import {ordinaryExperimentAllowed} from './reach-experiment-queries';
+import {takeExperimentBudget,getReachExperiment} from './reach-experiment';
+import {activeExperiment,experimentTag} from './reach-experiment-model';
+import {logAudit} from './audit';
 
 const MAX_AUTOMATIC_ATTEMPTS = 3;
 const AUTO_RETRY_MINUTES = [5, 15];
@@ -19,10 +23,32 @@ export async function publishDuePosts(limit = 10) {
   const db = getDb();
   const due = await db.select().from(posts).where(and(eq(posts.status, "scheduled"), isNull(posts.deletedAt), lte(posts.scheduledAt, new Date()))).orderBy(asc(posts.scheduledAt)).limit(limit);
   const results: Array<{ id: string; status: string }> = [];
+  const experiment=await getReachExperiment();
   for (const candidate of due) {
-    const claimed = await db.update(posts).set({ status: "publishing", updatedAt: new Date() }).where(and(eq(posts.id, candidate.id), eq(posts.status, "scheduled"), isNull(posts.deletedAt), lte(posts.scheduledAt,new Date()))).returning();
+    const trialTagged=candidate.tags.some(t=>t.startsWith('reach-experiment:'));
+    if(trialTagged&&(!activeExperiment(experiment,candidate.pageId)||!candidate.tags.includes(experimentTag(experiment!.id)))){
+      await db.update(posts).set({status:'draft',lastError:'REACH_EXPERIMENT_ENDED: انتهت تجربة الخبر؛ محفوظ للمراجعة',updatedAt:new Date()}).where(and(eq(posts.id,candidate.id),eq(posts.status,'scheduled')));
+      results.push({id:candidate.id,status:'experiment_held'});continue;
+    }
+    const allowed=ordinaryExperimentAllowed(sql`${posts.pageId}`,sql`${posts.tags}`,sql`${posts.category}`);
+    const held=await db.update(posts).set({status:'draft',lastError:'REACH_EXPERIMENT_HOLD: خبر خارج مسار التجربة؛ محفوظ للمراجعة دون حذف',updatedAt:new Date()}).where(and(eq(posts.id,candidate.id),eq(posts.status,'scheduled'),sql`NOT (${allowed})`)).returning({id:posts.id});
+    if(held.length){await logAudit('reach_experiment.news_held','post',candidate.id,{reason:'EXCLUSIVE_NEWS_PIPELINE'});results.push({id:candidate.id,status:'experiment_held'});continue;}
+    const claimed = await db.update(posts).set({ status: "publishing", updatedAt: new Date() }).where(and(eq(posts.id, candidate.id), eq(posts.status, "scheduled"), isNull(posts.deletedAt), lte(posts.scheduledAt,new Date()),allowed)).returning();
     if (!claimed.length) continue;
     const post=claimed[0];
+    let budgetAllowed=true;
+    try{
+      if(post.category==='أخبار'||post.tags.some(t=>t.startsWith('source:')))budgetAllowed=await takeExperimentBudget(post.pageId,post.id);
+    }catch{
+      // No external request has started; release this claim for a later safe retry.
+      await db.update(posts).set({status:'scheduled',lastError:'REACH_EXPERIMENT_BUDGET_UNAVAILABLE',updatedAt:new Date()}).where(and(eq(posts.id,post.id),eq(posts.status,'publishing')));
+      results.push({id:post.id,status:'budget_unavailable'});continue;
+    }
+    if(!budgetAllowed){
+      await db.update(posts).set({status:'draft',lastError:'REACH_EXPERIMENT_DAILY_LIMIT: اكتملت حصة الأخبار اليومية؛ محفوظ للمراجعة',updatedAt:new Date()}).where(eq(posts.id,post.id));
+      await logAudit('reach_experiment.news_held','post',post.id,{reason:'DAILY_LIMIT_NO_SEND'});
+      results.push({id:post.id,status:'experiment_held'});continue;
+    }
     const startedAt = new Date();
     const [previousAttempts] = await db.select({ maximum: sql<number>`coalesce(max(${publicationAttempts.attemptNumber}), 0)` }).from(publicationAttempts).where(eq(publicationAttempts.postId, post.id));
     const attemptNumber = Number(previousAttempts.maximum) + 1;
