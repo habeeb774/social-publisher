@@ -8,7 +8,7 @@ import { Skeleton } from "../../ui/kit";
 
 type Version = { id: string; content: string; scheduledAt: string | null; status: string; changedBy: string; reason: string; createdAt: string; mediaSnapshot: Array<{ url: string }> };
 type Note = { id: string; body: string; author: string; createdAt: string };
-type Perf = { available: boolean; reason?: string; metrics: Array<{ key: string; label: string; value: number }> };
+type Perf = { available: boolean; reason?: string; metrics: Array<{ key: string; label: string; value: number }>;issues?:Array<{metric:string;code:string;message:string}> };
 const REASONS: Record<string, string> = { edit: "قبل التعديل", before_restore: "قبل الاسترجاع", reschedule: "قبل نقل الموعد" };
 
 function useAction() {
@@ -112,7 +112,8 @@ export function InternalNotes({ id, endpoint }: { id: string; endpoint?: string 
 export function PostPerformance({ id }: { id: string }) {
   const [perf, setPerf] = useState<Perf | null>(null);
   useEffect(() => { api<Perf>(`/api/posts/${id}/performance`).then(setPerf).catch(() => setPerf({ available: false, reason: "تعذر جلب البيانات", metrics: [] })); }, [id]);
-  return <section className="card"><div className="card-header"><h2>الأداء</h2><small>من Facebook · يُحدّث كل 30 دقيقة</small></div>
-    {!perf ? <Skeleton lines={1} /> : !perf.available ? <small>{perf.reason}</small> : <div className="metric-strip compact" style={{ marginBottom: 0, boxShadow: "none" }}>{perf.metrics.filter((m) => !m.key.includes(".")).map((m) => <div className="metric" key={m.key}><small>{m.label}</small><strong>{m.value.toLocaleString("ar-SA")}</strong></div>)}</div>}
+  return <section className="card"><div className="card-header"><h2>الأداء</h2><small>من Facebook · التخزين المؤقت 5 دقائق</small></div>
+    {!perf ? <Skeleton lines={1} /> : !perf.available ? <small>{perf.reason}</small> : <div className="metric-strip compact" style={{ marginBottom: 0, boxShadow: "none" }}>{perf.metrics.filter((m) => !m.key.includes(".")).map((m) => <div className="metric" key={m.key}><small>{m.label}</small><strong dir="ltr">{m.value.toLocaleString("ar-SA-u-nu-latn")}</strong></div>)}</div>}
+    {perf?.issues&&perf.issues.length>0&&<p>{[...new Set(perf.issues.map(i=>i.message))].join(' ')}</p>}
   </section>;
 }

@@ -1,63 +1,72 @@
-import { storedPageToken } from "./page-tokens";
-// Facebook post performance via the Graph API. Fields are discovered, not assumed:
-// each candidate metric is requested on its own and only the ones Facebook returns are shown.
-import { isGraphConfigured } from "./facebook-graph";
+import {storedPageToken} from './page-tokens';
+import {isGraphConfigured} from './facebook-graph';
 
-const base = () => `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || "v23.0"}`;
-const CANDIDATE_METRICS: Record<string, string> = {
-  post_impressions_unique: "الوصول",
-  post_impressions: "مرات الظهور",
-  post_clicks: "النقرات",
-  post_reactions_by_type_total: "التفاعلات حسب النوع",
+const base=()=>`https://graph.facebook.com/${process.env.META_GRAPH_VERSION||'v23.0'}`;
+export const PERFORMANCE_METRICS:Record<string,string>={
+ post_media_view:'المشاهدات',
+ post_total_media_view_unique:'المشاهدون الفريدون',
+ post_clicks:'النقرات',
+ post_reactions_by_type_total:'التفاعلات حسب النوع',
 };
+type Metric={key:string;label:string;value:number};
+type Issue={metric:string;code:string;message:string};
+export type PostPerformance={available:boolean;reason?:string;metrics:Metric[];issues?:Issue[];fetchedAt:string};
+type Body={error?:{code?:number};access_token?:string;shares?:{count?:unknown};reactions?:{summary?:{total_count?:unknown}};comments?:{summary?:{total_count?:unknown}};data?:Array<{name?:string;values?:Array<{value?:unknown}>}>};
+const numeric=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
 
-export type PostPerformance = { available: boolean; reason?: string; metrics: Array<{ key: string; label: string; value: number }>; fetchedAt: string };
-
-async function getJson(url: string) {
-  // Cached for 30 minutes so dashboards don't hammer the Graph API.
-  const response = await fetch(url, { next: { revalidate: 1800 }, signal: AbortSignal.timeout(10000) });
-  const body = await response.json().catch(() => ({}));
-  return { ok: response.ok && !body.error, body };
+function issue(metric:string,code?:number):Issue{
+ if(code===190)return {metric,code:'RECONNECT_REQUIRED',message:'انتهت صلاحية ربط Facebook؛ أعد ربط الصفحة.'};
+ if(code===10||code===200)return {metric,code:'INSIGHTS_PERMISSION_REQUIRED',message:'Facebook لم يسمح بقراءة الإحصاءات. راجع منح read_insights وpages_read_engagement للصفحة وموافقة التطبيق.'};
+ if(code===100)return {metric,code:'METRIC_UNAVAILABLE',message:'المقياس غير متاح لهذا المنشور أو إصدار API؛ لا تعني البيانات الناقصة صفر مشاهدة.'};
+ return {metric,code:'INSIGHTS_UNAVAILABLE',message:'تعذر جلب هذا المقياس من Facebook حاليًا؛ قد تكون البيانات متأخرة أو غير متاحة.'};
 }
 
-async function pageToken(pageId: string) {
-  // A token saved for this page (added from the accounts screen) wins over the global one.
-  const stored = await storedPageToken(pageId);
-  if (stored) return stored;
-  if (!isGraphConfigured()) return null;
-  const token = process.env.META_PAGE_ACCESS_TOKEN!.trim();
-  const lookup = await getJson(`${base()}/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`);
-  return lookup.ok && typeof lookup.body.access_token === "string" ? lookup.body.access_token as string : token;
+async function getJson(path:string,token:string,fetcher:typeof fetch){
+ try{
+  // Credentials are header-only, including cache identity; errors never expose tokens.
+  const response=await fetcher(`${base()}/${path}`,{headers:{Authorization:`Bearer ${token}`},next:{revalidate:300},signal:AbortSignal.timeout(10000)});
+  const body=await response.json().catch(()=>({})) as Body;
+  return {ok:response.ok&&!body.error,body};
+ }catch{return {ok:false,body:{} as Body};}
 }
 
-export async function getPostPerformance(facebookPostId: string, facebookPageId: string): Promise<PostPerformance> {
-  const fetchedAt = new Date().toISOString();
-  try {
-    // Pages connected through OAuth carry their own token; the global one is only a fallback.
-    const resolved = await pageToken(facebookPageId);
-    if (!resolved) return { available: false, reason: "توكن Facebook غير مُعد", metrics: [], fetchedAt };
-    const token = encodeURIComponent(resolved);
-    const metrics: PostPerformance["metrics"] = [];
-    const counts = await getJson(`${base()}/${facebookPostId}?fields=shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)&access_token=${token}`);
-    if (counts.ok) {
-      const b = counts.body as { shares?: { count?: number }; reactions?: { summary?: { total_count?: number } }; comments?: { summary?: { total_count?: number } } };
-      if (b.reactions?.summary?.total_count !== undefined) metrics.push({ key: "reactions", label: "التفاعلات", value: b.reactions.summary.total_count });
-      if (b.comments?.summary?.total_count !== undefined) metrics.push({ key: "comments", label: "التعليقات", value: b.comments.summary.total_count });
-      metrics.push({ key: "shares", label: "المشاركات", value: b.shares?.count ?? 0 });
-    }
-    await Promise.all(Object.entries(CANDIDATE_METRICS).map(async ([metric, label]) => {
-      const result = await getJson(`${base()}/${facebookPostId}/insights?metric=${metric}&access_token=${token}`);
-      const value = (result.body as { data?: Array<{ values?: Array<{ value?: unknown }> }> }).data?.[0]?.values?.[0]?.value;
-      if (!result.ok || value === undefined) return;
-      if (typeof value === "number") metrics.push({ key: metric, label, value });
-      else if (value && typeof value === "object") for (const [type, n] of Object.entries(value as Record<string, number>)) metrics.push({ key: `${metric}.${type}`, label: `${label}: ${type}`, value: Number(n) || 0 });
-    }));
-    if (!metrics.length) return { available: false, reason: counts.ok ? "لا توجد بيانات أداء متاحة لهذا المنشور" : (counts.body as { error?: { message?: string } }).error?.message ?? "تعذر جلب البيانات", metrics, fetchedAt };
-    return { available: true, metrics, fetchedAt };
-  } catch (error) {
-    return { available: false, reason: error instanceof Error ? error.message : "تعذر جلب البيانات", metrics: [], fetchedAt };
-  }
+async function pageToken(pageId:string,fetcher:typeof fetch){
+ const stored=await storedPageToken(pageId);if(stored)return stored;
+ if(!isGraphConfigured())return null;
+ const token=process.env.META_PAGE_ACCESS_TOKEN!.trim();
+ const lookup=await getJson(`${pageId}?fields=access_token`,token,fetcher);
+ return lookup.ok&&typeof lookup.body.access_token==='string'?lookup.body.access_token:token;
 }
 
-/** Engagement score used for ranking: reactions + comments + shares (only fields actually returned). */
-export const engagementOf = (perf: PostPerformance) => perf.metrics.filter((m) => ["reactions", "comments", "shares"].includes(m.key)).reduce((sum, m) => sum + m.value, 0);
+export async function getPostPerformance(facebookPostId:string,facebookPageId:string,dependencies:{fetcher?:typeof fetch;resolveToken?:(id:string)=>Promise<string|null>}={}):Promise<PostPerformance>{
+ const fetchedAt=new Date().toISOString(),fetcher=dependencies.fetcher??fetch;
+ if(!/^\d+(?:_\d+)?$/.test(facebookPostId)||!/^\d+$/.test(facebookPageId))return {available:false,reason:'معرّف منشور Facebook غير صالح',metrics:[],fetchedAt};
+ try{
+  const token=await (dependencies.resolveToken??((id:string)=>pageToken(id,fetcher)))(facebookPageId);
+  if(!token)return {available:false,reason:'ربط Facebook غير مُعد',metrics:[],fetchedAt};
+  const [counts,...insights]=await Promise.all([
+   getJson(`${facebookPostId}?fields=shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)`,token,fetcher),
+   ...Object.keys(PERFORMANCE_METRICS).map(metric=>getJson(`${facebookPostId}/insights?metric=${metric}&period=lifetime`,token,fetcher)),
+  ]);
+  const metrics:Metric[]=[],issues:Issue[]=[];
+  if(counts.ok){
+   for(const [key,label,value] of [
+    ['reactions','التفاعلات',counts.body.reactions?.summary?.total_count],
+    ['comments','التعليقات',counts.body.comments?.summary?.total_count],
+    ['shares','المشاركات',counts.body.shares?.count??(numeric(counts.body.reactions?.summary?.total_count)||numeric(counts.body.comments?.summary?.total_count)?0:undefined)],
+   ] as const)if(numeric(value))metrics.push({key,label,value});
+  }else issues.push(issue('engagement',counts.body.error?.code));
+  Object.entries(PERFORMANCE_METRICS).forEach(([key,label],index)=>{
+   const result=insights[index];
+   const value=result.body.data?.find(row=>row.name===key)?.values?.[0]?.value;
+   if(!result.ok||value===undefined){issues.push(issue(key,result.body.error?.code));return;}
+   if(numeric(value))metrics.push({key,label,value});
+   else if(key==='post_reactions_by_type_total'&&value&&typeof value==='object'&&!Array.isArray(value)){
+    for(const [type,n] of Object.entries(value))if(numeric(n))metrics.push({key:`${key}.${type}`,label:`${label}: ${type}`,value:n});
+   }else issues.push(issue(key));
+  });
+  return {available:metrics.length>0,...(!metrics.length?{reason:issues[0]?.message??'لا توجد بيانات أداء متاحة لهذا المنشور'}:{}),metrics,issues,fetchedAt};
+ }catch{return {available:false,reason:'تعذر قراءة ربط Facebook؛ راجع اتصال الصفحة',metrics:[],fetchedAt};}
+}
+
+export const engagementOf=(perf:PostPerformance)=>perf.metrics.filter(m=>['reactions','comments','shares'].includes(m.key)).reduce((sum,m)=>sum+m.value,0);

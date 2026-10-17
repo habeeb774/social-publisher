@@ -8,6 +8,7 @@ export const META_OAUTH_SCOPES = [
   "public_profile",
   "pages_show_list",
   "pages_read_engagement",
+  "read_insights",
   "pages_manage_posts",
   "pages_manage_metadata",
   "pages_manage_engagement",

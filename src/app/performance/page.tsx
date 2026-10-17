@@ -30,12 +30,12 @@ export default async function Performance() {
     <PageHeader title="أداء المحتوى" description={`المنشورات المنشورة خلال آخر ${DAYS} يومًا مرتبة حسب التفاعل الفعلي على Facebook. «إعادة استخدام» تنشئ مسودة جديدة ولا تنشر شيئًا.`} actions={<Link className="btn btn-secondary" href="/analytics">التحليلات</Link>} />
     {!available && rows.length > 0 && <div className="alert alert-info">لا تتوفر بيانات أداء من Facebook بعد{reason ? ` (${reason})` : ""}. الأعمدة تظهر فارغة حتى يتفاعل الجمهور.</div>}
     <section className="card card-flush">{!ranked.length ? <EmptyState icon="performance" title="لا توجد منشورات منشورة خلال الفترة" /> :
-      <div className="responsive-table"><table className="data-table"><thead><tr><th>#</th><th>المنشور</th><th>نُشر</th><th>الوصول</th><th>التفاعلات</th><th>التعليقات</th><th>المشاركات</th><th>المجموع</th><th><span className="sr-only">إجراء</span></th></tr></thead>
+      <div className="responsive-table"><table className="data-table"><thead><tr><th>#</th><th>المنشور</th><th>نُشر</th><th>المشاهدات</th><th>المشاهدون الفريدون</th><th>التفاعلات</th><th>التعليقات</th><th>المشاركات</th><th>مجموع التفاعل</th><th><span className="sr-only">إجراء</span></th></tr></thead>
         <tbody>{ranked.map((r, i) => <tr key={r.id}><td className="num muted">{i + 1}</td><td data-label="المحتوى" style={{ minWidth: 280 }}><Link href={`/posts/${r.id}`} className="cell-content clamp-2">{r.content}</Link><span className="cell-meta">{r.page}</span></td><td data-label="نُشر" className="nowrap num">{riyadh(r.publishedAt)}</td>
-          {["post_impressions_unique", "reactions", "comments", "shares"].map((k) => <td key={k} data-label={k} className="num">{r.perf.available ? (metric(r.perf.metrics, k) ?? "—").toLocaleString("ar-SA") : "—"}</td>)}
+          {["post_media_view", "post_total_media_view_unique", "reactions", "comments", "shares"].map((k) => <td key={k} data-label={k} className="num">{r.perf.available ? (metric(r.perf.metrics, k) ?? "—").toLocaleString("ar-SA-u-nu-latn") : "—"}</td>)}
           <td className="num" style={{ fontWeight: 600 }}>{r.perf.available ? engagementOf(r.perf).toLocaleString("ar-SA") : "—"}</td>
           <td>{canWrite && <RecycleButton id={r.id} />}</td></tr>)}</tbody></table></div>}
     </section>
-    <small style={{ display: "block", marginTop: 8 }}>المصدر: Facebook Graph API. تُعرض فقط الحقول التي يرجعها Facebook فعلًا، وتُحدّث كل 30 دقيقة.</small>
+    <small style={{ display: "block", marginTop: 8 }}>المصدر: Facebook Graph API. العلامة — تعني أن المقياس غير متاح، لا صفرًا. التخزين المؤقت 5 دقائق؛ وقد يتأخر تحديث Meta.</small>
   </AppShell>;
 }

@@ -54,8 +54,11 @@ export function insightsFrom(a: Awaited<ReturnType<typeof systemAnalytics>>) {
  */
 export async function bestTimeFromEngagement(limit = 15, minPosts = 5, allowed: Set<string> | null = null) {
   const rows = await getDb().select({ fbId: posts.facebookPostId, at: posts.publishedAt, pageFbId: facebookPages.facebookPageId }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(eq(posts.status, "published"), isNotNull(posts.facebookPostId), isNull(posts.deletedAt), allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`)).orderBy(desc(posts.publishedAt)).limit(limit);
-  const samples = (await Promise.all(rows.map(async (row) => ({ row, perf: await getPostPerformance(row.fbId!, row.pageFbId) })))).filter((s) => s.perf.available);
-  if (samples.length < minPosts) return { recommendation: null, samples: samples.length, posts: samples };
+  const results = await Promise.all(rows.map(async (row) => ({ row, perf: await getPostPerformance(row.fbId!, row.pageFbId) })));
+  const samples=results.filter(s=>s.perf.available);
+  const warnings=[...new Set(results.flatMap(s=>[...(s.perf.reason?[s.perf.reason]:[]),...(s.perf.issues??[]).map(i=>i.message)]))];
+  const common={samples:samples.length,posts:samples,attempted:rows.length,warnings};
+  if (samples.length < minPosts || samples.every(s=>engagementOf(s.perf)===0)) return { recommendation: null, ...common };
   const buckets = new Map<string, { total: number; n: number }>();
   for (const { row, perf } of samples) {
     const local = new Date(row.at!.getTime() + 3 * 3600000);
@@ -66,5 +69,5 @@ export async function bestTimeFromEngagement(limit = 15, minPosts = 5, allowed: 
   }
   const [bestKey, best] = [...buckets.entries()].sort((a, b) => b[1].total / b[1].n - a[1].total / a[1].n)[0];
   const [day, hour] = bestKey.split("-").map(Number);
-  return { recommendation: { label: `${WEEKDAYS[day]} ${hourLabel(hour)}`, avgEngagement: Math.round((best.total / best.n) * 10) / 10, basedOn: best.n }, samples: samples.length, posts: samples };
+  return { recommendation: { label: `${WEEKDAYS[day]} ${hourLabel(hour)}`, avgEngagement: Math.round((best.total / best.n) * 10) / 10, basedOn: best.n }, ...common };
 }

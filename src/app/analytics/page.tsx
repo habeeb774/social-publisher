@@ -14,13 +14,18 @@ function Bars({ title, rows, empty }: { title: string; rows: Array<{ label: stri
 /** Facebook engagement section streams in separately so the system stats render immediately. */
 async function Engagement({ allowedIds }: { allowedIds: string[] | null }) {
   const result = await bestTimeFromEngagement(15, 5, allowedIds === null ? null : new Set(allowedIds));
-  const totals = new Map<string, { label: string; value: number }>();
-  for (const { perf } of result.posts) for (const m of perf.metrics) { const t = totals.get(m.key) ?? { label: m.label, value: 0 }; t.value += m.value; totals.set(m.key, t); }
+  const totals = new Map<string, { label: string; value: number; samples:number }>();
+  for (const { perf } of result.posts) for (const m of perf.metrics) { const t = totals.get(m.key) ?? { label: m.label, value: 0, samples:0 }; t.value += m.value;t.samples++; totals.set(m.key, t); }
   return <section className="card"><h2>أداء Facebook (آخر {result.samples} منشورًا ببيانات متاحة)</h2>
-    {!totals.size ? <p>لا تتوفر بيانات أداء من Facebook بعد. تظهر بعد نشر منشورات وتفاعل الجمهور معها.</p> : <div className="metrics-row compact">{[...totals.entries()].filter(([k]) => !k.includes(".")).map(([k, t]) => <div className="metric" key={k}><small>{t.label}</small><strong>{t.value.toLocaleString("ar-SA")}</strong></div>)}</div>}
+    <p>عينة من آخر {result.attempted} منشورًا نشرها النظام، وليست إجمالي مشاهدات الصفحة. مجموع المشاهدين الفريدين لكل منشور قد يحتسب الشخص نفسه أكثر من مرة.</p>
+    <div className="metrics-row compact">
+      {!totals.has('post_media_view')&&<div className="metric"><small>المشاهدات</small><strong>—</strong><small>لم تتوفر بيانات المشاهدات من Facebook</small></div>}
+      {[...totals.entries()].filter(([k]) => !k.includes(".")).map(([k,t])=><div className="metric" key={k}><small>{t.label}</small><strong dir="ltr">{t.value.toLocaleString("ar-SA-u-nu-latn")}</strong><small>بيانات {t.samples} من {result.attempted} منشورًا</small></div>)}
+    </div>
+    {result.warnings.length>0&&<div className="alert alert-info"><strong>بعض بيانات الأداء غير متاحة، وليست صفرًا.</strong><ul>{result.warnings.map(w=><li key={w}>{w}</li>)}</ul><a href="/pages">مراجعة ربط الصفحات وصلاحيات الإحصاءات</a></div>}
     <h3>أفضل وقت للنشر</h3>
-    {result.recommendation ? <p><strong>{result.recommendation.label}</strong> · متوسط تفاعل {result.recommendation.avgEngagement} (من {result.recommendation.basedOn} منشور في هذا الوقت)</p> : <p>لا توجد بيانات تفاعل كافية بعد (نحتاج 5 منشورات على الأقل ببيانات أداء؛ المتوفر {result.samples}). لن نعرض توصية تقديرية.</p>}
-    <small>المصدر: Facebook Graph API. تُعرض فقط الحقول التي يرجعها Facebook فعلًا، وتُحدّث كل 30 دقيقة.</small>
+    {result.recommendation ? <p><strong>{result.recommendation.label}</strong> · متوسط تفاعل {result.recommendation.avgEngagement} (من {result.recommendation.basedOn} منشور في هذا الوقت)</p> : <p>لا توجد بيانات تفاعل كافية أو تفاعلات فعلية لبناء توصية موثوقة. لن نعرض أفضل وقت مبنيًا على أصفار.</p>}
+    <small>المصدر: Facebook Graph API. تُعاد قراءة المقاييس عند زيارة الصفحة بعد انتهاء التخزين المؤقت (5 دقائق)، وقد يتأخر تحديثها لدى Meta.</small>
   </section>;
 }
 

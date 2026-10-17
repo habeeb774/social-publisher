@@ -64,6 +64,9 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
     <PageHeader title="الصفحات والحسابات" description="اربط أكثر من حساب Meta وأدر صفحات Facebook وInstagram لكل حساب. التوكنات تُحفظ مشفّرة ولا تظهر في الواجهة." actions={<>{canManage && <><ConnectMetaButton configured={oauthReady} /><AddPageButton /><LinkInstagramButton /></>}{canDiagnose && <TestConnectionButton />}</>} />
     {metaMessage && <div className={`banner ${metaState === "connected" ? "success" : metaState === "missing-config" ? "" : "warning"}`}>{metaMessage}</div>}
     {canManage && <section className="card" style={{ marginBottom: 16 }}>
+      <h2>إحصاءات Facebook</h2>
+      <p>المشاهدات تحتاج صلاحية read_insights إلى جانب pages_read_engagement. إضافة الصلاحية إلى التطبيق وحدها لا تكفي؛ يجب منحها أثناء تفويض Meta. إعادة الربط تتطلب موافقتك ولا تمنح صلاحيات تلقائيًا.</p>
+      {oauthReady&&<a className="btn btn-secondary" href="/api/meta/oauth/start">مراجعة تفويض Meta والإحصاءات</a>}
       <h2>تفعيل Messenger</h2>
       <p>تفويض مستقل للرسائل بعد ربط الصفحة. يحتاج تفعيل Messenger وصلاحياته في تطبيق Meta، وإعداد Webhook لاستقبال الأحداث.</p>
       {oauthReady && <a className="btn btn-secondary" href="/api/meta/oauth/start?purpose=messenger">تفعيل أو إعادة ربط Messenger</a>}
