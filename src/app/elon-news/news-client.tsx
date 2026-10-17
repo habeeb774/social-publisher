@@ -1,10 +1,11 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import styles from './news.module.css';
+import {Events,TechnicalDetails,type NewsEvent} from './activity';
 
 type Config={monitoring:boolean;autoPublish:boolean;pageId:string|null;sourceIds:string[];pollMinutes:number;dailyLimit:number;minIntervalMinutes:number};
 type Row={id:string;title:string;status:string;publication_status:string|null;breaking:boolean;duplicate_of:string|null;created_at:string;error_code:string|null;facebook_post_id:string|null};
-type Event={id:string;code:string;createdAt:string;details:unknown};
+type Event=NewsEvent;
 type Data={items:Row[];total:number;page:number;counts:Array<{status:string;count:number}>;config:Config;sources:Array<{id:string;name:string;url:string}>;pages:Array<{id:string;name:string}>;activity:Event[];scheduler:{lastRunAt:string|null;lastPollAt:string|null;tickMinutes:number}};
 type Detail={story:{id:string;title:string;status:string;arabicPost:string|null;duplicateOf:string|null;breaking:boolean;verification:unknown};reports:Array<{id:string;sourceId:string;title:string;url:string;excerpt:string;sha256:string;fetchedAt:string}>;publications:Array<{id:string;status:string;attempts:number;facebookPostId:string|null;publishedAt:string|null;errorCode:string|null}>;events:Event[]};
 const labels:Record<string,string>={all:'كل الأخبار',pending_verification:'بانتظار التحقق',verified:'تم التحقق وفق السياسة',rejected:'مرفوض',queued:'في طابور النشر',preflight:'فحص الصلاحيات',publishing:'جارٍ النشر',published:'منشور تلقائيًا',failed:'تعثر النشر',uncertain:'نتيجة مجهولة — مراجعة مطلوبة'};
@@ -65,7 +66,7 @@ export function ElonNewsClient(){
     <nav aria-label="صفحات الأخبار" className={styles.actions}><button className="btn" disabled={page<=1||busy} onClick={()=>setPage(p=>p-1)}>السابق</button><span>صفحة {page} · {data.total} خبر</span><button className="btn" disabled={page*20>=data.total||busy} onClick={()=>setPage(p=>p+1)}>التالي</button><button className="btn" disabled={busy} onClick={()=>perform(()=>refresh())}>تحديث</button></nav>
    </section>
    {detail&&<section ref={detailRef} tabIndex={-1} className={`card ${styles.detail}`} aria-labelledby="elon-detail"><div className={styles.actions}><h2 id="elon-detail">{detail.story.title}</h2><button className="btn" onClick={()=>setDetail(null)}>إغلاق التفاصيل</button></div>
-    <h3>أدلة التحقق</h3><pre>{JSON.stringify(detail.story.verification,null,2)}</pre>
+    <h3>أدلة التحقق</h3><p>{labels[detail.story.status]??'راجع تقارير المصادر وملاحظات المراجعة أدناه.'}</p><TechnicalDetails value={detail.story.verification} className={styles.technical}/>
     {detail.reports.map(r=><article key={r.id}><h4>{data.sources.find(s=>s.id===r.sourceId)?.name??r.sourceId}</h4><a href={r.url} target="_blank" rel="noopener noreferrer">{r.title}</a><p>{r.excerpt}</p><small>جُلب: {time(r.fetchedAt)}</small><code dir="ltr">SHA-256: {r.sha256}</code></article>)}
     <label>صياغة المنشور العربية (قبل إضافة رابط المصدر)<textarea rows={5} value={draft} onChange={e=>setDraft(e.target.value)}/></label>
     <label>أدلة وملاحظات المراجعة<textarea rows={3} minLength={10} value={note} onChange={e=>setNote(e.target.value)} placeholder="ما الذي تحققت منه؟ وأين الدليل؟"/></label>
@@ -76,10 +77,9 @@ export function ElonNewsClient(){
      {p.status==='failed'&&<button className="btn" disabled={busy||note.trim().length<10||p.attempts>=5} onClick={()=>review('retry')}>إعادة محاولة آمنة بعد فحص الصلاحيات</button>}
      {p.status==='uncertain'&&<><p>لا تعِد نشره. افحص الصفحة ثم أدخل معرّف المنشور الموجود للتحقق منه.</p><label>معرّف منشور Facebook<input dir="ltr" value={postId} onChange={e=>setPostId(e.target.value)} placeholder="pageId_postId"/></label><button className="btn" disabled={busy||!postId||note.trim().length<10} onClick={()=>review('reconcile')}>التحقق من المنشور الموجود وربطه</button></>}
     </article>)}
-    <h3>سجل الخبر</h3><Events events={detail.events}/>
+    <h3>سجل الخبر</h3><Events events={detail.events} formatTime={time} classes={styles}/>
    </section>}
-   <section className="card"><h2>سجل نشاط الأتمتة</h2><Events events={data.activity}/></section>
+   <section className="card"><h2>سجل نشاط الأتمتة</h2><Events events={data.activity} formatTime={time} classes={styles}/></section>
   </>}
  </div>;
 }
-function Events({events}:{events:Event[]}){return events.length?<ol className={styles.events}>{events.map(e=><li key={e.id}><time>{time(e.createdAt)}</time> <code dir="ltr">{e.code}</code><pre>{JSON.stringify(e.details,null,2)}</pre></li>)}</ol>:<p>لا توجد أحداث بعد.</p>;}
