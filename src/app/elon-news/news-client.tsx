@@ -1,7 +1,7 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import styles from './news.module.css';
-import {Events,TechnicalDetails,type NewsEvent} from './activity';
+import {Events,ActivityLog,TechnicalDetails,type NewsEvent} from './activity';
 
 type Config={monitoring:boolean;autoPublish:boolean;pageId:string|null;sourceIds:string[];pollMinutes:number;dailyLimit:number;minIntervalMinutes:number};
 type Row={id:string;title:string;status:string;publication_status:string|null;breaking:boolean;duplicate_of:string|null;created_at:string;error_code:string|null;facebook_post_id:string|null};
@@ -81,7 +81,7 @@ export function ElonNewsClient({endpoint='/api/elon-news',idPrefix='elon',offici
     </article>)}
     <h3>سجل الخبر</h3><Events events={detail.events} formatTime={time} classes={styles}/>
    </section>}
-   <section className="card"><h2>سجل نشاط الأتمتة</h2><Events events={data.activity} formatTime={time} classes={styles}/></section>
+   <ActivityLog events={data.activity} formatTime={time} classes={styles}/>
   </>}
  </div>;
 }

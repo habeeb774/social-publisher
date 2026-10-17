@@ -46,3 +46,9 @@ export function Events({events,formatTime,classes}:{events:NewsEvent[];formatTim
   <TechnicalDetails code={event.code} value={event.details} className={classes.technical}/>
  </li>)}</ol>:<p>لا توجد أحداث بعد.</p>;
 }
+export function ActivityLog(props:React.ComponentProps<typeof Events>){
+ return <details className={`card ${props.classes.activityLog??''}`}>
+  <summary className={props.classes.activitySummary}><h2>سجل نشاط الأتمتة <span>({props.events.length})</span></h2></summary>
+  <Events {...props}/>
+ </details>;
+}

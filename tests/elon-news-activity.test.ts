@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {Events,eventMessage} from '../src/app/elon-news/activity';
+import {Events,ActivityLog,eventMessage} from '../src/app/elon-news/activity';
 
 test('configuration activity describes the historical boolean values, including partial or malformed records',()=>{
  assert.equal(eventMessage('CONFIG_UPDATED',{monitoring:true,autoPublish:true}),'حُفظت الإعدادات: متابعة الأخبار مفعّلة، النشر التلقائي مفعّل.');
@@ -10,6 +10,15 @@ test('configuration activity describes the historical boolean values, including 
  assert.match(eventMessage('CONFIG_UPDATED',{monitoring:true,autoPublish:false}),/متابعة الأخبار مفعّلة، النشر التلقائي متوقف/);
  for(const value of [null,[],{autoPublish:'true'},undefined])assert.equal(eventMessage('CONFIG_UPDATED',value),'حُفظت إعدادات الأتمتة.');
  assert.equal(eventMessage('CONFIG_UPDATED',{monitoring:false}),'حُفظت الإعدادات: متابعة الأخبار متوقفة.');
+});
+test('the whole automation log is collapsed by default, with a count and independent nested technical details',()=>{
+ const html=renderToStaticMarkup(React.createElement(ActivityLog,{events:[{id:'event',code:'DISCOVERY_COMPLETED',createdAt:'2026-10-17T12:00:00Z',details:{}}],formatTime:()=> 'اليوم',classes:{events:'events',technical:'technical',activityLog:'log',activitySummary:'summary'}}));
+ assert.match(html,/^<details class="card log"><summary class="summary"><h2>سجل نشاط الأتمتة <span>\(1\)<\/span><\/h2><\/summary>/);
+ assert.doesNotMatch(html,/<details[^>]*\bopen\b/);
+ assert.equal((html.match(/<details\b/g)??[]).length,2);
+ assert.match(html,/اكتمل فحص المصادر/);
+ const empty=renderToStaticMarkup(React.createElement(ActivityLog,{events:[],formatTime:String,classes:{}}));
+ assert.match(empty,/>\(0\)<\/span>/);assert.match(empty,/لا توجد أحداث بعد/);
 });
 test('event messages keep success, rejection, uncertainty and unknown codes distinct',()=>{
  assert.match(eventMessage('PUBLISHED',{}),/بنجاح/);
