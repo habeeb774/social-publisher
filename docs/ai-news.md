@@ -11,6 +11,20 @@ Directly operated HTTPS RSS sources were checked on 2026-10-17:
 - Hugging Face: https://huggingface.co/blog/feed.xml
 - NVIDIA: https://blogs.nvidia.com/blog/category/deep-learning/feed/
 
+Expanded on 2026-10-17 to nine selectable sources:
+
+- Anthropic/Claude: https://www.anthropic.com/news (official newsroom, not an unofficial RSS mirror).
+- Gemini: https://blog.google/products-and-platforms/products/gemini/rss/ (same independence group as Google AI, never counted as an independent second publisher).
+- TechCrunch AI: https://techcrunch.com/category/artificial-intelligence/feed/ (journalism).
+- Ars Technica: https://feeds.arstechnica.com/arstechnica/index (journalism).
+- AITNews: https://aitnews.com/feed/ (Arabic technical journalism).
+
+Direct requests to x.ai/news returned HTTP 403 during inspection. This deployment does not bypass that protection, use logged-in accounts, or present a third-party mirror as an official feed. Grok/xAI coverage comes from the technical journalism sources. Headline/excerpt matching also covers Claude, Gemini, Perplexity, Cursor, Windsurf, NotebookLM, Midjourney, Firefly, Runway, Kling, Veo, ElevenLabs, Suno, Canva, n8n and other AI-related tools. It is not a guarantee to discover every tool or announcement on the internet.
+
+The Anthropic adapter reads only dated, rendered links on the exact official origin and `/news/<slug>` path, prioritizes at most three recent article candidates, and then requires matching article-URL JSON-LD `NewsArticle`/`Article` metadata with an explicit, timezone-bearing `datePublished`. Index-only day dates, crawl times and `dateModified` are never substituted for publication time. Redirects and missing metadata fail closed. All bodies remain bounded and all JSON-LD is parsed as data, never executed.
+
+Source reads run concurrently within the fixed nine-source catalogue. Each body has a 12-second timeout and 1 MiB cap; newsroom article fan-out is at most three. Persistence retains its 60-second discovery budget and fencing, with rotated source processing order to avoid repeatedly starving later outlets on slow ticks. Relevance uses both headline and the bounded excerpt so an official announcement need not repeat the vendor/product name in its title.
+
 Do not silently substitute unofficial mirrors when a source becomes unavailable. Fixed URLs, canonical article-host allowlists, blocked redirects, 12-second timeouts, a 1 MiB body limit and XML entity/DOCTYPE rejection prevent arbitrary fetching. Only AI-related headlines with a valid source publication date in the last 48 hours (at most 5 minutes in the future) enter discovery. Evidence retains original title, bounded excerpt, canonical URL, source identity, hash, retrieval time and publication time. This is RSS-based monitoring, not a claim to have fetched or read the complete linked article.
 
 A vendor announcement supports that vendor's announcement, not independent proof of performance, safety, price, or superiority. A single source **does not qualify for automatic verification**. Rumours and possible duplicates remain pending. The deliberately conservative two-approved-group, identical-normalized-headline policy is retained; most announcements require human review. Neither this heuristic nor Arabic/numeric validation guarantees factual or translation accuracy. Administrators must check the linked evidence and attribute claims before approval. Generated posts explicitly attribute the statement to the listed sources; an AI writing provider cannot approve evidence or authorize publishing.

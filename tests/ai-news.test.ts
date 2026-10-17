@@ -9,10 +9,11 @@ import {claimRunQuery,beginSendQuery} from '../src/services/ai-news/queries';
 import {sendNewsPost,validateNewsPage,validPagePermission,reconcileNewsPost,NewsGraphError} from '../src/services/elon-news/graph';
 
 test('AI topics are filtered and only official source IDs can be enabled',()=>{
- for(const title of ['OpenAI releases GPT-6','Google introduces Gemini','New AI inference tools','Introducing Sora 3','NVIDIA Nemotron model update','Qwen release notes','تطورات الذكاء الاصطناعي'])assert.ok(relevant(title));
+ for(const title of ['OpenAI releases GPT-6','Google introduces Gemini','New AI inference tools','Introducing Sora 3','NVIDIA Nemotron model update','Qwen release notes','Anthropic releases Claude','xAI introduces Grok','Cursor release notes','Runway video tools','ElevenLabs voices','n8n workflow update','أخبار انثروبيك وجروك وجيمني','تطورات الذكاء الاصطناعي'])assert.ok(relevant(title));
  for(const title of ['Football results today','Weather forecast','New office furniture'])assert.equal(relevant(title),false);
- assert.deepEqual(SOURCES.map(s=>s.id),['openai','google','huggingface','nvidia']);
- assert.equal(configSchema.safeParse({monitoring:true,autoPublish:false,pageId:null,sourceIds:['aitnews'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60}).success,false);
+ assert.deepEqual(SOURCES.map(s=>s.id),['openai','google','huggingface','nvidia','anthropic','gemini','techcrunch','ars','aitnews']);
+ assert.equal(SOURCES.find(s=>s.id==='google')?.group,SOURCES.find(s=>s.id==='gemini')?.group);
+ assert.equal(configSchema.safeParse({monitoring:true,autoPublish:false,pageId:null,sourceIds:['unapproved-site'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60}).success,false);
 });
 test('canonical links and titles deduplicate tracking and Unicode without dropping semantic query IDs',()=>{
  assert.equal(canonicalUrl('https://www.openai.com/story/?utm_source=x&fbclid=x&id=7#comments','openai.com'),'https://openai.com/story?id=7');

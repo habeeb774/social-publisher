@@ -4,7 +4,7 @@ import {getDb} from '@/db';
 import {settings,facebookPages} from '@/db/schema';
 import {aiStories,aiReports,aiEvents,aiPublications} from '@/db/ai-news-schema';
 import {getAiProvider} from '../ai-assistant';
-import {parseFeed} from '../tech-news';
+import {readAiSource} from './sources';
 import {getGeneralSettings} from '../general-settings';
 import {isPublishingEnabled} from '../publishing-mode';
 import {SOURCES,DEFAULT_CONFIG,configSchema,type NewsConfig,canonicalUrl,hash,normalizedTitle,relevant,speculative,similarity,validArabicPost,retryDelaySeconds} from './model';
@@ -35,26 +35,24 @@ export async function configureNews(config:NewsConfig,ownerId:string){
  return value;
 }
 
-async function boundedFeed(source:typeof SOURCES[number]){
- const response=await fetch(source.url,{signal:AbortSignal.timeout(12000),redirect:'error',cache:'no-store',headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml'}});
- if(!response.ok)throw new Error('FEED_UNAVAILABLE');
- const reader=response.body?.getReader();if(!reader)throw new Error('FEED_EMPTY');
- const parts:Uint8Array[]=[];let size=0;
- try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>1024*1024)throw new Error('FEED_TOO_LARGE');parts.push(part.value);}}
- finally{await reader.cancel();reader.releaseLock();}
- const xml=Buffer.concat(parts).toString('utf8');
- if(!/<(?:rss|feed)\b/i.test(xml)||/<!DOCTYPE|<!ENTITY/i.test(xml))throw new Error('FEED_FORMAT_REFUSED');
- return parseFeed(xml,{name:source.name,url:source.url,topic:'الذكاء الاصطناعي'});
-}
+const boundedFeed=readAiSource;
 
 async function discover(config:StoredConfig,token:string,readFeed=boundedFeed){
  const deadline=Date.now()+60000;
- for(const source of SOURCES.filter(s=>config.sourceIds.includes(s.id))){
+ const approved=SOURCES.filter(s=>config.sourceIds.includes(s.id));if(!approved.length)return;
+ if(!(await db().execute(sql`SELECT 1 WHERE ${ownsRun(token)}`)).rows.length)return;
+ // Fixed catalogue bounds fan-out; rotating order avoids starving later sources on a slow tick.
+ const offset=Math.floor(Date.now()/(config.pollMinutes*60000))%approved.length;
+ const ordered=[...approved.slice(offset),...approved.slice(0,offset)];
+ const fetched=await Promise.all(ordered.map(async source=>{
+  try{return {source,items:await readFeed(source)};}catch{return {source,items:null};}
+ }));
+ for(const {source,items} of fetched){
   // Query fencing before each bounded remote operation; config pause is rechecked before sending.
   if(!(await db().execute(sql`SELECT 1 WHERE ${ownsRun(token)}`)).rows.length)return;
   try{
-   const items=await readFeed(source);
-   for(const item of items.filter(i=>relevant(i.title)&&i.publishedAt.getTime()>Date.now()-48*3600000&&i.publishedAt.getTime()<Date.now()+300000).slice(0,15)){
+   if(!items)throw new Error('SOURCE_FETCH_FAILED');
+   for(const item of items.filter(i=>relevant(i.title+' '+(i.summary??''))&&i.publishedAt.getTime()>Date.now()-48*3600000&&i.publishedAt.getTime()<Date.now()+300000).slice(0,15)){
     if(Date.now()>deadline)return;
     let url:string;try{url=canonicalUrl(item.url,source.host);}catch{continue;}
     const seen=await db().select({id:aiReports.id}).from(aiReports).where(eq(aiReports.url,url)).limit(1);if(seen.length)continue;
