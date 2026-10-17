@@ -23,7 +23,28 @@ class AnthropicProvider implements AiProvider {
   }
 }
 
+/** Google Cloud Translation v2 provider. The key is server-only. */
+class GoogleTranslateProvider implements AiProvider {
+  name = "Google Translate";
+  constructor(private key: string) {}
+  async run(_action: AiAction, text: string) {
+    const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(this.key)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ q: text, source: "en", target: "ar", format: "text" }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const data = await response.json().catch(() => ({})) as { data?: { translations?: Array<{ translatedText?: string }> }; error?: { message?: string } };
+    if (!response.ok) throw new Error(data.error?.message || `GOOGLE_TRANSLATE_HTTP_${response.status}`);
+    const value = data.data?.translations?.[0]?.translatedText?.trim();
+    if (!value) throw new Error("GOOGLE_TRANSLATE_EMPTY");
+    return value;
+  }
+}
+
 export function getAiProvider(): AiProvider | null {
+  const googleKey = process.env.GOOGLE_TRANSLATE_API_KEY?.trim();
+  if (googleKey) return new GoogleTranslateProvider(googleKey);
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   return key ? new AnthropicProvider(key) : null;
 }
