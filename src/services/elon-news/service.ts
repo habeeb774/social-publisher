@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {experimentBlocksPage} from '../reach-experiment';
 import {and,eq,desc,sql} from 'drizzle-orm';
 import {getDb} from '@/db';
-import {settings,facebookPages} from '@/db/schema';
+import {settings,facebookPages,users} from '@/db/schema';
 import {elonStories,elonReports,elonEvents,elonPublications} from '@/db/elon-news-schema';
 import {getAiProvider} from '../ai-assistant';
 import {parseFeed} from '../tech-news';
@@ -19,6 +19,16 @@ export async function newsConfig():Promise<StoredConfig>{
  if(!row)return {...DEFAULT_CONFIG,ownerId:'',revision:''};
  const {ownerId,revision,...config}=JSON.parse(row.value);
  return {...configSchema.parse(config),ownerId,revision};
+}
+async function ensureDefaultNewsConfig(){
+ const [existing]=await db().select({key:settings.key}).from(settings).where(eq(settings.key,CONFIG_KEY)).limit(1);
+ if(existing)return;
+ const [page]=await db().select({id:facebookPages.id}).from(facebookPages).where(and(eq(facebookPages.isActive,true),eq(facebookPages.platform,'facebook'))).limit(1);
+ const [owner]=await db().select({id:users.id}).from(users).where(and(eq(users.isActive,true),eq(users.role,'admin'))).limit(1);
+ if(!page||!owner)return;
+ const value={...DEFAULT_CONFIG,monitoring:true,autoPublish:true,pageId:page.id,sourceIds:SOURCES.map(source=>source.id),ownerId:owner.id,revision:randomUUID()};
+ await db().insert(settings).values({key:CONFIG_KEY,value:JSON.stringify(value)}).onConflictDoNothing();
+ await newsEvent('CONFIG_AUTO_INITIALIZED',null,{pageId:page.id,sourceCount:value.sourceIds.length});
 }
 export async function newsEvent(code:string,storyId:string|null=null,details:Record<string,unknown>={}){
  await db().insert(elonEvents).values({code,storyId,details});
@@ -154,7 +164,8 @@ async function dispatch(config:StoredConfig,token:string,dependencies:NewsDepend
 }
 
 export async function runElonNews(dependencies:NewsDependencies={}){
- const config=await newsConfig();if(!config.monitoring)return {state:'disabled'};
+ await ensureDefaultNewsConfig();
+ const config=await newsConfig();if(!config.monitoring)return {state:'disabled',reason:'MONITORING_DISABLED'};
  const trialPaused=Boolean(config.pageId&&await experimentBlocksPage(config.pageId));
  const controls=await getGeneralSettings();if(!controls.systemEnabled||!controls.automationEnabled||!controls.contentEnabled)return {state:'paused'};
  await db().insert(settings).values({key:RUNTIME_KEY,value:'{}'}).onConflictDoNothing();
