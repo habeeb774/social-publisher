@@ -30,17 +30,31 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{id:stri
 
   let marked=false;
   try {
-    // The UPDATE is an atomic claim. Forbid deletion while the worker/uploads
-    // are active, or if any Reel may already exist on Facebook.
+    // Cancel only not-yet-started schedules as part of the same atomic claim.
+    // Active/ambiguous uploads and remotely-created Reels remain protected.
     const claimed=await getDb().execute(sql`
+      WITH target AS (
+        SELECT id FROM movie_assets
+        WHERE id=${id}::uuid AND title=${body.confirmation}
+      ), cancelled_facebook AS (
+        UPDATE movie_publications p SET status='cancelled',updated_at=now()
+        FROM movie_clips c, target t
+        WHERE c.id=p.clip_id AND c.movie_id=t.id AND p.status='scheduled'
+        RETURNING p.id
+      ), cancelled_youtube AS (
+        UPDATE movie_youtube_publications p SET status='cancelled',updated_at=now()
+        FROM target t
+        WHERE p.movie_id=t.id AND p.status='scheduled'
+        RETURNING p.id
+      )
       UPDATE movie_assets m SET status='deleting',updated_at=now()
-      WHERE m.id=${id}::uuid AND m.title=${body.confirmation}
+      WHERE m.id IN (SELECT id FROM target)
         AND NOT EXISTS(SELECT 1 FROM movie_jobs j WHERE j.movie_id=m.id AND j.status='running')
         AND NOT EXISTS(SELECT 1 FROM movie_upload_sessions u WHERE u.movie_id=m.id AND u.status IN ('uploading','completing'))
         AND NOT EXISTS(SELECT 1 FROM movie_clips c WHERE c.movie_id=m.id AND c.status='published')
         AND NOT EXISTS(
           SELECT 1 FROM movie_publications p JOIN movie_clips c ON c.id=p.clip_id
-          WHERE c.movie_id=m.id AND (p.status NOT IN ('failed','cancelled') OR p.remote_reel_id IS NOT NULL)
+          WHERE c.movie_id=m.id AND (p.status NOT IN ('failed','cancelled','scheduled') OR p.remote_reel_id IS NOT NULL)
         )
       RETURNING m.id
     `);
