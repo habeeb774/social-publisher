@@ -1,5 +1,4 @@
 import {randomUUID} from 'node:crypto';
-import {experimentBlocksPage} from '../reach-experiment';
 import {and,eq,desc,sql} from 'drizzle-orm';
 import {getDb} from '@/db';
 import {settings,facebookPages,users} from '@/db/schema';
@@ -165,7 +164,6 @@ async function dispatch(config:StoredConfig,token:string,dependencies:NewsDepend
 export async function runAiNews(dependencies:NewsDependencies={}){
  await ensureDefaultNewsConfig();
  const config=await newsConfig();if(!config.monitoring)return {state:'disabled',reason:'MONITORING_DISABLED'};
- const trialPaused=Boolean(config.pageId&&await experimentBlocksPage(config.pageId));
  const controls=await getGeneralSettings();if(!controls.systemEnabled||!controls.automationEnabled||!controls.contentEnabled)return {state:'paused'};
  await db().insert(settings).values({key:RUNTIME_KEY,value:'{}'}).onConflictDoNothing();
  const token=randomUUID(),claim=await db().execute(claimRunQuery(token));if(!claim.rows.length)return {state:'busy'};
@@ -177,11 +175,11 @@ export async function runAiNews(dependencies:NewsDependencies={}){
   if(!runtime?.lastPollAt||Date.now()-new Date(runtime.lastPollAt).getTime()>=config.pollMinutes*60000){
    await db().execute(sql`UPDATE settings SET value=(value::jsonb||jsonb_build_object('lastPollAt',now()))::text WHERE key=${RUNTIME_KEY} AND ${ownsRun(token)}`);
    await discover(config,token,dependencies.readFeed);
-   if(!trialPaused&&config.verificationMode!=='approved_source')await verifyDiscovered(config);
+   if(config.verificationMode!=='approved_source')await verifyDiscovered(config);
    await newsEvent('DISCOVERY_COMPLETED');
   }
-  if(!trialPaused&&config.verificationMode==='approved_source')await verifyDiscovered(config);
-  if(config.autoPublish&&!trialPaused){await queueVerified(config);await dispatch(config,token,dependencies);}
+   if(config.verificationMode==='approved_source')await verifyDiscovered(config);
+   if(config.autoPublish){await queueVerified(config);await dispatch(config,token,dependencies);}
   return {state:'completed'};
  }finally{
   await db().execute(sql`UPDATE settings SET value=(value::jsonb-'lease'-'leaseUntil')::text WHERE key=${RUNTIME_KEY} AND value::jsonb->>'lease'=${token}`);
