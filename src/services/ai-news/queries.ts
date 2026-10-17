@@ -22,8 +22,14 @@ export function beginSendQuery(input:{id:string;token:string;revision:string;pag
  AND ${ownsRun(input.token)} AND ${activePolicy(input.revision,input.pageId)}
  AND EXISTS(SELECT 1 FROM facebook_pages f WHERE f.id=p.page_id AND f.id=${input.pageId}::uuid AND f.platform='facebook' AND f.is_active AND f.status='active')
  AND EXISTS(SELECT 1 FROM ai_news_stories s WHERE s.id=p.story_id AND s.status='verified' AND s.arabic_post IS NOT NULL AND (s.duplicate_of IS NULL OR s.verification->>'distinctConfirmed'='true')
+  AND (s.verification->>'policy'<>'approved_source_direct_v1' OR EXISTS(
+   SELECT 1 FROM settings c WHERE c.key=${CONFIG_KEY} AND c.value::jsonb->>'verificationMode'='approved_source'))
   AND (SELECT count(DISTINCT r.independence_group) FROM ai_news_reports r JOIN settings c ON c.key=${CONFIG_KEY}
-       WHERE r.story_id=s.id AND (c.value::jsonb->'sourceIds') ? r.source_id)>=CASE WHEN s.verification->>'policy'='human_review' THEN 1 ELSE 2 END)
+       WHERE r.story_id=s.id AND (c.value::jsonb->'sourceIds') ? r.source_id)>=CASE
+        WHEN s.verification->>'policy'='human_review' THEN 1
+        WHEN s.verification->>'policy'='approved_source_direct_v1' AND EXISTS(
+         SELECT 1 FROM settings c WHERE c.key=${CONFIG_KEY} AND c.value::jsonb->>'verificationMode'='approved_source') THEN 1
+        ELSE 2 END)
  AND (SELECT count(*) FROM ai_news_publications q WHERE q.reserved_at AT TIME ZONE 'Asia/Riyadh' >= date_trunc('day',now() AT TIME ZONE 'Asia/Riyadh'))<${input.limit}
  AND NOT EXISTS(SELECT 1 FROM ai_news_publications q WHERE q.reserved_at>now()-make_interval(mins=>${input.gap}))
  RETURNING p.id,p.story_id,p.attempts`;

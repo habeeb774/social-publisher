@@ -31,7 +31,7 @@ export async function configureNews(config:NewsConfig,ownerId:string){
  }
  const value={...config,sourceIds:[...new Set(config.sourceIds)],ownerId,revision:randomUUID()};
  await db().insert(settings).values({key:CONFIG_KEY,value:JSON.stringify(value)}).onConflictDoUpdate({target:settings.key,set:{value:JSON.stringify(value),updatedAt:new Date()}});
- await newsEvent('CONFIG_UPDATED',null,{monitoring:config.monitoring,autoPublish:config.autoPublish,pageId:config.pageId});
+ await newsEvent('CONFIG_UPDATED',null,{monitoring:config.monitoring,autoPublish:config.autoPublish,pageId:config.pageId,verificationMode:config.verificationMode});
  return value;
 }
 
@@ -82,15 +82,17 @@ export async function composeArabic(story:{title:string},reports:Array<{title:st
 }
 
 async function verifyDiscovered(config:StoredConfig){
+ const direct=config.verificationMode==='approved_source';
  const stories=await db().select().from(aiStories).where(eq(aiStories.status,'pending_verification')).orderBy(desc(aiStories.createdAt)).limit(30);
  let generated=0;
  for(const story of stories){
-  if(story.duplicateOf||speculative(story.title))continue;
+  if(story.duplicateOf||(!direct&&speculative(story.title)))continue;
   const reports=(await db().select().from(aiReports).where(eq(aiReports.storyId,story.id))).filter(r=>config.sourceIds.includes(r.sourceId as typeof config.sourceIds[number]));
   // Syndication/rewrites are NOT treated as independent fact verification. Only
   // identical factual headlines from explicitly approved independent outlets pass.
-  if(new Set(reports.map(r=>r.independenceGroup)).size<2||reports.some(r=>speculative(r.title+' '+r.excerpt)))continue;
-  if(reports.some(r=>normalizedTitle(r.title)!==normalizedTitle(story.title)))continue;
+  if(!reports.length)continue;
+  if(!direct&&(new Set(reports.map(r=>r.independenceGroup)).size<2||reports.some(r=>speculative(r.title+' '+r.excerpt))))continue;
+  if(!direct&&reports.some(r=>normalizedTitle(r.title)!==normalizedTitle(story.title)))continue;
   if(generated++>=2)break;
   try{
    const post=await composeArabic(story,reports);
@@ -101,9 +103,9 @@ async function verifyDiscovered(config:StoredConfig){
     await db().update(aiStories).set({duplicateOf:duplicate.id,arabicPost:post,verification:{policy:'translation_duplicate_hold',reason:'POSSIBLE_DUPLICATE'}}).where(eq(aiStories.id,story.id));
     await newsEvent('POSSIBLE_DUPLICATE_HELD',story.id);continue;
    }
-   await db().update(aiStories).set({status:'verified',arabicPost:post,verification:{policy:'two_independent_matching_headlines_v1',reportIds:reports.map(r=>r.id),verifiedAt:new Date().toISOString(),note:'تطابق تقارير معتمدة؛ ليس ضمانًا مستقلًا لصحة الواقعة أو مراجعة بشرية'}})
+   await db().update(aiStories).set({status:'verified',arabicPost:post,verification:{policy:direct?'approved_source_direct_v1':'two_independent_matching_headlines_v1',reportIds:reports.map(r=>r.id),verifiedAt:new Date().toISOString(),note:direct?'مؤهل للنشر المباشر من مصدر معتمد؛ دون تحقق مستقل أو مراجعة بشرية':'تطابق تقارير معتمدة؛ ليس ضمانًا مستقلًا لصحة الواقعة أو مراجعة بشرية'}})
     .where(and(eq(aiStories.id,story.id),eq(aiStories.status,'pending_verification')));
-   await newsEvent('POLICY_VERIFIED',story.id);
+   await newsEvent(direct?'DIRECT_SOURCE_READY':'POLICY_VERIFIED',story.id);
   }catch{await newsEvent('ARABIC_GENERATION_FAILED',story.id);}
  }
 }
@@ -162,9 +164,10 @@ export async function runAiNews(dependencies:NewsDependencies={}){
   if(!runtime?.lastPollAt||Date.now()-new Date(runtime.lastPollAt).getTime()>=config.pollMinutes*60000){
    await db().execute(sql`UPDATE settings SET value=(value::jsonb||jsonb_build_object('lastPollAt',now()))::text WHERE key=${RUNTIME_KEY} AND ${ownsRun(token)}`);
    await discover(config,token,dependencies.readFeed);
-   await verifyDiscovered(config);
+   if(config.verificationMode!=='approved_source')await verifyDiscovered(config);
    await newsEvent('DISCOVERY_COMPLETED');
   }
+  if(config.verificationMode==='approved_source')await verifyDiscovered(config);
   if(config.autoPublish){await queueVerified(config);await dispatch(config,token,dependencies);}
   return {state:'completed'};
  }finally{

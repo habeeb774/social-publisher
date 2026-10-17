@@ -6,6 +6,7 @@ const messages:Record<string,string>={
  SOURCE_FETCH_FAILED:'تعذر جلب الأخبار من المصدر؛ راجع الاتصال بالمصدر.',
  POSSIBLE_DUPLICATE_HELD:'أُوقف الخبر للمراجعة لاحتمال نشر الحدث نفسه سابقًا.',
  POLICY_VERIFIED:'استوفى الخبر سياسة مطابقة التقارير من مصادر مستقلة؛ وليس ذلك ضمانًا لصحة الخبر.',
+ DIRECT_SOURCE_READY:'أصبح الخبر مؤهلًا للنشر المباشر من مصدر معتمد، دون تحقق مستقل أو مراجعة بشرية.',
  ARABIC_GENERATION_FAILED:'تعذرت صياغة الخبر بالعربية؛ يحتاج إلى مراجعة.',
  PUBLISHED:'تم نشر الخبر على فيسبوك بنجاح.',
  DISCOVERY_COMPLETED:'اكتمل فحص المصادر بحثًا عن أخبار جديدة.',
@@ -27,6 +28,7 @@ export function eventMessage(code:string,details:unknown){
   const value=fields(details),states:string[]=[];
   if(typeof value.monitoring==='boolean')states.push(value.monitoring?'متابعة الأخبار مفعّلة':'متابعة الأخبار متوقفة');
   if(typeof value.autoPublish==='boolean')states.push(value.autoPublish?'النشر التلقائي مفعّل':'النشر التلقائي متوقف');
+  if(value.verificationMode==='approved_source')states.push('نشر مباشر دون تحقق مستقل');
   return states.length?'حُفظت الإعدادات: '+states.join('، ')+'.':'حُفظت إعدادات الأتمتة.';
  }
  if(/^META_REJECTED_/.test(code)){

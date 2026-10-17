@@ -3,7 +3,7 @@ import {useCallback,useEffect,useRef,useState} from 'react';
 import styles from './news.module.css';
 import {Events,ActivityLog,TechnicalDetails,type NewsEvent} from './activity';
 
-type Config={monitoring:boolean;autoPublish:boolean;pageId:string|null;sourceIds:string[];pollMinutes:number;dailyLimit:number;minIntervalMinutes:number};
+type Config={monitoring:boolean;autoPublish:boolean;pageId:string|null;sourceIds:string[];pollMinutes:number;dailyLimit:number;minIntervalMinutes:number;verificationMode?:'corroborated'|'approved_source'};
 type Row={id:string;title:string;status:string;publication_status:string|null;breaking:boolean;duplicate_of:string|null;created_at:string;error_code:string|null;facebook_post_id:string|null};
 type Event=NewsEvent;
 type Data={items:Row[];total:number;page:number;counts:Array<{status:string;count:number}>;config:Config;sources:Array<{id:string;name:string;url:string}>;pages:Array<{id:string;name:string}>;activity:Event[];scheduler:{lastRunAt:string|null;lastPollAt:string|null;tickMinutes:number}};
@@ -13,6 +13,7 @@ const time=(value:string|null)=>value?new Intl.DateTimeFormat('ar-SA',{timeZone:
 async function api(url:string,init?:RequestInit){const r=await fetch(url,{...init,headers:{'Content-Type':'application/json',...init?.headers}});const d=await r.json();if(!r.ok)throw new Error(d.error??'تعذر تحميل البيانات');return d;}
 
 export function ElonNewsClient({endpoint='/api/elon-news',idPrefix='elon',officialSources=false}:{endpoint?:string;idPrefix?:string;officialSources?:boolean}={}){
+ const stateLabels=officialSources?{...labels,verified:'مؤهل للنشر وفق السياسة',pending_verification:'بانتظار التجهيز أو التحقق'}:labels;
  const [data,setData]=useState<Data|null>(null),[config,setConfig]=useState<Config|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const [q,setQ]=useState(''),[search,setSearch]=useState(''),[status,setStatus]=useState('all'),[source,setSource]=useState(''),[sort,setSort]=useState('newest'),[page,setPage]=useState(1);
  const [detail,setDetail]=useState<Detail|null>(null),[draft,setDraft]=useState(''),[note,setNote]=useState(''),[distinct,setDistinct]=useState(false),[breaking,setBreaking]=useState(false),[postId,setPostId]=useState('');
@@ -36,38 +37,39 @@ export function ElonNewsClient({endpoint='/api/elon-news',idPrefix='elon',offici
   {data&&config&&<>
    <section className={`card ${styles.settings}`} aria-labelledby={`${idPrefix}-settings`}><h2 id={`${idPrefix}-settings`}>إعدادات الأتمتة</h2>
     <form onSubmit={e=>{e.preventDefault();perform(async()=>{const {monitoring,autoPublish,pageId,sourceIds,pollMinutes,dailyLimit,minIntervalMinutes}=config;
-     const saved=await api(endpoint,{method:'PUT',body:JSON.stringify({monitoring,autoPublish,pageId,sourceIds,pollMinutes,dailyLimit,minIntervalMinutes})});setConfig(saved.config);setNotice('حُفظت الإعدادات.');await refresh();});}}>
+     const saved=await api(endpoint,{method:'PUT',body:JSON.stringify({monitoring,autoPublish,pageId,sourceIds,pollMinutes,dailyLimit,minIntervalMinutes,...(officialSources?{verificationMode:config.verificationMode??'corroborated'}:{})})});setConfig(saved.config);setNotice('حُفظت الإعدادات.');await refresh();});}}>
      <div className={styles.grid}>
       <label className={styles.check}><input type="checkbox" checked={config.monitoring} onChange={e=>setConfig({...config,monitoring:e.target.checked,autoPublish:e.target.checked?config.autoPublish:false})}/>تفعيل متابعة الأخبار</label>
-      <label className={styles.check}><input type="checkbox" checked={config.autoPublish} onChange={e=>setConfig({...config,autoPublish:e.target.checked})}/>تفعيل النشر العام التلقائي بعد التحقق</label>
+      <label className={styles.check}><input type="checkbox" checked={config.autoPublish} onChange={e=>setConfig({...config,autoPublish:e.target.checked})}/>تفعيل النشر العام التلقائي{!officialSources?' بعد التحقق':''}</label>
+      {officialSources&&<label>سياسة النشر<select value={config.verificationMode??'corroborated'} onChange={e=>setConfig({...config,verificationMode:e.target.value as Config['verificationMode']})}><option value="corroborated">بعد التحقق من مصدرين</option><option value="approved_source">مباشر من مصدر معتمد — بدون تحقق</option></select></label>}
       <label>صفحة Facebook<select value={config.pageId??''} onChange={e=>setConfig({...config,pageId:e.target.value||null})}><option value="">اختر الصفحة</option>{data.pages.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
       <label>فحص الأخبار كل (دقيقة)<input required type="number" min="10" max="1440" value={config.pollMinutes} onChange={e=>setConfig({...config,pollMinutes:Number(e.target.value)})}/></label>
       <label>الحد اليومي (بتوقيت الرياض)<input required type="number" min="1" max="30" value={config.dailyLimit} onChange={e=>setConfig({...config,dailyLimit:Number(e.target.value)})}/></label>
       <label>أقل فاصل بين منشورين (دقيقة)<input required type="number" min="10" max="1440" value={config.minIntervalMinutes} onChange={e=>setConfig({...config,minIntervalMinutes:Number(e.target.value)})}/></label>
      </div>
      <fieldset><legend>المصادر المعتمدة — فعّل المصادر التي توافق عليها</legend><div className={styles.grid}>{data.sources.map(s=><label key={s.id} className={styles.check}><input type="checkbox" checked={config.sourceIds.includes(s.id)} onChange={e=>setConfig({...config,sourceIds:e.target.checked?[...config.sourceIds,s.id]:config.sourceIds.filter(id=>id!==s.id)})}/>{s.name}</label>)}</div></fieldset>
-     <p>التحقق الآلي محافظ: تقريران بعنوان متطابق من مصدرين معتمدين؛ الأخبار المتشابهة والشائعات تبقى للمراجعة. الأولوية للعاجل الذي يحدده المسؤول، دون تجاوز الحصة أو الفاصل.</p>
-     {officialSources&&<p>إعلان الشركة دليل على ما أعلنته، وليس إثباتًا مستقلًا لادعاءات الأداء أو التفوق. أخبار المصدر الواحد تبقى بانتظار المراجعة، وتُنسب الادعاءات إلى مصدرها دون تحويلها إلى حقائق مؤكدة.</p>}
+     {officialSources&&config.verificationMode==='approved_source'?<p>النشر المباشر: يكفي مصدر معتمد واحد، دون مراجعة يدوية أو تحقق مستقل. تُنسب الأخبار إلى مصادرها؛ ليست أخبارًا مؤكدة. تبقى صلاحيات فيسبوك ومنع التكرار وحدود النشر وفحص الصياغة العربية فعّالة.</p>:<p>التحقق الآلي محافظ: تقريران بعنوان متطابق من مصدرين معتمدين؛ الأخبار المتشابهة والشائعات تبقى للمراجعة. الأولوية للعاجل الذي يحدده المسؤول، دون تجاوز الحصة أو الفاصل.</p>}
+     {officialSources&&<p>إعلان الشركة دليل على ما أعلنته، وليس إثباتًا مستقلًا لادعاءات الأداء أو التفوق. تتطلب الأخبار الأجنبية خدمة صياغة عربية مهيأة؛ تعذر الترجمة يمنع نشر نص غير جاهز.</p>}
      <p>المجدول الحالي كل {data.scheduler.tickMinutes} دقائق؛ الإعداد يحدد أقل فترة فحص ولا يضمن التنفيذ في الدقيقة نفسها. لا نستخدم Cron متكررًا غير متوافق مع خطة Vercel.</p>
      <button className="btn primary" disabled={busy}>حفظ الإعدادات</button>
     </form><small>آخر تشغيل: {time(data.scheduler.lastRunAt)} · آخر فحص: {time(data.scheduler.lastPollAt)}</small>
    </section>
-   <section className={styles.stats} aria-label="حالات الأخبار">{data.counts.map(c=><button key={c.status} className="card" onClick={()=>{setStatus(c.status==='preflight'?'queued':c.status);setPage(1);}}><strong>{c.count}</strong><span>{labels[c.status]??c.status}</span></button>)}</section>
+   <section className={styles.stats} aria-label="حالات الأخبار">{data.counts.map(c=><button key={c.status} className="card" onClick={()=>{setStatus(c.status==='preflight'?'queued':c.status);setPage(1);}}><strong>{c.count}</strong><span>{stateLabels[c.status]??c.status}</span></button>)}</section>
    <section className="card" aria-labelledby={`${idPrefix}-latest`}><h2 id={`${idPrefix}-latest`}>الأخبار المكتشفة وسجل النشر</h2>
     <form className={styles.filters} onSubmit={e=>{e.preventDefault();setSearch(q);setPage(1);}}>
      <label>بحث<input value={q} onChange={e=>setQ(e.target.value)} placeholder="عنوان الخبر"/></label><button className="btn" disabled={busy}>بحث</button>
-     <label>الحالة<select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}>{Object.entries(labels).filter(([k])=>k!=='preflight').map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
+     <label>الحالة<select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}>{Object.entries(stateLabels).filter(([k])=>k!=='preflight').map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
      <label>المصدر<select value={source} onChange={e=>{setSource(e.target.value);setPage(1);}}><option value="">كل المصادر</option>{data.sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
      <label>الترتيب<select value={sort} onChange={e=>{setSort(e.target.value);setPage(1);}}><option value="newest">الأحدث</option><option value="oldest">الأقدم</option><option value="priority">الأولوية للعاجل</option></select></label>
     </form>
     {data.items.length===0?<p>لا توجد أخبار مطابقة. فعّل المتابعة وحدد المصادر، ثم انتظر تشغيل المجدول.</p>:<ul className={styles.list}>{data.items.map(item=><li key={item.id}>
-     <div><button className={styles.title} disabled={busy} onClick={()=>open(item.id)}>{item.title}</button><p>{item.breaking?'عاجل · ':''}{labels[item.status==='rejected'?'rejected':item.publication_status??item.status]??item.status}{item.duplicate_of?' · احتمال تكرار':''}</p><small>{time(item.created_at)}</small>{item.error_code&&<code dir="ltr">{item.error_code}</code>}</div>
+     <div><button className={styles.title} disabled={busy} onClick={()=>open(item.id)}>{item.title}</button><p>{item.breaking?'عاجل · ':''}{stateLabels[item.status==='rejected'?'rejected':item.publication_status??item.status]??item.status}{item.duplicate_of?' · احتمال تكرار':''}</p><small>{time(item.created_at)}</small>{item.error_code&&<code dir="ltr">{item.error_code}</code>}</div>
      {item.facebook_post_id&&<a href={'https://www.facebook.com/'+item.facebook_post_id} target="_blank" rel="noopener noreferrer">عرض المنشور</a>}
     </li>)}</ul>}
     <nav aria-label="صفحات الأخبار" className={styles.actions}><button className="btn" disabled={page<=1||busy} onClick={()=>setPage(p=>p-1)}>السابق</button><span>صفحة {page} · {data.total} خبر</span><button className="btn" disabled={page*20>=data.total||busy} onClick={()=>setPage(p=>p+1)}>التالي</button><button className="btn" disabled={busy} onClick={()=>perform(()=>refresh())}>تحديث</button></nav>
    </section>
    {detail&&<section ref={detailRef} tabIndex={-1} className={`card ${styles.detail}`} aria-labelledby={`${idPrefix}-detail`}><div className={styles.actions}><h2 id={`${idPrefix}-detail`}>{detail.story.title}</h2><button className="btn" onClick={()=>setDetail(null)}>إغلاق التفاصيل</button></div>
-    <h3>أدلة التحقق</h3><p>{labels[detail.story.status]??'راجع تقارير المصادر وملاحظات المراجعة أدناه.'}</p><TechnicalDetails value={detail.story.verification} className={styles.technical}/>
+    <h3>المصادر وسياسة النشر</h3><p>{stateLabels[detail.story.status]??'راجع تقارير المصادر وملاحظات المراجعة أدناه.'}</p><TechnicalDetails value={detail.story.verification} className={styles.technical}/>
     {detail.story.publishedAt&&<p>تاريخ نشر الخبر لدى المصدر: {time(detail.story.publishedAt)}</p>}
     {detail.reports.map(r=><article key={r.id}><h4>{data.sources.find(s=>s.id===r.sourceId)?.name??r.sourceId}</h4><a href={r.url} target="_blank" rel="noopener noreferrer">{r.title}</a><p>{r.excerpt}</p><small>جُلب: {time(r.fetchedAt)}</small><code dir="ltr">SHA-256: {r.sha256}</code></article>)}
     <label>صياغة المنشور العربية (قبل إضافة رابط المصدر)<textarea rows={5} value={draft} onChange={e=>setDraft(e.target.value)}/></label>

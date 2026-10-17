@@ -19,7 +19,7 @@ const password=await hashPassword(process.env.AI_QA_PASSWORD);
 await db.execute(sql`INSERT INTO users(id,email,name,role,password_hash,is_active) VALUES(${owner}::uuid,'ai-qa@example.invalid','اختبار أخبار الذكاء الاصطناعي — غير إنتاجي','admin',${password},true)
  ON CONFLICT(id) DO UPDATE SET password_hash=excluded.password_hash`);
 await db.execute(sql`INSERT INTO facebook_pages(id,name,facebook_page_id,platform,is_active,status) VALUES(${page}::uuid,'صفحة اختبار — لا تنشر','999999999999999','facebook',true,'active') ON CONFLICT(id) DO NOTHING`);
-await configureNews({monitoring:false,autoPublish:false,pageId:page,sourceIds:['openai','google'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60},owner);
+await configureNews({monitoring:false,autoPublish:false,pageId:page,verificationMode:'corroborated',sourceIds:['openai','google'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60},owner);
 for(let n=1;n<=23;n++){
  const story=(await db.execute(sql`INSERT INTO ai_news_stories(fingerprint,title,published_at) VALUES(${'qa-'+n},${'الذكاء الاصطناعي — خبر اختبار معزول رقم '+n},now()) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=excluded.fingerprint RETURNING id`)).rows[0] as {id:string};
  await db.execute(sql`INSERT INTO ai_news_reports(story_id,url,source_id,independence_group,title,excerpt,sha256)
@@ -62,6 +62,6 @@ try{
  assert.equal(sent.length,1);assert.equal(sent[0].status,'published');assert.equal(Number(sent[0].attempts),1);assert.ok(sends<=1);
 }finally{
  process.env.PUBLISHING_ENABLED='false';
- await configureNews({monitoring:false,autoPublish:false,pageId:page,sourceIds:['openai','google'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60},owner);
+ await configureNews({monitoring:false,autoPublish:false,pageId:page,verificationMode:'corroborated',sourceIds:['openai','google'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60},owner);
 }
 console.log(JSON.stringify({isolatedBranch:'passed',migration:'passed',pagination:[20,3],manualReview:'passed',anonymous:401,crossOrigin:403,discoveryThroughPublication:'passed',duplicateSends:0,livePublications:0,monitoring:'disabled'}));
