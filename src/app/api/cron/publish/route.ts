@@ -23,6 +23,7 @@ import { publishDueYouTube, youtubePublishingEnabled } from "@/services/youtube/
 import {advanceCatalog} from "@/services/movie-reels/autopilot";
 import { getGeneralSettings } from "@/services/general-settings";
 import {runElonNews} from "@/services/elon-news/service";
+import {runAiNews} from "@/services/ai-news/service";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
 const GAP_ALERT_MINUTES = 25;
@@ -114,7 +115,10 @@ async function run(request: Request) {
   await materializeRecurrences().catch((error) => console.error("Recurrence materialization failed", { error: error instanceof Error ? error.message : String(error) }));
   after(async () => {
     const log = (label: string) => (error: unknown) => console.error(label, { error: error instanceof Error ? error.message : String(error) });
-    await runElonNews().catch(()=>console.error("Elon news automation failed",{code:"ELON_NEWS_RUN_FAILED"}));
+    await Promise.all([
+      runElonNews().catch(()=>console.error("Elon news automation failed",{code:"ELON_NEWS_RUN_FAILED"})),
+      runAiNews().catch(()=>console.error("AI news automation failed",{code:"AI_NEWS_RUN_FAILED"})),
+    ]);
     await gapCheck;
     await deliverLeadFollowups().catch(() => console.error("Lead follow-up dispatch failed", { code: "LEAD_FOLLOWUP_DISPATCH_FAILED" }));
     if (!(await hasMetaAccess())) return;
