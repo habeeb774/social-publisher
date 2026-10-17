@@ -9,7 +9,7 @@ import {claimRunQuery,beginSendQuery} from '../src/services/ai-news/queries';
 import {sendNewsPost,validateNewsPage,validPagePermission,reconcileNewsPost,NewsGraphError} from '../src/services/elon-news/graph';
 
 test('AI topics are filtered and only official source IDs can be enabled',()=>{
- for(const title of ['OpenAI releases GPT-6','Google introduces Gemini','New AI inference tools','تطورات الذكاء الاصطناعي'])assert.ok(relevant(title));
+ for(const title of ['OpenAI releases GPT-6','Google introduces Gemini','New AI inference tools','Introducing Sora 3','NVIDIA Nemotron model update','Qwen release notes','تطورات الذكاء الاصطناعي'])assert.ok(relevant(title));
  for(const title of ['Football results today','Weather forecast','New office furniture'])assert.equal(relevant(title),false);
  assert.deepEqual(SOURCES.map(s=>s.id),['openai','google','huggingface','nvidia']);
  assert.equal(configSchema.safeParse({monitoring:true,autoPublish:false,pageId:null,sourceIds:['aitnews'],pollMinutes:30,dailyLimit:5,minIntervalMinutes:60}).success,false);
