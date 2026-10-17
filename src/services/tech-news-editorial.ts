@@ -23,8 +23,15 @@ export function eligibleAutomaticTechArticle(article:Article,destination:'habeeb
 }
 
 export function sourceNewsBrief(article:Article){
- const sentence=(article.summary??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().split(/(?<=[.!؟])\s+/u)[0]??'';
- if(!sentence||sentence.length<35||sentence.length>280||sentence.split(/\s+/).length>25||sentence.includes(article.title)||article.title.includes(sentence))return null;
+ const first=(article.summary??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().split(/(?<=[.!؟])\s+/u)[0]??'';
+ // Count the quoted headline too. Long RSS introductions remain exact excerpts,
+ // explicitly marked as truncated, rather than silently excluding every source.
+ const budget=25-article.title.trim().split(/\s+/).length;
+ if(budget<7||!first||first.includes(article.title)||article.title.includes(first)||/appeared first|التدوينة|ظهرت أولاً/i.test(first))return null;
+ const words=first.split(/\s+/),truncated=words.length>budget;
+ if(truncated&&!/[.!؟]$/.test(first))return null;
+ const sentence=truncated?words.slice(0,budget).join(' ')+'…':first;
+ if(sentence.length<35||sentence.length>280)return null;
  const letters=sentence.match(/\p{L}/gu)??[],arabic=sentence.match(/[\u0621-\u064a]/g)??[];
  if(arabic.length<15||arabic.length/Math.max(1,letters.length)<.55||/https?:|@|bearer|ignore|تجاهل|اشترك|اضغط|شارك|تابعنا|system.?prompt/i.test(sentence))return null;
  return sentence;
@@ -34,5 +41,5 @@ export function editorialTechPost(article: Article,withBrief=false) {
   const title = article.title.replace(/\s+/g, " ").trim().slice(0, 220);
   const security = /أمن|تسريب|اختراق|\b(?:cybersecurity|data breach|ransomware|hack(?:ed|ing|s)?)\b/i.test(title);
   const brief=withBrief?sourceNewsBrief(article):null;
-  return [title,...(brief?['',`بحسب ${article.source}: «${brief}»`]:[]), "", `🔗 التفاصيل من المصدر: ${article.url}`, `المصدر: ${article.source}`, "", security ? "#أمن_المعلومات" : "#التقنية"].join("\n");
+  return [title,...(brief?['',`بحسب ${article.source}${brief.endsWith('…')?' (مقتطف)':''}: «${brief}»`]:[]), "", `🔗 التفاصيل من المصدر: ${article.url}`, `المصدر: ${article.source}`, "", security ? "#أمن_المعلومات" : "#التقنية"].join("\n");
 }
