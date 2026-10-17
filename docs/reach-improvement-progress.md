@@ -1,6 +1,7 @@
 # Reach improvement and shared discovery
 
-User target: every post reaches at least 1,000 real views. This target is NOT
+User target: every post reaches at least 1,000 real views within 24 hours
+(confirmed by the user). This target is NOT
 achieved or guaranteed. Never substitute fake engagement, fabricated analytics,
 paid promotion without approval, or a small passing test for the real outcome.
 
@@ -29,6 +30,11 @@ Implemented in this iteration:
   Discovery remains lazy and respects existing per-feature schedules and leases.
 - Shared fetches refuse credentials/writes, redirects and oversized source bodies.
   Publication credentials, quotas, permissions and destinations are NOT shared.
+- Analytics shows a 1,000-view/24-hour target for its explicitly bounded sample.
+  Timely milestones reuse existing Graph reads and are recorded once under
+  `reach_24h:<post UUID>` in settings. Late lifetime totals are marked as timing
+  unknown without matching earlier evidence. Missing data is not a failed target.
+  Sampling occurs on analytics visits, not a background first-day census.
 
 Still needed before claiming the reach target:
 

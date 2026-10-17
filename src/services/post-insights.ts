@@ -65,7 +65,9 @@ export async function getPostPerformance(facebookPostId:string,facebookPageId:st
     for(const [type,n] of Object.entries(value))if(numeric(n))metrics.push({key:`${key}.${type}`,label:`${label}: ${type}`,value:n});
    }else issues.push(issue(key));
   });
-  return {available:metrics.length>0,...(!metrics.length?{reason:issues[0]?.message??'لا توجد بيانات أداء متاحة لهذا المنشور'}:{}),metrics,issues,fetchedAt};
+  // Completion time is conservative at the 24-hour boundary: a slow request
+  // must not turn a result received after the deadline into an early milestone.
+  return {available:metrics.length>0,...(!metrics.length?{reason:issues[0]?.message??'لا توجد بيانات أداء متاحة لهذا المنشور'}:{}),metrics,issues,fetchedAt:new Date().toISOString()};
  }catch{return {available:false,reason:'تعذر قراءة ربط Facebook؛ راجع اتصال الصفحة',metrics:[],fetchedAt};}
 }
 

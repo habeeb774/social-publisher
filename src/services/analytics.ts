@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { facebookPages, posts, publicationAttempts } from "@/db/schema";
+import { facebookPages, posts, publicationAttempts,settings } from "@/db/schema";
+import {reachGoal,type ReachEvidence} from './reach-goal';
 import { engagementOf, getPostPerformance } from "./post-insights";
 
 export const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -53,11 +54,21 @@ export function insightsFrom(a: Awaited<ReturnType<typeof systemAnalytics>>) {
  * engagement data; otherwise returns null so no fabricated recommendation is shown.
  */
 export async function bestTimeFromEngagement(limit = 15, minPosts = 5, allowed: Set<string> | null = null) {
-  const rows = await getDb().select({ fbId: posts.facebookPostId, at: posts.publishedAt, pageFbId: facebookPages.facebookPageId }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(eq(posts.status, "published"), isNotNull(posts.facebookPostId), isNull(posts.deletedAt), allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`)).orderBy(desc(posts.publishedAt)).limit(limit);
+  const rows = await getDb().select({ id:posts.id,fbId: posts.facebookPostId, at: posts.publishedAt, pageFbId: facebookPages.facebookPageId }).from(posts).innerJoin(facebookPages, eq(posts.pageId, facebookPages.id)).where(and(eq(posts.status, "published"), isNotNull(posts.facebookPostId), isNull(posts.deletedAt), allowed === null ? undefined : allowed.size ? inArray(posts.pageId, Array.from(allowed)) : sql`false`)).orderBy(desc(posts.publishedAt)).limit(limit);
   const results = await Promise.all(rows.map(async (row) => ({ row, perf: await getPostPerformance(row.fbId!, row.pageFbId) })));
+  // Reuse metrics already read; no additional Graph requests. Keep the first
+  // timely milestone so subsequent lifetime reads cannot erase its timestamp.
+  const milestones=results.flatMap(({row,perf})=>{
+    const views=perf.metrics.find(m=>m.key==='post_media_view')?.value;
+    return row.at&&reachGoal(row.at,views,perf.fetchedAt).state==='met_within_window'?[{key:`reach_24h:${row.id}`,value:JSON.stringify({publishedAt:row.at.toISOString(),observedAt:perf.fetchedAt,views})}]:[];
+  });
+  if(milestones.length)await getDb().insert(settings).values(milestones).onConflictDoNothing();
+  const records=rows.length?await getDb().select({key:settings.key,value:settings.value}).from(settings).where(inArray(settings.key,rows.map(r=>`reach_24h:${r.id}`))):[];
+  const evidence=new Map<string,ReachEvidence>();
+  for(const record of records){try{const value=JSON.parse(record.value);if(typeof value.publishedAt==='string'&&typeof value.observedAt==='string'&&typeof value.views==='number')evidence.set(record.key,value);}catch{/* Unusable historical evidence is never treated as success. */}}
   const samples=results.filter(s=>s.perf.available);
   const warnings=[...new Set(results.flatMap(s=>[...(s.perf.reason?[s.perf.reason]:[]),...(s.perf.issues??[]).map(i=>i.message)]))];
-  const common={samples:samples.length,posts:samples,attempted:rows.length,warnings};
+  const common={samples:samples.length,posts:samples,observations:results.map(r=>({...r,evidence:evidence.get(`reach_24h:${r.row.id}`)})),attempted:rows.length,warnings};
   if (samples.length < minPosts || samples.every(s=>engagementOf(s.perf)===0)) return { recommendation: null, ...common };
   const buckets = new Map<string, { total: number; n: number }>();
   for (const { row, perf } of samples) {
