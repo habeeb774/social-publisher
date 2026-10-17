@@ -18,10 +18,10 @@ const FEEDS = [
   { name: "يمن مونيتور", url: "https://yemenmonitor.com/feed", topic: "اليمن" },
 ];
 
-export async function readPoliticsFeeds() {
+export async function readPoliticsFeeds(fetcher:typeof fetch=fetch) {
   return Promise.all(FEEDS.map(async (source) => {
     try {
-      const response = await fetch(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; NewsReader/1.0)" } });
+      const response = await fetcher(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store", headers: { "User-Agent": "NewsReader/1.0" } });
       if (!response.ok) throw new Error("FEED_UNAVAILABLE");
       return { source: source.name, available: true, items: parseFeed(await response.text(), source) };
     } catch {

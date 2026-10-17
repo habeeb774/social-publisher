@@ -30,7 +30,7 @@ export async function politicsTargetPage() {
  * Other scheduler ticks return after a single settings lookup, without fetching any feed.
  * Casualty reports are never auto-posted; they stay on the radar for manual review.
  */
-export async function enqueuePoliticsNews(now = new Date()) {
+export async function enqueuePoliticsNews(now = new Date(),dependencies:{readFeeds?:typeof readPoliticsFeeds}={}) {
   if (!(await getGeneralSettings()).politicsNewsEnabled) return { created: 0, reason: "DISABLED_BY_SETTINGS" as const };
   const db = getDb();
   const claimKey = `politics_news_hour:${now.toISOString().slice(0, 13)}`;
@@ -47,7 +47,7 @@ export async function enqueuePoliticsNews(now = new Date()) {
     return { created: 0, reason: "POLITICS_PAGE_UNAVAILABLE" as const };
   }
 
-  const feeds = await readPoliticsFeeds();
+  const feeds = await (dependencies.readFeeds??readPoliticsFeeds)();
   const candidates = rankRadar(feeds.flatMap((f) => f.items), now, eligiblePoliticsArticle)
     .filter((g) => politicsRisk(`${g.title} ${g.articles[0].summary ?? ""}`) === "normal" && now.getTime() - g.articles[0].publishedAt.getTime() <= MAX_AGE_MS)
     // Yemeni news first, then newest.

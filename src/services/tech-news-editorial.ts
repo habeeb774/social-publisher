@@ -11,10 +11,20 @@ export function eligibleTechArticle(article: Article) {
   return !!title && !promotion.test(`${title} ${article.url}`) && (relevant.test(title) || englishRelevant.test(title));
 }
 
+/** Discovery can include English, but automated Arabic pages must not publish
+ * untranslated headlines or generic celebrity/roundup stories as AI news. */
+export function eligibleAutomaticTechArticle(article:Article,destination:'habeeb'|'former-politics'){
+ if(!eligibleTechArticle(article))return false;
+ const letters=article.title.match(/\p{L}/gu)??[],arabic=article.title.match(/[\u0621-\u064a]/g)??[];
+ if(arabic.length<10||arabic.length/Math.max(1,letters.length)<.55)return false;
+ if(/\b(?:celebrity|gym|longevity|roundup|all the news about|live updates)\b|المشاهير|فضائح|كوبونات|ملخص أخبار/i.test(article.title))return false;
+ if(destination==='habeeb'&&!/ذكاء|أتمتة|الأتمتة|إنتاجية|الإنتاجية|سير العمل|أدوات العمل|أمن|اختراق|خصوصية|تسريب|برمج|تطبيق|\b(?:AI|GPT|ChatGPT|Claude|Copilot|Gemini|OpenAI|Anthropic|n8n|Zapier|Notion)\b/i.test(article.title))return false;
+ return true;
+}
+
 export function editorialTechPost(article: Article) {
   if (!eligibleTechArticle(article)) throw new Error("TECH_NEWS_EDITORIAL_REJECTED");
   const title = article.title.replace(/\s+/g, " ").trim().slice(0, 220);
   const security = /أمن|تسريب|اختراق|\b(?:cybersecurity|data breach|ransomware|hack(?:ed|ing|s)?)\b/i.test(title);
-  const hook = security ? "🔐 تستخدم هذه الأدوات في عملك؟ انتبه لهذا الخبر." : "💡 هل سمعت بهذا الخبر؟";
-  return [hook, "", title, "", `🔗 التفاصيل من المصدر: ${article.url}`, `المصدر: ${article.source}`, "", security ? "#أمن_المعلومات #أدوات_العمل" : "#الأتمتة #أدوات_العمل #التقنية"].join("\n");
+  return [title, "", `🔗 التفاصيل من المصدر: ${article.url}`, `المصدر: ${article.source}`, "", security ? "#أمن_المعلومات" : "#التقنية"].join("\n");
 }

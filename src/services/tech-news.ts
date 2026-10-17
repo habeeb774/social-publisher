@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { createHash,randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { facebookPages, postMedia, posts, settings } from "@/db/schema";
+import { facebookPages, settings } from "@/db/schema";
 import { logAudit } from "./audit";
-import { eligibleTechArticle, editorialTechPost } from "./tech-news-editorial";
+import { eligibleAutomaticTechArticle, editorialTechPost } from "./tech-news-editorial";
+import {canonicalTechUrl,techArticleKeys,enqueueTechArticleQuery} from './tech-news-dedup';
 import { politicsTargetPage } from "./politics-autopost";
 import { getGeneralSettings } from "./general-settings";
 
@@ -48,9 +49,9 @@ export function parseFeed(xml: string, source: FeedSource): FeedItem[] {
   }
   return items;
 }
-async function readFeed(source: FeedSource) {
+async function readFeed(source: FeedSource,fetcher:typeof fetch=fetch) {
   try {
-    const response = await fetch(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store" });
+    const response = await fetcher(source.url, { signal: AbortSignal.timeout(12000), cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     return parseFeed(await response.text(), source);
   } catch (error) {
@@ -60,7 +61,12 @@ async function readFeed(source: FeedSource) {
 }
 function articleHash(url: string) { return createHash("sha256").update(url).digest("hex").slice(0, 20); }
 
-export async function enqueueHourlyTechNews(now = new Date(), destination: "habeeb" | "former-politics" = "habeeb") {
+export function createTechFeedScan(fetcher:typeof fetch=fetch){
+ let scan:Promise<FeedItem[][]>|undefined;
+ return ()=>scan??=Promise.all(FEEDS.map(source=>readFeed(source,fetcher)));
+}
+
+export async function enqueueHourlyTechNews(now = new Date(), destination: "habeeb" | "former-politics" = "habeeb",dependencies:{readFeeds?:()=>Promise<FeedItem[][]>}={}) {
   if (!(await getGeneralSettings()).technologyNewsEnabled) return { created: false, reason: "DISABLED_BY_SETTINGS" as const };
   const db = getDb();
   const hourKey = now.toISOString().slice(0, 13);
@@ -74,36 +80,34 @@ export async function enqueueHourlyTechNews(now = new Date(), destination: "habe
   const attemptKey = `${namespace}_attempt:${hourKey}:${Math.floor(now.getUTCMinutes() / 15)}`;
   const attempt = await db.insert(settings).values({ key: attemptKey, value: now.toISOString() }).onConflictDoNothing().returning({ key: settings.key });
   if (!attempt.length) return { created: false, reason: "ATTEMPT_ALREADY_RUN" as const };
-  const feedResults = await Promise.all(FEEDS.map(readFeed));
+  const feedResults = await (dependencies.readFeeds??createTechFeedScan())();
   const cutoff = now.getTime() - MAX_AGE_MS;
-  const candidates = feedResults.flat().filter((item) => eligibleTechArticle(item) && item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+  const candidates = feedResults.flat().filter((item) => eligibleAutomaticTechArticle(item,destination) && item.publishedAt.getTime() >= cutoff && item.publishedAt.getTime() <= now.getTime() + 600000).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
   if (!candidates.length) {
     await logAudit("tech_news.skipped", "post", null, { reason: "NO_FRESH_NEWS", hourKey });
     return { created: false, reason: "NO_FRESH_NEWS" as const };
   }
 
-  let selected: FeedItem | null = null;
-  for (const candidate of candidates) {
-    const [seen] = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, `${namespace}_seen:${articleHash(candidate.url)}`)).limit(1);
-    if (!seen) { selected = candidate; break; }
-  }
-  if (!selected) return { created: false, reason: "NO_UNSEEN_NEWS" as const };
-
-  const claim = await db.insert(settings).values({ key: claimKey, value: JSON.stringify({ claimedAt: now.toISOString(), url: selected.url }) }).onConflictDoNothing().returning({ key: settings.key });
-  if (!claim.length) return { created: false, reason: "HOUR_ALREADY_CLAIMED" as const };
-
   const page = destination === "former-politics"
     ? await politicsTargetPage()
     : (await db.select({ id: facebookPages.id, facebookPageId: facebookPages.facebookPageId }).from(facebookPages).where(and(eq(facebookPages.facebookPageId, HABEEB_FACEBOOK_PAGE_ID), eq(facebookPages.platform, "facebook"), eq(facebookPages.isActive, true))).limit(1))[0];
-  if (!page) {
-    await logAudit("tech_news.skipped", "post", null, { reason: "TECH_DESTINATION_PAGE_UNAVAILABLE", hourKey, destination });
-    return { created: false, reason: "HABEEB_PAGE_UNAVAILABLE" as const };
+  if(!page)return {created:false,reason:'HABEEB_PAGE_UNAVAILABLE' as const};
+  const probes:Array<{item:FeedItem;keys:string[]}>=[];
+  for (const candidate of candidates) {
+    let url:string;try{url=canonicalTechUrl(candidate.url);}catch{continue;}
+    const keys=techArticleKeys(page.id,url,candidate.title);
+    probes.push({item:{...candidate,url},keys:[`${namespace}_seen:${articleHash(candidate.url)}`,`tech_news_seen:${articleHash(candidate.url)}`,keys.url,keys.title]});
   }
+  const lookupKeys=[...new Set(probes.flatMap(p=>p.keys))];
+  const seen=new Set(lookupKeys.length?(await db.select({key:settings.key}).from(settings).where(inArray(settings.key,lookupKeys))).map(r=>r.key):[]);
+  const selected=probes.find(p=>p.keys.every(key=>!seen.has(key)))?.item;
+  if (!selected) return { created: false, reason: "NO_UNSEEN_NEWS" as const };
 
-  const [post] = await db.insert(posts).values({ pageId: page.id, content: editorialTechPost(selected), scheduledAt: now, timezone: "Asia/Riyadh", status: "scheduled", category: "أخبار", tags: ["تقنية", "تكنولوجيا", "أخبار التقنية", selected.topic, `source:${selected.source}`] }).returning({ id: posts.id });
+  const post={id:randomUUID()},keys=techArticleKeys(page.id,selected.url,selected.title);
   const appUrl = (process.env.APP_URL?.trim() || "https://sp.leanpix.site").replace(/\/$/, "");
-  await db.insert(postMedia).values({ postId: post.id, type: "image", url: `${appUrl}/api/tech-news-image/${post.id}?v=2`, mimeType: "image/png" });
-  await db.insert(settings).values({ key: `tech_news_seen:${articleHash(selected.url)}`, value: JSON.stringify({ url: selected.url, title: selected.title, source: selected.source, publishedAt: selected.publishedAt.toISOString(), postId: post.id, createdAt: now.toISOString() }) }).onConflictDoNothing();
+  const metadata=JSON.stringify({url:selected.url,title:selected.title,source:selected.source,publishedAt:selected.publishedAt.toISOString(),postId:post.id,createdAt:now.toISOString()});
+  const inserted=await db.execute(enqueueTechArticleQuery({id:post.id,pageId:page.id,hourKey:claimKey,urlKey:keys.url,titleKey:keys.title,seenKey:`${namespace}_seen:${articleHash(selected.url)}`,metadata,content:editorialTechPost(selected),imageUrl:`${appUrl}/api/tech-news-image/${post.id}?v=2`,tags:['تقنية',selected.topic,`source:${selected.source}`],at:now.toISOString()}));
+  if(!inserted.rows.length)return {created:false,reason:'ARTICLE_OR_HOUR_ALREADY_CLAIMED' as const};
 
   await logAudit("tech_news.enqueued", "post", post.id, { pageId: page.facebookPageId, destination, source: selected.source, sourceUrl: selected.url, publishedAt: selected.publishedAt.toISOString(), hourly: true });
   return { created: true, postId: post.id, source: selected.source, title: selected.title };

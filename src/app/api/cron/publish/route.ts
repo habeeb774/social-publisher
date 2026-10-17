@@ -13,7 +13,10 @@ import { maybeSendWeeklyReport } from "@/services/weekly-report";
 import { syncMessenger } from "@/services/messenger";
 import { checkMetaWebhookSubscriptions } from "@/services/meta-webhook";
 import { deliverLeadFollowups } from "@/services/leads-followup-worker";
-import { enqueueHourlyTechNews } from "@/services/tech-news";
+import { enqueueHourlyTechNews,createTechFeedScan } from "@/services/tech-news";
+import {createNewsFetchCycle} from '@/services/news-fetch-cycle';
+import {readAiSource} from '@/services/ai-news/sources';
+import {readPoliticsFeeds} from '@/services/politics-radar';
 import { enqueuePoliticsNews } from "@/services/politics-autopost";
 import { enqueueMixedFacts } from "@/services/mixed-facts";
 import { seedRasdooqMessengerRules } from "@/services/rasdooq-messenger";
@@ -22,7 +25,7 @@ import { moviePublishingEnabled, publishDueMovieReels } from "@/services/movie-r
 import { publishDueYouTube, youtubePublishingEnabled } from "@/services/youtube/publisher";
 import {advanceCatalog} from "@/services/movie-reels/autopilot";
 import { getGeneralSettings } from "@/services/general-settings";
-import {runElonNews} from "@/services/elon-news/service";
+import {runElonNews,readElonSource} from "@/services/elon-news/service";
 import {runAiNews} from "@/services/ai-news/service";
 
 // The worker runs every 10 minutes (lets the free database sleep between runs).
@@ -109,6 +112,8 @@ async function run(request: Request) {
   const startedAt = new Date();
   const controls = await getGeneralSettings();
   if (!controls.systemEnabled || !controls.automationEnabled) return NextResponse.json({ success: true, paused: true, reason: !controls.systemEnabled ? "SYSTEM_DISABLED" : "AUTOMATION_DISABLED" });
+  const newsCycle=createNewsFetchCycle();
+  const readTechFeeds=createTechFeedScan(newsCycle.fetcher);
   // Publishing comes first; everything else runs after the response so it can never delay a post.
   const gapCheck = runHealthChecks();
   // Recurring rules create their upcoming instances before the due-post scan.
@@ -116,9 +121,10 @@ async function run(request: Request) {
   after(async () => {
     const log = (label: string) => (error: unknown) => console.error(label, { error: error instanceof Error ? error.message : String(error) });
     await Promise.all([
-      runElonNews().catch(()=>console.error("Elon news automation failed",{code:"ELON_NEWS_RUN_FAILED"})),
-      runAiNews().catch(()=>console.error("AI news automation failed",{code:"AI_NEWS_RUN_FAILED"})),
+      runElonNews({readFeed:source=>readElonSource(source,newsCycle.fetcher)}).catch(()=>console.error("Elon news automation failed",{code:"ELON_NEWS_RUN_FAILED"})),
+      runAiNews({readFeed:source=>readAiSource(source,newsCycle.fetcher)}).catch(()=>console.error("AI news automation failed",{code:"AI_NEWS_RUN_FAILED"})),
     ]);
+    console.info('Shared news discovery',newsCycle.stats());
     await gapCheck;
     await deliverLeadFollowups().catch(() => console.error("Lead follow-up dispatch failed", { code: "LEAD_FOLLOWUP_DISPATCH_FAILED" }));
     if (!(await hasMetaAccess())) return;
@@ -162,19 +168,19 @@ async function run(request: Request) {
   });
   try {
     try {
-      const politicsNews = await enqueuePoliticsNews(startedAt);
+      const politicsNews = await enqueuePoliticsNews(startedAt,{readFeeds:()=>readPoliticsFeeds(newsCycle.fetcher)});
       if (politicsNews.created) console.info("Politics news queued", politicsNews);
     } catch (error) {
       console.error("Politics news failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
-      const techNews = await enqueueHourlyTechNews(startedAt);
+      const techNews = await enqueueHourlyTechNews(startedAt,'habeeb',{readFeeds:readTechFeeds});
       if (techNews.created) console.info("Hourly technology news queued", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
       console.error("Hourly technology news failed", { error: error instanceof Error ? error.message : String(error) });
     }
     try {
-      const techNews = await enqueueHourlyTechNews(startedAt, "former-politics");
+      const techNews = await enqueueHourlyTechNews(startedAt, "former-politics",{readFeeds:readTechFeeds});
       if (techNews.created) console.info("Technology news queued for former politics page", { postId: techNews.postId, source: techNews.source });
     } catch (error) {
       console.error("Former politics page technology news failed", { error: error instanceof Error ? error.message : String(error) });

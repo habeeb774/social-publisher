@@ -35,8 +35,8 @@ export async function configureNews(config:NewsConfig,ownerId:string){
  return value;
 }
 
-async function boundedFeed(source:typeof SOURCES[number]){
- const response=await fetch(source.url,{signal:AbortSignal.timeout(12000),redirect:'error',cache:'no-store',headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml'}});
+export async function readElonSource(source:typeof SOURCES[number],fetcher:typeof fetch=fetch){
+ const response=await fetcher(source.url,{signal:AbortSignal.timeout(12000),redirect:'error',cache:'no-store',headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml'}});
  if(!response.ok)throw new Error('FEED_UNAVAILABLE');
  const reader=response.body?.getReader();if(!reader)throw new Error('FEED_EMPTY');
  const parts:Uint8Array[]=[];let size=0;
@@ -47,6 +47,7 @@ async function boundedFeed(source:typeof SOURCES[number]){
  return parseFeed(xml,{name:source.name,url:source.url,topic:'إيلون ماسك'});
 }
 
+const boundedFeed=readElonSource;
 async function discover(config:StoredConfig,token:string,readFeed=boundedFeed){
  const deadline=Date.now()+60000;
  for(const source of SOURCES.filter(s=>config.sourceIds.includes(s.id))){
