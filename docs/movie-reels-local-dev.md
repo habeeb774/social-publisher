@@ -27,14 +27,14 @@ For a storage-free run use `MOVIE_STORAGE_DRIVER=local` + `MOVIE_LOCAL_STORAGE_D
 | Worker: MOVIE_API_URL, MOVIE_WORKER_SECRET, MOVIE_WORK_DIR, MOVIE_FONT, MOVIE_WHISPER_MODEL_DIR, MOVIE_POLL_SECONDS, MOVIE_ALLOW_INSECURE_API | see compose | https URL, no insecure flag |
 
 ## 2. Database migrations / ترحيلات قاعدة البيانات
-Apply `drizzle/0019_movie_reels.sql`, `0020_movie_rights_reviews.sql`, `0021_movie_pipeline.sql` **in order**, to a Neon branch (never prod first) or local Postgres:
+Apply `drizzle/0019_movie_reels.sql`, `0020_movie_rights_reviews.sql`, `0021_movie_pipeline.sql`, and `0025_movie_worker_health.sql` **in order**, to a Neon branch (never prod first) or local Postgres:
 طبّق الترحيلات بالترتيب على فرع Neon تجريبي أو Postgres محلي، وليس على الإنتاج مباشرة:
 
 ```bash
 # Neon: create a branch in the console, put its URL in DATABASE_URL of .env.local
 # Local PG: docker compose -f docker-compose.movies.yml --profile postgres up -d
 #   DATABASE_URL=postgres://movies:movies-dev@localhost:5433/social_publisher
-for f in drizzle/0019_movie_reels.sql drizzle/0020_movie_rights_reviews.sql drizzle/0021_movie_pipeline.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+for f in drizzle/0019_movie_reels.sql drizzle/0020_movie_rights_reviews.sql drizzle/0021_movie_pipeline.sql drizzle/0025_movie_worker_health.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 Note: the app uses the Neon HTTP driver; plain local Postgres needs the base schema (earlier migrations, `npm run db:migrate`) and may need a Neon-compatible proxy. A Neon branch is the simplest path.
 
@@ -47,6 +47,32 @@ docker compose -f docker-compose.movies.yml logs -f worker
 ```
 The worker reaches the host app at `http://host.docker.internal:3000`; plain http is refused unless `MOVIE_ALLOW_INSECURE_API=1` (dev only).
 Subtitles (optional): `python workers/movie-reels/download_model.py small workers/movie-reels/models/whisper-small`, then set `MOVIE_WHISPER_MODEL_DIR_IN_CONTAINER=/models/whisper-small`. Without a model, clips have no captions; write them in the dashboard.
+
+## 3.1 Production worker on Windows / عامل الإنتاج على Windows
+The local Docker worker may call the deployed app; it does not need an inbound port. Copy the example file and set the **same** secret in Vercel and the worker. Never commit `worker.env` or paste the secret into chat:
+
+```powershell
+cd workers\movie-reels\windows
+Copy-Item worker.env.example worker.env
+notepad worker.env
+# Set MOVIE_API_URL=https://sp.leanpix.site
+# Set MOVIE_WORKER_SECRET to the same random value configured in Vercel
+# Set MOVIE_ALLOW_INSECURE_API=0 and MOVIE_WORKER_ID=windows-worker-1
+Set-Content worker.env -Value ((Get-Content worker.env) -replace '^MOVIE_ALLOW_INSECURE_API=.*','MOVIE_ALLOW_INSECURE_API=0')
+.\start-worker.ps1 -WorkDir D:\movie-work -SourceDir D:\Movies
+docker logs -f movie-reels-worker
+```
+
+Verify `/movies`: the worker card must show **متصل** and the queued count should decrease when a job is leased. If it shows **معالج الفيديو غير متصل، سيتم استئناف معالجة الأفلام عند تشغيل Docker**, inspect `docker logs movie-reels-worker`, then check the URL, the shared secret, `MOVIE_REELS_ENABLED=true` in Vercel, and that migration `0025_movie_worker_health.sql` was applied. A temporary network failure leaves the lease to expire safely; it is then eligible for a bounded retry. Do not reset or delete jobs blindly.
+
+```powershell
+docker ps --filter name=movie-reels-worker
+docker logs --tail 100 movie-reels-worker
+docker restart movie-reels-worker
+docker stop movie-reels-worker
+```
+
+For local development only, use `MOVIE_API_URL=http://host.docker.internal:3000` with `MOVIE_ALLOW_INSECURE_API=1`. Do not use that pair for Vercel production.
 
 ## 4. End-to-end flow / المسار الكامل
 1. Open `/movies`, register a movie and fill the rights form (licensed content only). / سجّل الفيلم وبيانات الحقوق.

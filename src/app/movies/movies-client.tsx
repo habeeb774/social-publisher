@@ -5,6 +5,7 @@ import { MovieDetail } from "./movie-detail";
 
 type Movie = {id:string;title:string;status:string;rightsStatus:string;createdAt?:string};
 type Page = {id:string;name:string};
+type WorkerStatus = {online:boolean;worker:{id:string;lastPollAt:string;currentJobId:string|null;progress:number;lastError:string|null}|null;counts:{queued:number;running:number;failed:number}|null};
 const states: Record<string,string> = {draft:"لم يُرفع الملف بعد",uploaded:"تم الرفع",queued:"في طابور المعالجة",processing:"جارٍ المعالجة",review_required:"بانتظار مراجعة المقاطع",ready:"جاهز",failed:"تعذرت المعالجة",deleting:"حذف غير مكتمل — أعد المحاولة"};
 const rightsLabels: Record<string,string> = {pending:"بانتظار التحقق",verified:"حقوق موثقة",rejected:"حقوق مرفوضة",revoked:"ترخيص ملغى"};
 
@@ -19,6 +20,7 @@ export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,
   const [deleteConfirmation,setDeleteConfirmation]=useState("");
   const [deleteError,setDeleteError]=useState("");
   const [deleting,setDeleting]=useState(false);
+  const [worker,setWorker]=useState<WorkerStatus|null>(null);
   const saving=useRef(false);
   const sequence=useRef(0);
   const load=useCallback(async()=>{
@@ -36,6 +38,13 @@ export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,
       .catch(cause=>{if(request===requests.current)setError(cause instanceof Error?cause.message:"تعذر تحميل الأفلام");})
       .finally(()=>{if(request===requests.current)setLoading(false);});
     return()=>{++requests.current;};
+  },[enabled]);
+  useEffect(()=>{
+    if(!enabled)return;
+    let active=true;
+    const refresh=()=>void api<WorkerStatus>("/api/movies/worker-status").then(value=>{if(active)setWorker(value);}).catch(()=>{if(active)setWorker(null);});
+    refresh(); const timer=window.setInterval(refresh,15000);
+    return()=>{active=false;window.clearInterval(timer);};
   },[enabled]);
   async function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault();if(saving.current)return;
@@ -78,6 +87,13 @@ export function MoviesClient({enabled,canWrite,canReview=false,canPublish=false,
         :<p className="banner">رفع الفيديو والمعالجة السحابية والنشر غير مفعّلة بعد. لا يُنشر أي مقطع دون تحقق الحقوق ومراجعة نسخته النهائية.</p>}
     </section>
     {!enabled&&<p className="banner" role="status">القسم في مرحلة التجهيز. التسجيل متاح بعد تطبيق ترحيل قاعدة البيانات وتفعيل القسم؛ تفعيل النشر منفصل ويحتاج موافقتك النهائية.</p>}
+    {enabled&&<section className="card stack" style={{padding:24}} aria-live="polite">
+      <div className="row-between"><h2>حالة معالج الفيديو</h2><span className={worker?.online?"status-ok":"status-warn"}>{worker?.online?"متصل":"غير متصل"}</span></div>
+      {!worker?.online&&<p className="banner">معالج الفيديو غير متصل، سيتم استئناف معالجة الأفلام عند تشغيل Docker</p>}
+      {worker?.counts&&<p>في الطابور: {worker.counts.queued} · قيد التشغيل: {worker.counts.running} · فاشلة: {worker.counts.failed}</p>}
+      {worker?.worker?.currentJobId&&<p>المعالجة الحالية: {worker.worker.progress}%</p>}
+      {worker?.worker?.lastError&&<p className="banner" role="alert">آخر خطأ: {worker.worker.lastError}</p>}
+    </section>}
     {notice&&<p className="banner" role="status">{notice}</p>}
     {error&&<p className="banner" role="alert">{error}</p>}
     {canWrite&&<form className="card stack" style={{padding:24}} onSubmit={submit}>

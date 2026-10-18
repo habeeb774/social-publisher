@@ -36,9 +36,12 @@ services:
     profiles: [worker]
     build: { context: ., dockerfile: workers/movie-reels/Dockerfile }
     environment:
-      MOVIE_API_URL: http://host.docker.internal:3000
-      MOVIE_ALLOW_INSECURE_API: "1"   # dev only: http to host app
+      # Local defaults are intentionally development-only. For production set
+      # MOVIE_API_URL and MOVIE_ALLOW_INSECURE_API=0 in the worker env file.
+      MOVIE_API_URL: ${MOVIE_API_URL:-http://host.docker.internal:3000}
+      MOVIE_ALLOW_INSECURE_API: ${MOVIE_ALLOW_INSECURE_API:-1}
       MOVIE_WORKER_SECRET: ${MOVIE_WORKER_SECRET:?set MOVIE_WORKER_SECRET (>=32 chars) in your shell or .env}
+      MOVIE_WORKER_ID: ${MOVIE_WORKER_ID:-movie-worker-local}
       MOVIE_POLL_SECONDS: "5"
       MOVIE_WHISPER_MODEL_DIR: ${MOVIE_WHISPER_MODEL_DIR_IN_CONTAINER:-}
     extra_hosts: ["host.docker.internal:host-gateway"]

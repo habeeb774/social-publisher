@@ -39,8 +39,10 @@ class Api:
         self.url = base.rstrip("/") + "/api/movies/worker"
         self.secret = secret
         self.open = opener
+        self.worker_id = os.environ.get("MOVIE_WORKER_ID", "movie-worker")[:120]
 
     def call(self, action: str, **payload) -> dict:
+        payload.setdefault("workerId", self.worker_id)
         body = json.dumps({"action": action, **payload}, ensure_ascii=False).encode()
         request = urllib.request.Request(
             self.url, data=body, method="POST",

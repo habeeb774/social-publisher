@@ -11,12 +11,12 @@ import {completeJobQuery,failJobQuery,heartbeatQuery,leaseJobQuery,lockedClipPar
 /** Machine-to-machine API for the Docker FFmpeg worker. Bearer MOVIE_WORKER_SECRET; no browser session is accepted. */
 const lease={jobId:z.uuid(),leaseToken:z.uuid()};
 const body=z.discriminatedUnion("action",[
-  z.object({action:z.literal("lease")}).strict(),
-  z.object({action:z.literal("heartbeat"),...lease,progress:z.number().int().min(0).max(100)}).strict(),
-  z.object({action:z.literal("upload_urls"),...lease,items:z.array(z.object({part:z.number().int().min(1).max(10000),variant:z.union([z.literal("base"),z.number().int().min(1)])}).strict()).min(1).max(40)}).strict(),
-  z.object({action:z.literal("report_clips"),...lease,clips:z.array(reportedClipSchema).min(1).max(40),quality:z.array(qualitySchema).max(5).optional(),sourceSha256:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict(),
-  z.object({action:z.literal("complete"),...lease,revision:z.number().int().min(1).optional()}).strict(),
-  z.object({action:z.literal("fail"),...lease,error:z.string().max(500),retryable:z.boolean()}).strict(),
+  z.object({action:z.literal("lease"),workerId:z.string().trim().min(1).max(120).optional()}).strict(),
+  z.object({action:z.literal("heartbeat"),...lease,workerId:z.string().trim().min(1).max(120).optional(),progress:z.number().int().min(0).max(100)}).strict(),
+  z.object({action:z.literal("upload_urls"),...lease,workerId:z.string().trim().min(1).max(120).optional(),items:z.array(z.object({part:z.number().int().min(1).max(10000),variant:z.union([z.literal("base"),z.number().int().min(1)])}).strict()).min(1).max(40)}).strict(),
+  z.object({action:z.literal("report_clips"),...lease,workerId:z.string().trim().min(1).max(120).optional(),clips:z.array(reportedClipSchema).min(1).max(40),quality:z.array(qualitySchema).max(5).optional(),sourceSha256:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict(),
+  z.object({action:z.literal("complete"),...lease,workerId:z.string().trim().min(1).max(120).optional(),revision:z.number().int().min(1).optional()}).strict(),
+  z.object({action:z.literal("fail"),...lease,workerId:z.string().trim().min(1).max(120).optional(),error:z.string().max(500),retryable:z.boolean()}).strict(),
 ]);
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status});
 const digest=(value:string)=>createHash("sha256").update(value).digest();
@@ -36,6 +36,9 @@ export async function POST(request:NextRequest){
     const input=body.parse(JSON.parse(raw));
     const db=getDb(),storage=configuredMovieStorage();
     if(input.action==="lease"){
+      if(input.workerId)await db.execute(sql`INSERT INTO movie_worker_heartbeats(worker_id,last_poll_at,last_success_at,current_job_id,progress,last_error,updated_at)
+        VALUES(${input.workerId},now(),now(),NULL,0,NULL,now())
+        ON CONFLICT(worker_id) DO UPDATE SET last_poll_at=now(),last_success_at=now(),current_job_id=NULL,progress=0,last_error=NULL,updated_at=now()`);
       const [job]=(await db.execute(leaseJobQuery())).rows as Array<Leased&{lease_token:string;attempts:number}>;
       if(!job)return json({job:null});
       const [movie]=(await db.execute(sql`SELECT id,title,source_storage_key FROM movie_assets WHERE id=${job.movie_id}::uuid`)).rows as Array<{id:string;title:string;source_storage_key:string}>;
@@ -49,6 +52,7 @@ export async function POST(request:NextRequest){
         return json({job:{...base,clip:{id:clip.id,part:clip.part_number,revision:clip.revision,captions:clip.captions,baseUrl:await storage.signRead(clip.base_storage_key,7200)}}});
       }
       await db.execute(processingStartedQuery(job.id,job.lease_token));
+      if(input.workerId)await db.execute(sql`UPDATE movie_worker_heartbeats SET current_job_id=${job.id}::uuid,progress=1,last_success_at=now(),updated_at=now() WHERE worker_id=${input.workerId}`);
       const existing=(await db.execute(sql`SELECT part_number FROM movie_clips WHERE movie_id=${movie.id}::uuid`)).rows as Array<{part_number:number}>;
       // Name/size let a worker on the uploader's own PC reuse the local original after byte-sampling it against storage.
       const [source]=(await db.execute(sql`SELECT file_name,size_bytes FROM movie_upload_sessions WHERE movie_id=${movie.id}::uuid AND storage_key=${movie.source_storage_key} AND status='completed' LIMIT 1`)).rows as Array<{file_name:string;size_bytes:string|number}>;
@@ -59,8 +63,10 @@ export async function POST(request:NextRequest){
       return result.rows.length?json({ok:true,status:(result.rows[0] as {status:string}).status}):json({error:"LEASE_LOST"},409);
     }
     // Every remaining action renews and proves the lease first.
-    const [job]=(await db.execute(heartbeatQuery(input.jobId,input.leaseToken,input.action==="heartbeat"?input.progress:input.action==="complete"?99:50))).rows as Leased[];
+    const progress=input.action==="heartbeat"?input.progress:input.action==="complete"?99:50;
+    const [job]=(await db.execute(heartbeatQuery(input.jobId,input.leaseToken,progress))).rows as Leased[];
     if(!job)return json({error:"LEASE_LOST"},409);
+    if(input.workerId)await db.execute(sql`UPDATE movie_worker_heartbeats SET last_poll_at=now(),last_success_at=now(),current_job_id=${input.jobId}::uuid,progress=${progress},last_error=NULL,updated_at=now() WHERE worker_id=${input.workerId}`);
     if(input.action==="heartbeat")return json({ok:true});
     if(input.action==="upload_urls"){
       let allowed=(part:number,variant:"base"|number)=>job.kind==="process"&&(variant==="base"||variant===1)&&part>0;
