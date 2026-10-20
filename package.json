@@ -5,6 +5,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "lint": "eslint .",
     "test": "tsx --test tests/**/*.test.ts",
     "db:generate": "drizzle-kit generate",
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.9",
+    "@opennextjs/cloudflare": "^1.20.12",
     "@types/fontkit": "^2.0.8",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -37,7 +41,8 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.2.6",
     "tsx": "^4.19.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "wrangler": "^4.151.2"
   },
   "type": "module"
 }
